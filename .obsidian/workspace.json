@@ -1,0 +1,222 @@
+{
+  "main": {
+    "id": "0f17eb5ea4639fd1",
+    "type": "split",
+    "children": [
+      {
+        "id": "dc43ba29f967b5c4",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "fd7cf1e43a9acac0",
+            "type": "leaf",
+            "state": {
+              "type": "empty",
+              "state": {},
+              "icon": "lucide-file",
+              "title": "新标签页"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "b07875d1d93a7937",
+    "type": "split",
+    "children": [
+      {
+        "id": "f9ba5eee150f798c",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "79ad22021121ba0b",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "文件列表"
+            }
+          },
+          {
+            "id": "23703252d474ed76",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "9ba60120469e5fad",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "e99881feb5be9f45",
+    "type": "split",
+    "children": [
+      {
+        "id": "392b43851bbb4c1f",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "536b01ec1b4eea4d",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "Welcome.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for Welcome"
+            }
+          },
+          {
+            "id": "1617362aa4e7e4fa",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "Welcome.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from Welcome"
+            }
+          },
+          {
+            "id": "c73c64dd3c88fbaa",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "5c532d01220f2618",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "7452ac9582e6258d",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "Welcome.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of Welcome"
+            }
+          },
+          {
+            "id": "0409306693500541",
+            "type": "leaf",
+            "state": {
+              "type": "claudian-view",
+              "state": {},
+              "icon": "bot",
+              "title": "Claudian"
+            }
+          }
+        ],
+        "currentTab": 5
+      }
+    ],
+    "direction": "horizontal",
+    "width": 759.5
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:打开快速切换": false,
+      "graph:查看关系图谱": false,
+      "canvas:新建白板": false,
+      "daily-notes:打开/创建今天的日记": false,
+      "templates:插入模板": false,
+      "command-palette:打开命令面板": false,
+      "bases:新建数据库": false,
+      "claudian:Open Claudian": false
+    }
+  },
+  "active": "fd7cf1e43a9acac0",
+  "lastOpenFiles": [
+    "README.md",
+    "tools/__pycache__/translate_wiki.cpython-311.pyc",
+    "tools/wiki_dict.json",
+    "tools/translate_wiki.py",
+    "tools/__pycache__",
+    "tools",
+    "run.sh",
+    "wiki_ingest_engine.py",
+    "CLAUDE.md",
+    "all_exercises.txt",
+    "wiki/summaries/数据集概览.md",
+    "wiki/entities/腹部.md",
+    "wiki/entities/男性.md",
+    "wiki/entities/女性.md",
+    "wiki/summaries",
+    "wiki/manifest.json",
+    "wiki/log.md",
+    "wiki/index.md",
+    "Crunch.md",
+    "Situp.md",
+    "死虫式.md",
+    "wiki/entities/Female.md",
+    "wiki/summaries/Dataset Overview.md",
+    "wiki/entities/Male.md",
+    "wiki/entities/Abdominals.md",
+    "Welcome.md"
+  ]
+}

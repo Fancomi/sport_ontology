@@ -1,0 +1,23 @@
+{
+  "id": "conv-1775632798892-sqfdtv53j",
+  "providerId": "claude",
+  "title": "Analyze wiki_videos data structure",
+  "titleGenerationStatus": "success",
+  "createdAt": 1775632798893,
+  "updatedAt": 1775636619685,
+  "lastResponseAt": 1775636619685,
+  "sessionId": "1609c84f-23e0-446f-ba3f-31d626cdbd34",
+  "providerState": {
+    "providerSessionId": "1609c84f-23e0-446f-ba3f-31d626cdbd34"
+  },
+  "usage": {
+    "model": "haiku",
+    "inputTokens": 37153,
+    "cacheCreationInputTokens": 0,
+    "cacheReadInputTokens": 0,
+    "contextWindow": 200000,
+    "contextTokens": 37153,
+    "percentage": 19,
+    "contextWindowIsAuthoritative": true
+  }
+}

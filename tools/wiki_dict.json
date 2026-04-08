@@ -1,0 +1,85 @@
+{
+  "category": {
+    "female": "女性",
+    "male": "男性"
+  },
+  "muscle": {
+    "abdominals": "腹部",
+    "anterior-deltoid": "前三角肌",
+    "biceps": "二头肌",
+    "calves": "小腿",
+    "chest": "胸部",
+    "forearms": "前臂",
+    "front-shoulders": "前肩",
+    "glutes": "臀部",
+    "gluteus-maximus": "臀大肌",
+    "gluteus-medius": "臀中肌",
+    "hamstrings": "腘绳肌",
+    "hands": "手部",
+    "lateral-deltoid": "侧三角肌",
+    "lats": "背阔肌",
+    "lowerback": "下背部",
+    "obliques": "腹斜肌",
+    "posterior-deltoid": "后三角肌",
+    "quads": "股四头肌",
+    "rear-shoulders": "后肩",
+    "scapula": "肩胛骨",
+    "shoulders": "肩部",
+    "traps": "斜方肌",
+    "traps-middle": "中斜方肌",
+    "triceps": "三头肌",
+    "wrist": "腕部"
+  },
+  "equipment": {
+    "band": "弹力带",
+    "barbell": "杠铃",
+    "bodyweight": "自重",
+    "bosu-ball": "半圆平衡球",
+    "cables": "拉力索",
+    "cardio": "有氧",
+    "dumbbells": "哑铃",
+    "kettlebells": "壶铃",
+    "machine": "器械",
+    "medicine-ball": "药球",
+    "plate": "重片",
+    "recovery": "恢复",
+    "smith-machine": "史密斯架",
+    "stretches": "拉伸",
+    "trx": "TRX悬挂训练",
+    "vitruvian": "Vitruvian训练器",
+    "yoga": "瑜伽"
+  },
+  "muscle_role": {
+    "None": "无",
+    "primary": "主要",
+    "secondary": "次要"
+  },
+  "Difficulty": {
+    "Beginner": "初级",
+    "Intermediate": "中级",
+    "Advanced": "高级",
+    "Novice": "新手"
+  },
+  "Force": {
+    "None": "无",
+    "Push": "推",
+    "Pull": "拉",
+    "Hold": "保持"
+  },
+  "Grips": {
+    "None": "无",
+    "Neutral": "中立握",
+    "Mixed": "混合握",
+    "Overhand: Pronated": "正握（旋前）",
+    "Underhand: Supinated": "反握（旋后）",
+    "Pinch Grip": "捏握",
+    "Rotating: Hands Rotate": "旋转握",
+    "Compound": "复合",
+    "Isolation": "孤立"
+  },
+  "Mechanic": {
+    "None": "无",
+    "Compound": "复合动作",
+    "Isolation": "孤立动作"
+  }
+}
