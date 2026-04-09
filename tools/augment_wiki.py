@@ -13,7 +13,7 @@ from openai import OpenAI
 from demo_gemma4_video import extract_frames  # 复用抽帧逻辑
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
-DATA_ROOT   = Path(__file__).resolve().parent.parent.parent / 'muscle_wiki_json_cn'
+DATA_ROOT = Path('/media/baidu/8C1A3A981A3A7F70/DATAS/wiki_videos')
 PROMPT_PATH = Path(__file__).resolve().parent / 'Prompt_Augment.md'
 MAX_TOKENS  = 4096
 FPS_DEFAULT = 1.0
