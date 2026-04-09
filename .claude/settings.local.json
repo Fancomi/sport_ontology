@@ -1,6 +1,8 @@
 {
   "permissions": {
     "allow": [
+      "WebFetch(domain:*)",
+      "WebSearch",
       "Bash(python3:*)"
     ]
   }

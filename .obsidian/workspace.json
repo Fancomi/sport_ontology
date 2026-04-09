@@ -196,6 +196,8 @@
   },
   "active": "0409306693500541",
   "lastOpenFiles": [
+    "tools/augment_wiki.py",
+    "tools/Prompt_Augment.md",
     "llm-wiki-cn.md",
     "tools/demo_gemma4_video.py",
     "tools/llm_client.py",
