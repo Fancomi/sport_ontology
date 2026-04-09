@@ -1,36 +1,32 @@
 #!/usr/bin/env python3
-"""将 wiki_videos/metadata.json 批量翻译为同目录 metadata_cn.json
+"""将 wiki_videos/metadata.json 逐一翻译为同目录 metadata_cn.json
 
-用法：python translate_wiki.py [--batch-size N]
+用法：python translate_wiki.py [--host HOST] [--port PORT]
 """
 
-import argparse, copy, json, re, sys, threading
+import argparse, copy, json, re, sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, '/home/baidu/Documents/paper_read')
-from llm_client import LLMClient, run_batch  # noqa: E402
+from llm_client import LLMClient  # noqa: E402
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
 DATA_ROOT = Path('/media/baidu/8C1A3A981A3A7F70/DATAS/wiki_videos')
 DICT_PATH = Path(__file__).resolve().parent / 'wiki_dict.json'
-_dlock    = threading.Lock()
 
 # ── 字典 I/O（唯一来源：wiki_dict.json） ─────────────────────────────────────
 def _load_dict() -> Dict[str, Dict[str, str]]:
     return json.loads(DICT_PATH.read_text('utf-8'))
 
 def _update_dict(pairs: List[Tuple[str, str, str]]) -> None:
-    """线程安全地将 (category, en_val, cn_val) 新条目持久化到字典文件。"""
-    with _dlock:
-        d = _load_dict()
-        changed = False
-        for cat, en, cn in pairs:
-            if cn and d.setdefault(cat, {}).get(en) != cn:
-                d[cat][en] = cn
-                changed = True
-        if changed:
-            DICT_PATH.write_text(json.dumps(d, ensure_ascii=False, indent=2), 'utf-8')
+    d, changed = _load_dict(), False
+    for cat, en, cn in pairs:
+        if cn and d.setdefault(cat, {}).get(en) != cn:
+            d[cat][en] = cn
+            changed = True
+    if changed:
+        DICT_PATH.write_text(json.dumps(d, ensure_ascii=False, indent=2), 'utf-8')
 
 # ── Prompt ────────────────────────────────────────────────────────────────────
 _SYSTEM_TMPL = """\
@@ -54,27 +50,22 @@ _SYSTEM_TMPL = """\
   "Muscles":{{"calves":"无","abdominals":"主要"}}
 }}"""
 
-_RE_JSON = re.compile(r'\{[\s\S]*\}')
+_RE_JSON     = re.compile(r'\{[\s\S]*\}')
 _ENUM_FIELDS = ('category', 'muscle', 'equipment', 'Difficulty', 'Force', 'Grips', 'Mechanic')
 
 
 def _build_system(d: Dict) -> str:
     return _SYSTEM_TMPL.format(dict_block=json.dumps(d, ensure_ascii=False, indent=2))
 
-
 def _parse_json(text: str) -> Optional[dict]:
     m = _RE_JSON.search(text)
-    if not m:
-        return None
     try:
-        return json.loads(m.group())
+        return json.loads(m.group()) if m else None
     except json.JSONDecodeError:
         return None
 
-
 # ── 翻译核心 ──────────────────────────────────────────────────────────────────
 def _apply(orig: dict, trans: dict) -> dict:
-    """将 LLM 返回的翻译字段填回 orig 深拷贝，保留 url/video 等不翻译字段。"""
     cn = copy.deepcopy(orig)
     for f in ('category', 'muscle', 'exercise', 'equipment', 'Difficulty', 'Force', 'Grips', 'Mechanic'):
         if f in trans:
@@ -88,52 +79,44 @@ def _apply(orig: dict, trans: dict) -> dict:
     return cn
 
 
-def translate_one(path: Path, system: str, client: LLMClient) -> None:
-    out = path.parent / 'metadata_cn.json'
-    if out.exists():
-        return
-
+def translate_one(path: Path, system: str, client: LLMClient) -> bool:
     orig   = json.loads(path.read_text('utf-8'))
-    result = client.chat(
-        messages=[{'role': 'system', 'content': system},
-                  {'role': 'user',   'content': json.dumps(orig, ensure_ascii=False)}],
-    )
+    result = client.chat(messages=[{'role': 'system', 'content': system},
+                                   {'role': 'user',   'content': json.dumps(orig, ensure_ascii=False)}])
     if not result:
-        return
+        return False
 
     trans = _parse_json(result)
     if not trans:
-        print(f'  ✗ 解析失败: {path.relative_to(DATA_ROOT)}')
-        return
+        print(f'  ✗ 解析失败')
+        return False
 
-    # 收集枚举翻译对，回写字典
     pairs: List[Tuple[str, str, str]] = [
         (f, orig[f], trans[f])
         for f in _ENUM_FIELDS
         if isinstance(orig.get(f), str) and isinstance(trans.get(f), str)
     ]
-    pairs += [
-        ('muscle_role', orig['Muscles'][m], trans['Muscles'][m])
-        for m in orig.get('Muscles', {})
-        if m in trans.get('Muscles', {})
-    ]
+    pairs += [('muscle_role', orig['Muscles'][m], trans['Muscles'][m])
+              for m in orig.get('Muscles', {}) if m in trans.get('Muscles', {})]
     _update_dict(pairs)
 
-    out.write_text(json.dumps(_apply(orig, trans), ensure_ascii=False, indent=2), 'utf-8')
+    (path.parent / 'metadata_cn.json').write_text(
+        json.dumps(_apply(orig, trans), ensure_ascii=False, indent=2), 'utf-8')
+    return True
 
 
 # ── 入口 ──────────────────────────────────────────────────────────────────────
 def main() -> None:
     parser = argparse.ArgumentParser(description='批量翻译 wiki_videos metadata.json')
-    parser.add_argument('--host',       default='127.0.0.1', help='本地 API 地址 (默认: 127.0.0.1)')
-    parser.add_argument('--port',       type=int, default=8000, help='本地 API 端口 (默认: 8000)')
-    parser.add_argument('--batch-size', type=int, default=1,  help='并发数 (默认: 1，本地 LLM 建议保持 1)')
+    parser.add_argument('--host', default='127.0.0.1', help='本地 API 地址 (默认: 127.0.0.1)')
+    parser.add_argument('--port', type=int, default=8000, help='本地 API 端口 (默认: 8000)')
     args = parser.parse_args()
 
     all_files = sorted(DATA_ROOT.rglob('metadata.json'))
     pending   = [f for f in all_files if not (f.parent / 'metadata_cn.json').exists()]
-    print(f'总计 {len(all_files)} 个文件，待翻译 {len(pending)} 个，跳过 {len(all_files)-len(pending)} 个')
-    if not pending:
+    total     = len(pending)
+    print(f'总计 {len(all_files)} 个，待翻译 {total} 个，跳过 {len(all_files) - total} 个')
+    if not total:
         print('全部已完成')
         return
 
@@ -141,11 +124,15 @@ def main() -> None:
         client = LLMClient(backend='local', host=args.host, port=args.port)
         print(f'模型: {client.model}\n')
     except Exception as e:
-        print(f'错误: 无法连接本地 API ({args.host}:{args.port}): {e}', file=sys.stderr)
+        print(f'错误: 无法连接 {args.host}:{args.port}: {e}', file=sys.stderr)
         sys.exit(1)
 
     system = _build_system(_load_dict())
-    run_batch(pending, lambda idx, total, p: translate_one(p, system, client), batch_size=args.batch_size)
+    for i, path in enumerate(pending, 1):
+        rel = path.relative_to(DATA_ROOT)
+        print(f'[{i}/{total}] {rel} ... ', end='', flush=True)
+        ok = translate_one(path, system, client)
+        print('✓' if ok else '✗')
 
 
 if __name__ == '__main__':
