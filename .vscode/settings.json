@@ -1,0 +1,22 @@
+{
+    "python.defaultInterpreterPath": "/home/baidu/envs/mineru/bin/python",
+    "terminal.integrated.env.linux": {
+        "VSCODE_VENV": "/home/baidu/envs/mineru",
+        "http_proxy": "http://127.0.0.1:7890",
+        "https_proxy": "http://127.0.0.1:7890",
+        "all_proxy": "",
+        "no_proxy": "localhost,127.0.0.1"
+    },
+    "terminal.integrated.profiles.osx": {
+        "zsh (proxy)": {
+            "path": "zsh",
+            "env": {
+                "http_proxy": "http://127.0.0.1:7890",
+                "https_proxy": "http://127.0.0.1:7890",
+                "all_proxy": "",
+                "no_proxy": "localhost,127.0.0.1"
+            }
+        }
+    },
+    "terminal.integrated.defaultProfile.osx": "zsh (proxy)"
+}

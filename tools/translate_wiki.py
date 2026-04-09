@@ -8,7 +8,6 @@ import argparse, copy, json, re, sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-sys.path.insert(0, '/home/baidu/Documents/paper_read')
 from llm_client import LLMClient  # noqa: E402
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
