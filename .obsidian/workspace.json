@@ -196,6 +196,8 @@
   },
   "active": "0409306693500541",
   "lastOpenFiles": [
+    "llm-wiki-cn.md",
+    "tools/demo_gemma4_video.py",
     "tools/llm_client.py",
     "wiki/log.md",
     "wiki/index.md",
@@ -213,8 +215,6 @@
     "all_exercises.txt",
     "wiki/entities/男性.md",
     "wiki/entities/女性.md",
-    "wiki/summaries",
-    "wiki/manifest.json",
     "Crunch.md",
     "Situp.md",
     "死虫式.md",
