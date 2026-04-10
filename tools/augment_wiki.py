@@ -116,12 +116,16 @@ def main() -> None:
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--fps',  type=float, default=FPS_DEFAULT)
+    parser.add_argument('--reverse', action='store_true',
+                        help='从末尾向前处理，避免与正向运行的机器重叠')
     args = parser.parse_args()
 
     all_meta = sorted(DATA_ROOT.rglob('metadata_cn.json'))
     pending  = [p for p in all_meta
                 if not (p.parent / 'augment_front.json').exists()
                 or not (p.parent / 'augment_side.json').exists()]
+    if args.reverse:
+        pending = list(reversed(pending))
     done_cnt = len(all_meta) - len(pending)
     print(f'共 {len(all_meta)} 个动作，待处理 {len(pending)} 个，跳过 {done_cnt} 个')
     if not pending:

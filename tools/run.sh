@@ -4,4 +4,4 @@ source /home/baidu/envs/swift/bin/activate
 # python3 translate_wiki.py
 
 # 2. augment_wiki
-python3 augment_wiki.py
+python3 augment_wiki.py --reverse
