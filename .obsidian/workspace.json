@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "CLAUDE.md",
+                "file": "llm-wiki-cn.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "CLAUDE"
+              "title": "llm-wiki-cn"
             }
           }
         ]
@@ -180,7 +180,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 759.5
+    "width": 348.5
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -194,18 +194,21 @@
       "claudian:Open Claudian": false
     }
   },
-  "active": "0409306693500541",
+  "active": "fd7cf1e43a9acac0",
   "lastOpenFiles": [
+    "未命名 1.canvas",
+    "未命名.canvas",
+    "README.md",
+    "llm-wiki-cn.md",
+    "CLAUDE.md",
     "tools/augment_wiki.py",
     "tools/Prompt_Augment.md",
-    "llm-wiki-cn.md",
     "tools/demo_gemma4_video.py",
     "tools/llm_client.py",
     "wiki/log.md",
     "wiki/index.md",
     "wiki/summaries/数据集概览.md",
     "wiki/entities/腹部.md",
-    "README.md",
     "tools/__pycache__/translate_wiki.cpython-311.pyc",
     "tools/wiki_dict.json",
     "tools/translate_wiki.py",
@@ -213,8 +216,6 @@
     "tools",
     "run.sh",
     "wiki_ingest_engine.py",
-    "CLAUDE.md",
-    "all_exercises.txt",
     "wiki/entities/男性.md",
     "wiki/entities/女性.md",
     "Crunch.md",

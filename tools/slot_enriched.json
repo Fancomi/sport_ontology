@@ -1,0 +1,2193 @@
+{
+  "gender": {
+    "女性": {
+      "source_count": 4170,
+      "en": "female",
+      "definition": "一种能产生雌性配子（卵子）的动物，这些配子可以被雄性配子（精子）受精",
+      "synonyms": [
+        "女性",
+        "女",
+        "女子",
+        "雌性"
+      ],
+      "hypernym": [
+        "动物"
+      ],
+      "hyponyms": [
+        "雌性哺乳动物、母鸡、小母马、母马"
+      ],
+      "antonyms": [
+        "雄性"
+      ]
+    },
+    "男女": {
+      "source_count": 1,
+      "en": "male and female",
+      "definition": "产生可以受精雌性配子（卵子）的配子（精子）的动物",
+      "synonyms": [
+        "男女",
+        "男和女",
+        "雄性"
+      ],
+      "hypernym": [
+        "动物"
+      ],
+      "hyponyms": [
+        "种公",
+        "小公马",
+        "阉牛",
+        "雄马"
+      ],
+      "antonyms": [
+        "雌性"
+      ]
+    },
+    "男性": {
+      "source_count": 2338,
+      "en": "male",
+      "definition": "一种产生可以使雌性配子（卵子）受精的配子（精子）的动物",
+      "synonyms": [
+        "男性",
+        "男",
+        "雄性"
+      ],
+      "hypernym": [
+        "动物"
+      ],
+      "hyponyms": [
+        "父畜、小马、阉牛、雄马"
+      ],
+      "antonyms": [
+        "雌性"
+      ]
+    },
+    "男": {
+      "source_count": 25,
+      "en": "male",
+      "definition": "一种产生可以使雌性配子（卵子）受精的配子（精子）的动物",
+      "synonyms": [
+        "男性",
+        "男",
+        "雄性"
+      ],
+      "hypernym": [
+        "动物"
+      ],
+      "hyponyms": [
+        "父畜、小马、阉牛、公马"
+      ],
+      "antonyms": [
+        "雌性"
+      ]
+    },
+    "女": {
+      "source_count": 17,
+      "en": "female",
+      "definition": "一种能产生雌性配子（卵子）的动物，这些配子可以被雄性配子（精子）受精",
+      "synonyms": [
+        "女性",
+        "女",
+        "女子",
+        "雌性"
+      ],
+      "hypernym": [
+        "动物"
+      ],
+      "hyponyms": [
+        "雌性哺乳动物、母鸡、小母马、母兽"
+      ],
+      "antonyms": [
+        "雄性"
+      ]
+    }
+  },
+  "camera_view": {
+    "正面": {
+      "source_count": 1714,
+      "en": "front",
+      "definition": "向前或突出的那一面",
+      "synonyms": [
+        "前面",
+        "前端",
+        "前部"
+      ],
+      "hypernym": [
+        "侧面"
+      ],
+      "hyponyms": [
+        "最前端"
+      ],
+      "antonyms": [
+        "后面"
+      ]
+    },
+    "侧面": {
+      "source_count": 2210,
+      "en": "side",
+      "definition": "在一个区域内相对于中心或参考位置确定的地点",
+      "synonyms": [
+        "一侧"
+      ],
+      "hypernym": [
+        "区域"
+      ],
+      "hyponyms": [
+        "码头侧、北侧、手、东侧、南侧、船侧、盲侧、西侧、床边"
+      ]
+    },
+    "斜侧面": {
+      "source_count": 2148,
+      "en": "oblique side",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "斜前侧面": {
+      "source_count": 7,
+      "en": "Oblique front side",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "正后方": {
+      "source_count": 4,
+      "en": "Direct Rear"
+    },
+    "正面视角": {
+      "source_count": 75,
+      "en": "Front View",
+      "definition": "向前或突出的那一面",
+      "synonyms": [
+        "前面",
+        "前端",
+        "前部"
+      ],
+      "hypernym": [
+        "侧面"
+      ],
+      "hyponyms": [
+        "最前端"
+      ],
+      "antonyms": [
+        "后面"
+      ]
+    },
+    "俯视斜侧面": {
+      "source_count": 26,
+      "en": "overhead oblique side view",
+      "definition": "维护财产的开支（例如，支付财产税、水电费和保险）；不包括折旧、融资成本或所得税",
+      "synonyms": [
+        "运营费用、运营成本、管理费用、预算项目"
+      ],
+      "hypernym": [
+        "开支"
+      ]
+    },
+    "俯视视角": {
+      "source_count": 37,
+      "en": "bird's-eye view",
+      "definition": "从高处或远处观察的情境或话题",
+      "synonyms": [
+        "鸟瞰图",
+        "全景图"
+      ],
+      "hypernym": [
+        "位置"
+      ]
+    },
+    "斜前侧视角": {
+      "source_count": 47,
+      "en": "Oblique Front-Side View",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "正面、侧面、背面": {
+      "source_count": 6,
+      "en": "front, side, back"
+    },
+    "正面及侧面": {
+      "source_count": 6,
+      "en": "front and side",
+      "definition": "向前或突出的那一面",
+      "synonyms": [
+        "前面",
+        "前端",
+        "前部"
+      ],
+      "hypernym": [
+        "侧面"
+      ],
+      "hyponyms": [
+        "最前端"
+      ],
+      "antonyms": [
+        "后面"
+      ]
+    },
+    "后侧视角": {
+      "source_count": 5,
+      "en": "rear side view",
+      "definition": "军事队形或行列的后方",
+      "synonyms": [
+        "后方"
+      ],
+      "hypernym": [
+        "队形"
+      ],
+      "antonyms": [
+        "前方"
+      ]
+    },
+    "斜后侧视角": {
+      "source_count": 12,
+      "en": "Oblique Rear Side View",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "后方斜侧面": {
+      "source_count": 1,
+      "en": "rear oblique side",
+      "definition": "军事队形或行列的后方",
+      "synonyms": [
+        "后方"
+      ],
+      "hypernym": [
+        "队形"
+      ],
+      "antonyms": [
+        "前方"
+      ]
+    },
+    "斜后方视角": {
+      "source_count": 24,
+      "en": "Oblique Rear View",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "背面视角": {
+      "source_count": 109,
+      "en": "rear view",
+      "definition": "军事队形或行列的后方",
+      "synonyms": [
+        "后方"
+      ],
+      "hypernym": [
+        "队形"
+      ],
+      "antonyms": [
+        "前方"
+      ]
+    },
+    "侧斜面": {
+      "source_count": 4,
+      "en": "oblique side",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "侧前视角": {
+      "source_count": 1,
+      "en": "side front view",
+      "definition": "在一个区域内相对于中心或参考位置确定的地点",
+      "synonyms": [
+        "一侧"
+      ],
+      "hypernym": [
+        "区域"
+      ],
+      "hyponyms": [
+        "码头侧、北侧、手、东侧、南侧、船侧、盲侧、西侧、床边"
+      ]
+    },
+    "后视图": {
+      "source_count": 2,
+      "en": "rear view",
+      "definition": "军事队形或行列的后方",
+      "synonyms": [
+        "后方"
+      ],
+      "hypernym": [
+        "队形"
+      ],
+      "antonyms": [
+        "前方"
+      ]
+    },
+    "正后方视角": {
+      "source_count": 9,
+      "en": "Direct rear view"
+    },
+    "后方视角": {
+      "source_count": 2,
+      "en": "rear view",
+      "definition": "军事队形或行列的后方",
+      "synonyms": [
+        "后方"
+      ],
+      "hypernym": [
+        "队形"
+      ],
+      "antonyms": [
+        "前方"
+      ]
+    },
+    "俯视": {
+      "source_count": 1,
+      "en": "bird's-eye view",
+      "definition": "从高处或远处观察的情境或话题",
+      "synonyms": [
+        "鸟瞰",
+        "鸟瞰图",
+        "全景图"
+      ],
+      "hypernym": [
+        "位置"
+      ]
+    },
+    "侧斜方视角": {
+      "source_count": 5,
+      "en": "Oblique side view",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "后侧方视角": {
+      "source_count": 4,
+      "en": "Rear Side View",
+      "definition": "军事队形或行列的后方",
+      "synonyms": [
+        "后方"
+      ],
+      "hypernym": [
+        "队形"
+      ],
+      "antonyms": [
+        "前方"
+      ]
+    },
+    "斜侧面俯视": {
+      "source_count": 3,
+      "en": "oblique side top-down view",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "正面、侧面、斜后侧": {
+      "source_count": 4,
+      "en": "front, side, rear oblique"
+    },
+    "正面、斜侧面、侧面": {
+      "source_count": 1,
+      "en": "front, oblique side, side"
+    },
+    "斜后方俯视": {
+      "source_count": 3,
+      "en": "oblique rear top-down view",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "斜上方俯视": {
+      "source_count": 4,
+      "en": "oblique top-down view",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "侧斜前方视角": {
+      "source_count": 1,
+      "en": "oblique front view",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "斜后侧面": {
+      "source_count": 3,
+      "en": "Oblique Rear Side",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "斜侧上方视角": {
+      "source_count": 1,
+      "en": "oblique top-side angle",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "后侧面": {
+      "source_count": 2,
+      "en": "rear side",
+      "definition": "军事队形或行列的后部",
+      "synonyms": [
+        "后方"
+      ],
+      "hypernym": [
+        "队形"
+      ],
+      "antonyms": [
+        "前部"
+      ]
+    },
+    "背面": {
+      "source_count": 4,
+      "en": "rear",
+      "definition": "军事队形或行列的后方",
+      "synonyms": [
+        "背面",
+        "后方"
+      ],
+      "hypernym": [
+        "队形"
+      ],
+      "antonyms": [
+        "前方"
+      ]
+    },
+    "斜前侧": {
+      "source_count": 5,
+      "en": "diagonal front side",
+      "definition": "(几何) 连接多边形中任意两个不相邻顶点的直线",
+      "synonyms": [
+        "对角线"
+      ],
+      "hypernym": [
+        "直线"
+      ]
+    },
+    "斜后侧": {
+      "source_count": 1,
+      "en": "diagonal rear side",
+      "definition": "(几何) 连接多边形中任意两个不相邻顶点的直线",
+      "synonyms": [
+        "对角线"
+      ],
+      "hypernym": [
+        "直线"
+      ]
+    },
+    "正面斜侧面": {
+      "source_count": 1,
+      "en": "front, angled side"
+    },
+    "后侧面视角": {
+      "source_count": 1,
+      "en": "rear side view",
+      "definition": "军事队形或行列的后方",
+      "synonyms": [
+        "后方"
+      ],
+      "hypernym": [
+        "队形"
+      ],
+      "antonyms": [
+        "前方"
+      ]
+    },
+    "斜后方": {
+      "source_count": 3,
+      "en": "diagonal rear",
+      "definition": "(几何) 连接多边形中任意两个不相邻顶点的直线",
+      "synonyms": [
+        "对角线"
+      ],
+      "hypernym": [
+        "直线"
+      ]
+    },
+    "后视视角": {
+      "source_count": 1,
+      "en": "rear view",
+      "definition": "军事队形或行列的后方",
+      "synonyms": [
+        "后方"
+      ],
+      "hypernym": [
+        "队形"
+      ],
+      "antonyms": [
+        "前方"
+      ]
+    },
+    "正面、斜侧面、侧面、背面": {
+      "source_count": 1,
+      "en": "front, oblique side, side, back"
+    },
+    "正面、侧面、斜侧面": {
+      "source_count": 1,
+      "en": "front, side, oblique side"
+    },
+    "斜侧上方": {
+      "source_count": 1,
+      "en": "oblique side from above",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "斜后上方视角": {
+      "source_count": 1,
+      "en": "oblique rear high-angle view",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "侧面及斜侧面": {
+      "source_count": 3,
+      "en": "side and oblique side",
+      "definition": "在一个区域内相对于中心或参考位置确定的地点",
+      "synonyms": [
+        "一侧"
+      ],
+      "hypernym": [
+        "区域"
+      ],
+      "hyponyms": [
+        "码头侧、北侧、手、东侧、南侧、船侧、盲侧、西侧、床边"
+      ]
+    },
+    "斜后侧/侧面/正面": {
+      "source_count": 1,
+      "en": "oblique rear/side/front",
+      "definition": "除了主格以外的任何语法格",
+      "synonyms": [
+        "斜格",
+        "斜格形式"
+      ],
+      "hypernym": [
+        "格"
+      ],
+      "hyponyms": [
+        "宾格",
+        "离格",
+        "属格",
+        "与格",
+        "呼格"
+      ],
+      "antonyms": [
+        "主格"
+      ]
+    },
+    "侧后方": {
+      "source_count": 1,
+      "en": "rear side",
+      "definition": "军事队形或行列的后方",
+      "synonyms": [
+        "后方"
+      ],
+      "hypernym": [
+        "队形"
+      ],
+      "antonyms": [
+        "前方"
+      ]
+    },
+    "正面及斜侧面": {
+      "source_count": 1,
+      "en": "front and oblique side",
+      "definition": "向前或突出的那一面",
+      "synonyms": [
+        "前面",
+        "前端",
+        "前部"
+      ],
+      "hypernym": [
+        "侧面"
+      ],
+      "hyponyms": [
+        "最前端"
+      ],
+      "antonyms": [
+        "后面"
+      ]
+    },
+    "侧后方视角": {
+      "source_count": 1,
+      "en": "rear-side view",
+      "definition": "军事队形或行列的后方",
+      "synonyms": [
+        "后方"
+      ],
+      "hypernym": [
+        "队形"
+      ],
+      "antonyms": [
+        "前方"
+      ]
+    },
+    "正面、侧面": {
+      "source_count": 1,
+      "en": "front, side"
+    }
+  },
+  "equipment": {
+    "健身平衡球": {
+      "source_count": 2,
+      "en": "fitness balance ball",
+      "definition": "适合的品质",
+      "synonyms": [
+        "适合性",
+        "合适"
+      ],
+      "hypernym": [
+        "适宜性"
+      ],
+      "hyponyms": [
+        "资格",
+        "宜居性"
+      ],
+      "antonyms": [
+        "不适合"
+      ]
+    },
+    "健身球": {
+      "source_count": 3,
+      "en": "exercise ball",
+      "definition": "以各种方式使用你的肌肉以保持健康的活动",
+      "synonyms": [
+        "锻炼",
+        "运动",
+        "体能锻炼",
+        "体力活动",
+        "健身"
+      ],
+      "hypernym": [
+        "努力"
+      ],
+      "hyponyms": [
+        "徒手体操",
+        "手臂锻炼",
+        "颈部锻炼",
+        "等张运动",
+        "凯格尔运动",
+        "腿部锻炼",
+        "健美",
+        "腹部锻炼",
+        "心肺锻炼",
+        "体操锻炼",
+        "跳起",
+        "拉伸",
+        "组",
+        "等长运动",
+        "瑜伽",
+        "背部锻炼"
+      ]
+    },
+    "瑜伽垫": {
+      "source_count": 383,
+      "en": "yoga mat",
+      "definition": "一种印度教修行，旨在通过行动、知识和奉献的三条道路训练意识，以达到完美的精神洞察和宁静状态",
+      "synonyms": [
+        "瑜伽"
+      ],
+      "hypernym": [
+        "印度教"
+      ]
+    },
+    "无器械": {
+      "source_count": 1118,
+      "en": "no equipment",
+      "definition": "负面",
+      "synonyms": [
+        "不"
+      ],
+      "hypernym": [
+        "负面"
+      ],
+      "antonyms": [
+        "是"
+      ]
+    },
+    "弹力带": {
+      "source_count": 310,
+      "en": "resistance band",
+      "definition": "反对你不赞成或不同意的事物的行为",
+      "synonyms": [
+        "抵抗",
+        "反对"
+      ],
+      "hypernym": [
+        "行为"
+      ],
+      "hyponyms": [
+        "封锁",
+        "反收购防御",
+        "反应"
+      ]
+    },
+    "龙门架弹力带": {
+      "source_count": 1,
+      "en": "goal frame resistance band",
+      "definition": "计划旨在实现的状态，并且（当实现时）终止为实现该状态而进行的行为",
+      "synonyms": [
+        "目标",
+        "终点"
+      ],
+      "hypernym": [
+        "内容"
+      ],
+      "hyponyms": [
+        "最终目标",
+        "旨意",
+        "无目标",
+        "目的",
+        "意图",
+        "归宿",
+        "终点"
+      ]
+    },
+    "杠铃": {
+      "source_count": 862,
+      "en": "barbell",
+      "definition": "两端装有重片的杠杆；用于举重",
+      "synonyms": [
+        "杠铃"
+      ],
+      "hypernym": [
+        "重量"
+      ]
+    },
+    "单杠": {
+      "source_count": 43,
+      "en": "horizontal bar",
+      "definition": "一种体操器械，由两端支撑的杆子水平放置",
+      "synonyms": [
+        "单杠",
+        "高杠"
+      ],
+      "hypernym": [
+        "体操器械"
+      ]
+    },
+    "Bosu球": {
+      "source_count": 27,
+      "en": "Bosu Ball"
+    },
+    "半圆平衡球": {
+      "source_count": 109,
+      "en": "Half-Round Balance Ball",
+      "definition": "一个可分整体的两个相等部分之一",
+      "synonyms": [
+        "二分之一",
+        "半"
+      ],
+      "hypernym": [
+        "普通分数"
+      ],
+      "hyponyms": [
+        "百分之五十",
+        "部分"
+      ]
+    },
+    "绳索训练器": {
+      "source_count": 12,
+      "en": "rope trainer",
+      "definition": "一条结实的绳子",
+      "synonyms": [
+        "绳子"
+      ],
+      "hypernym": [
+        "线"
+      ],
+      "hyponyms": [
+        "绞刑绳",
+        "升帆索",
+        "卷索",
+        "索线",
+        "细绳",
+        "波拉索",
+        "跳绳",
+        "延长绳",
+        "系索",
+        "缆绳",
+        "捆绑索",
+        "套索",
+        "支撑绳",
+        "鱼叉绳",
+        "电缆",
+        "导索",
+        "大缆绳",
+        "弹力绳",
+        "触发绳"
+      ]
+    },
+    "绳索训练机": {
+      "source_count": 3,
+      "en": "rope training machine",
+      "definition": "一条结实的绳子",
+      "synonyms": [
+        "绳子"
+      ],
+      "hypernym": [
+        "线"
+      ],
+      "hyponyms": [
+        "绞刑绳",
+        "升帆索",
+        "卷索",
+        "索线",
+        "细绳",
+        "波拉索",
+        "跳绳",
+        "延长绳",
+        "系绳",
+        "缆索",
+        "捆绑索",
+        "套索",
+        "支索",
+        "鱼叉索",
+        "电缆",
+        "引导绳",
+        "粗索",
+        "弹力绳",
+        "绊线"
+      ]
+    },
+    "绳索": {
+      "source_count": 5,
+      "en": "rope",
+      "definition": "一条结实的绳子",
+      "synonyms": [
+        "绳索",
+        "绳子",
+        "夺魂索"
+      ],
+      "hypernym": [
+        "线"
+      ],
+      "hyponyms": [
+        "绞刑绳",
+        "升帆索",
+        "卷索",
+        "索线",
+        "细绳",
+        "波拉索",
+        "跳绳",
+        "延长绳",
+        "系绳",
+        "缆索",
+        "捆绑索",
+        "套索",
+        "支索",
+        "鱼叉索",
+        "电缆",
+        "引导绳",
+        "粗索",
+        "弹力绳",
+        "绊线"
+      ]
+    },
+    "龙门架": {
+      "source_count": 192,
+      "en": "goal frame",
+      "definition": "计划旨在实现的状态，并且（当实现时）终止为实现该状态而进行的行为",
+      "synonyms": [
+        "目标",
+        "终点"
+      ],
+      "hypernym": [
+        "内容"
+      ],
+      "hyponyms": [
+        "最终目标",
+        "旨意",
+        "无目标",
+        "目的",
+        "意图",
+        "归宿",
+        "终点"
+      ]
+    },
+    "绳索器械": {
+      "source_count": 35,
+      "en": "rope apparatus",
+      "definition": "一条结实的绳子",
+      "synonyms": [
+        "绳子"
+      ],
+      "hypernym": [
+        "线"
+      ],
+      "hyponyms": [
+        "绞刑绳",
+        "升帆索",
+        "卷索",
+        "索线",
+        "细绳",
+        "波拉索",
+        "跳绳",
+        "延长绳",
+        "系索",
+        "缆绳",
+        "捆绑索",
+        "套索",
+        "支索",
+        "鱼叉索",
+        "电缆",
+        "引导绳",
+        "粗索",
+        "弹力绳",
+        "绊线"
+      ]
+    },
+    "绳索/龙门架": {
+      "source_count": 4,
+      "en": "rope/cable frame"
+    },
+    "滑雪机": {
+      "source_count": 3,
+      "en": "ski machine",
+      "definition": "用于成对在雪上滑行的狭窄木制、金属或塑料滑行器",
+      "synonyms": [
+        "滑雪板"
+      ],
+      "hypernym": [
+        "滑行器"
+      ],
+      "hyponyms": [
+        "水上滑板"
+      ]
+    },
+    "震动平台": {
+      "source_count": 6,
+      "en": "vibration platform",
+      "definition": "振动的行为",
+      "synonyms": [
+        "振动、颤抖、颤动"
+      ],
+      "hypernym": [
+        "运动"
+      ],
+      "hyponyms": [
+        "震颤"
+      ]
+    },
+    "哑铃": {
+      "source_count": 1024,
+      "en": "dumbbell",
+      "definition": "一种锻炼用的重量；两个由短杆连接并作为把手的球体",
+      "synonyms": [
+        "哑铃"
+      ],
+      "hypernym": [
+        "重量"
+      ]
+    },
+    "健身凳": {
+      "source_count": 45,
+      "en": "fitness bench",
+      "definition": "适合的品质",
+      "synonyms": [
+        "合适",
+        "恰当"
+      ],
+      "hypernym": [
+        "适宜性"
+      ],
+      "hyponyms": [
+        "资格",
+        "宜居性"
+      ],
+      "antonyms": [
+        "不适合"
+      ]
+    },
+    "药球": {
+      "source_count": 187,
+      "en": "medicine ball",
+      "definition": "用于体育训练的重球",
+      "synonyms": [
+        "药球"
+      ],
+      "hypernym": [
+        "球"
+      ]
+    },
+    "双壶铃": {
+      "source_count": 34,
+      "en": "Double Kettlebell",
+      "definition": "击出安打后，击球员安全停在二垒",
+      "synonyms": [
+        "二垒安打、两垒打、二垒打者、二垒安打"
+      ],
+      "hypernym": [
+        "安打"
+      ],
+      "hyponyms": [
+        "直线安打二垒"
+      ]
+    },
+    "壶铃": {
+      "source_count": 776,
+      "en": "kettlebell"
+    },
+    "训练箱": {
+      "source_count": 16,
+      "en": "training box",
+      "definition": "导致熟练行为的活动",
+      "synonyms": [
+        "训练",
+        "准备",
+        "培养"
+      ],
+      "hypernym": [
+        "活动"
+      ],
+      "hyponyms": [
+        "如厕训练",
+        "纪律",
+        "军事训练",
+        "上学",
+        "体育训练",
+        "操练",
+        "头脑风暴会议",
+        "锻炼",
+        "再培训"
+      ]
+    },
+    "木质长凳": {
+      "source_count": 16,
+      "en": "wooden bench"
+    },
+    "地雷架杠铃": {
+      "source_count": 50,
+      "en": "mine rack barbell",
+      "definition": "从地球中开采矿石和矿物的挖掘",
+      "synonyms": [
+        "矿井"
+      ],
+      "hypernym": [
+        "挖掘"
+      ],
+      "hyponyms": [
+        "盐矿",
+        "铜矿",
+        "硫矿",
+        "银矿",
+        "煤矿",
+        "露天矿",
+        "金矿"
+      ]
+    },
+    "地雷杠铃": {
+      "source_count": 4,
+      "en": "landmine barbell"
+    },
+    "地雷式杠铃": {
+      "source_count": 4,
+      "en": "landmine barbell"
+    },
+    "腹肌滚轮": {
+      "source_count": 2,
+      "en": "ab roller",
+      "definition": "文学与理学学士学位",
+      "synonyms": [
+        "文学士",
+        "BA",
+        "Artium Baccalaurens",
+        "AB"
+      ],
+      "hypernym": [
+        "学士学位"
+      ]
+    },
+    "BOSU半圆平衡球": {
+      "source_count": 11,
+      "en": "BOSU half-dome balance ball"
+    },
+    "重片": {
+      "source_count": 201,
+      "en": "weight plate",
+      "definition": "由于重力作用在质量上产生的垂直力",
+      "synonyms": [
+        "重量"
+      ],
+      "hypernym": [
+        "物理属性"
+      ],
+      "hyponyms": [
+        "投掷重量",
+        "固定重量",
+        "皮重",
+        "重量感",
+        "磅数",
+        "体重",
+        "轻量"
+      ]
+    },
+    "长凳": {
+      "source_count": 281,
+      "en": "bench",
+      "definition": "可供多人坐的长座位",
+      "synonyms": [
+        "长椅"
+      ],
+      "hypernym": [
+        "座位"
+      ],
+      "hyponyms": [
+        "窗边座位",
+        "祈祷凳",
+        "罚球区座位",
+        "沙发座位",
+        "公园长椅",
+        "长凳",
+        "教堂座位",
+        "平板长椅"
+      ]
+    },
+    "吊环": {
+      "source_count": 34,
+      "en": "rings",
+      "definition": "一对由金属制成的沉重圆环（通常覆盖皮革），通过绳子悬挂的体操器械；用于体操练习",
+      "synonyms": [
+        "吊环"
+      ],
+      "hypernym": [
+        "体操器械"
+      ]
+    },
+    "划船机": {
+      "source_count": 39,
+      "en": "rowing machine",
+      "definition": "作为一项运动的划船行为",
+      "synonyms": [
+        "划船",
+        "划"
+      ],
+      "hypernym": [
+        "运动"
+      ],
+      "hyponyms": [
+        "单桨划船",
+        "翻舟"
+      ]
+    },
+    "半圆波速球": {
+      "source_count": 1,
+      "en": "Half-Circle Wave Speed Ball",
+      "definition": "一个可分整体的两个相等部分之一",
+      "synonyms": [
+        "二分之一",
+        "半"
+      ],
+      "hypernym": [
+        "普通分数"
+      ],
+      "hyponyms": [
+        "百分之五十",
+        "部分"
+      ]
+    },
+    "平衡球": {
+      "source_count": 4,
+      "en": "balance ball",
+      "definition": "一种平衡状态",
+      "synonyms": [
+        "Ballance",
+        "平衡"
+      ],
+      "hypernym": [
+        "平衡"
+      ],
+      "hyponyms": [
+        "电解质平衡、氮平衡、张力"
+      ],
+      "antonyms": [
+        "不平衡"
+      ]
+    },
+    "史密斯架": {
+      "source_count": 35,
+      "en": "Smith machine",
+      "definition": "罗得西亚政治家，宣布津巴布韦脱离英国独立（1919年出生）",
+      "synonyms": [
+        "史密斯架",
+        "史密斯",
+        "伊恩·史密斯",
+        "伊恩·道格拉斯·史密斯"
+      ]
+    },
+    "杠铃杆": {
+      "source_count": 28,
+      "en": "barbell bar",
+      "definition": "两端装有重片的杠杆，用于举重",
+      "synonyms": [
+        "杠铃"
+      ],
+      "hypernym": [
+        "重量"
+      ]
+    },
+    "TRX训练带": {
+      "source_count": 25,
+      "en": "TRX training band"
+    },
+    "TRX吊带": {
+      "source_count": 48,
+      "en": "TRX straps"
+    },
+    "TRX悬吊训练系统": {
+      "source_count": 2,
+      "en": "TRX Suspension Training System"
+    },
+    "TRX悬挂训练器": {
+      "source_count": 9,
+      "en": "TRX Suspension Trainer"
+    },
+    "杠铃片": {
+      "source_count": 217,
+      "en": "barbell plate",
+      "definition": "两端装有重片的杠杆；用于举重",
+      "synonyms": [
+        "杠铃"
+      ],
+      "hypernym": [
+        "重量"
+      ]
+    },
+    "缆绳器械": {
+      "source_count": 2,
+      "en": "cable machine",
+      "definition": "发往国外的电报",
+      "synonyms": [
+        "电缆电报",
+        "电报",
+        "海外电报"
+      ],
+      "hypernym": [
+        "电报"
+      ]
+    },
+    "拉力器": {
+      "source_count": 24,
+      "en": "resistance band",
+      "definition": "反对你不赞成或不同意的事物的行为",
+      "synonyms": [
+        "抵抗",
+        "反对"
+      ],
+      "hypernym": [
+        "行为"
+      ],
+      "hyponyms": [
+        "封锁",
+        "反收购防御",
+        "反应"
+      ]
+    },
+    "引体向上杆": {
+      "source_count": 1,
+      "en": "pull-up bar",
+      "definition": "拉的行为；施加力量将某物向你或与你一起移动",
+      "synonyms": [
+        "拉",
+        "拉动"
+      ],
+      "hypernym": [
+        "推进"
+      ],
+      "hyponyms": [
+        "根除",
+        "拔",
+        "抽",
+        "拖",
+        "拉",
+        "牵引",
+        "拖曳"
+      ]
+    },
+    "单杠/横杆": {
+      "source_count": 1,
+      "en": "horizontal bar/pull-up bar",
+      "definition": "横向排列的事物",
+      "synonyms": [
+        "水平的"
+      ],
+      "hypernym": [
+        "方向"
+      ]
+    },
+    "杠铃/横杆": {
+      "source_count": 1,
+      "en": "barbell/crossbar"
+    },
+    "绳索拉力器械": {
+      "source_count": 1,
+      "en": "rope resistance machine",
+      "definition": "一条结实的绳子",
+      "synonyms": [
+        "绳子"
+      ],
+      "hypernym": [
+        "线"
+      ],
+      "hyponyms": [
+        "绞刑绳",
+        "升帆索",
+        "卷索",
+        "索线",
+        "细绳",
+        "波拉索",
+        "跳绳",
+        "延长绳",
+        "系绳",
+        "缆索",
+        "捆绑索",
+        "套索",
+        "支索",
+        "鱼叉索",
+        "电缆",
+        "引导绳",
+        "粗索",
+        "弹力绳",
+        "绊线"
+      ]
+    },
+    "绳索拉力器": {
+      "source_count": 8,
+      "en": "rope tensioner",
+      "definition": "一条粗线",
+      "synonyms": [
+        "绳子"
+      ],
+      "hypernym": [
+        "线"
+      ],
+      "hyponyms": [
+        "绞刑绳、吊绳、卷索、走钢丝绳、小绳、套索、跳绳、长延索、层、绳索、捆扎绳、套索、支索、鱼叉绳、缆绳、导绳、粗缆、蹦极绳、触发绳"
+      ]
+    },
+    "绳索交叉训练机": {
+      "source_count": 4,
+      "en": "rope crossover training machine",
+      "definition": "一条结实的绳子",
+      "synonyms": [
+        "绳子"
+      ],
+      "hypernym": [
+        "线"
+      ],
+      "hyponyms": [
+        "绞刑绳",
+        "升帆索",
+        "卷索",
+        "索线",
+        "细绳",
+        "波拉索",
+        "跳绳",
+        "延长绳",
+        "系索",
+        "缆绳",
+        "捆绑索",
+        "套索",
+        "支索",
+        "鱼叉索",
+        "电缆",
+        "引导绳",
+        "粗索",
+        "弹力绳",
+        "绊线"
+      ]
+    },
+    "划船杆": {
+      "source_count": 9,
+      "en": "rowing oar",
+      "definition": "作为一项运动的划船行为",
+      "synonyms": [
+        "划船",
+        "划"
+      ],
+      "hypernym": [
+        "运动"
+      ],
+      "hyponyms": [
+        "单桨划船",
+        "翻舟"
+      ]
+    },
+    "绳索训练器械": {
+      "source_count": 2,
+      "en": "rope training equipment",
+      "definition": "一条结实的绳子",
+      "synonyms": [
+        "绳子"
+      ],
+      "hypernym": [
+        "线"
+      ],
+      "hyponyms": [
+        "绞刑绳",
+        "升帆索",
+        "升降索",
+        "高空绳",
+        "小绳子",
+        "捕兽索",
+        "跳绳",
+        "延长绳",
+        "支索",
+        "绳索",
+        "捆绑绳",
+        "套索",
+        "支撑绳",
+        "鱼叉绳",
+        "电缆",
+        "引导绳",
+        "缆绳",
+        "弹力绳",
+        "绊绳"
+      ]
+    },
+    "绳索手柄": {
+      "source_count": 5,
+      "en": "rope handle",
+      "definition": "一条结实的绳子",
+      "synonyms": [
+        "绳子"
+      ],
+      "hypernym": [
+        "线"
+      ],
+      "hyponyms": [
+        "绞刑绳",
+        "升帆索",
+        "卷索",
+        "索线",
+        "细绳",
+        "波拉索",
+        "跳绳",
+        "延长绳",
+        "系索",
+        "缆绳",
+        "捆绑索",
+        "套索",
+        "支索",
+        "鱼叉索",
+        "电缆",
+        "引导绳",
+        "粗索",
+        "弹力绳",
+        "绊线"
+      ]
+    },
+    "拉力索机器": {
+      "source_count": 1,
+      "en": "resistance band machine",
+      "definition": "反对你不赞成或不同意的事物的行为",
+      "synonyms": [
+        "抵抗",
+        "反对"
+      ],
+      "hypernym": [
+        "行为"
+      ],
+      "hyponyms": [
+        "封锁",
+        "反收购防御",
+        "反应"
+      ]
+    },
+    "绳索机": {
+      "source_count": 2,
+      "en": "cable machine",
+      "definition": "发往国外的电报",
+      "synonyms": [
+        "有线电报",
+        "电报",
+        "海外电报"
+      ],
+      "hypernym": [
+        "电报"
+      ]
+    },
+    "拉力索": {
+      "source_count": 32,
+      "en": "resistance band",
+      "definition": "反对你不赞成或不同意的事物的行为",
+      "synonyms": [
+        "抵抗",
+        "反对"
+      ],
+      "hypernym": [
+        "行为"
+      ],
+      "hyponyms": [
+        "封锁",
+        "反收购防御",
+        "反应"
+      ]
+    },
+    "拉力索器械": {
+      "source_count": 9,
+      "en": "resistance band equipment",
+      "definition": "反对你不赞成或不同意的事物的行为",
+      "synonyms": [
+        "抵抗",
+        "反对"
+      ],
+      "hypernym": [
+        "行为"
+      ],
+      "hyponyms": [
+        "封锁",
+        "反收购防御",
+        "反应"
+      ]
+    },
+    "斜板": {
+      "source_count": 15,
+      "en": "incline board",
+      "definition": "一个高起的地质构造",
+      "synonyms": [
+        "坡",
+        "斜坡",
+        "侧面"
+      ],
+      "hypernym": [
+        "地质构造"
+      ],
+      "hyponyms": [
+        "峡谷侧",
+        "上升",
+        "山坡",
+        "岸",
+        "下降",
+        "山前平原",
+        "海岸",
+        "山坡",
+        "滑雪坡",
+        "峡壁",
+        "堤岸"
+      ]
+    },
+    "斜板凳": {
+      "source_count": 18,
+      "en": "Incline Bench",
+      "definition": "一个高起的地质构造",
+      "synonyms": [
+        "坡",
+        "斜坡",
+        "侧面"
+      ],
+      "hypernym": [
+        "地质构造"
+      ],
+      "hyponyms": [
+        "峡谷侧",
+        "上升",
+        "山坡",
+        "岸",
+        "下降",
+        "山前平原",
+        "海岸",
+        "山坡",
+        "滑雪坡",
+        "峡壁",
+        "堤岸"
+      ]
+    },
+    "牧师凳": {
+      "source_count": 2,
+      "en": "priest bench",
+      "definition": "基督教教会中的一位神职人员，有权执行或主持各种宗教仪式；属于圣职",
+      "synonyms": [
+        "牧师"
+      ],
+      "hypernym": [
+        "圣职",
+        "神职人员"
+      ],
+      "hyponyms": [
+        "告解神父、主持圣事的神父、牧师、教区牧师、教堂僧侣、主教、家庭神父、庙祭司、荣誉神父、女祭司、大祭司"
+      ]
+    },
+    "EZ杆": {
+      "source_count": 4,
+      "en": "EZ Bar"
+    },
+    "EZ杠铃": {
+      "source_count": 6,
+      "en": "EZ barbell"
+    },
+    "地雷管杠铃": {
+      "source_count": 53,
+      "en": "mine tube barbell",
+      "definition": "从地球中开采矿石和矿物的挖掘",
+      "synonyms": [
+        "矿井"
+      ],
+      "hypernym": [
+        "挖掘"
+      ],
+      "hyponyms": [
+        "盐矿",
+        "铜矿",
+        "硫矿",
+        "银矿",
+        "煤矿",
+        "露天矿",
+        "金矿"
+      ]
+    },
+    "地雷管": {
+      "source_count": 24,
+      "en": "mine tube",
+      "definition": "从中开采矿石和矿物的地面挖掘",
+      "synonyms": [
+        "矿"
+      ],
+      "hypernym": [
+        "挖掘"
+      ],
+      "hyponyms": [
+        "盐矿、铜矿、硫矿、银矿、煤矿、露天矿、金矿"
+      ]
+    },
+    "器械辅助引体向上机": {
+      "source_count": 16,
+      "en": "Assisted Pull-Up Machine"
+    },
+    "器械坐姿绳索划船": {
+      "source_count": 4,
+      "en": "Seated Cable Row"
+    },
+    "器械": {
+      "source_count": 21,
+      "en": "apparatus",
+      "definition": "设计用于执行特定功能的设备",
+      "synonyms": [
+        "器械",
+        "装置",
+        "设置"
+      ],
+      "hypernym": [
+        "设备"
+      ],
+      "hyponyms": [
+        "复印机",
+        "序列器",
+        "蒸馏器",
+        "热泵",
+        "级联液化器",
+        "摆",
+        "燃烧器",
+        "充气器",
+        "苏打水机",
+        "冷凝器",
+        "纯化器",
+        "信号机",
+        "基普装置",
+        "滴定器",
+        "滴液器",
+        "离心机",
+        "X射线机",
+        "电描仪",
+        "灯具",
+        "改质器",
+        "化学反应器",
+        "孵化器",
+        "电报机",
+        "核反应堆",
+        "日信号灯",
+        "光学工作台",
+        "发电机",
+        "潜水器"
+      ]
+    },
+    "高拉器械": {
+      "source_count": 3,
+      "en": "High Pull Machine",
+      "definition": "崇高的水平、位置或程度",
+      "synonyms": [
+        "高"
+      ],
+      "hypernym": [
+        "程度"
+      ],
+      "antonyms": [
+        "低"
+      ]
+    },
+    "直杆附件": {
+      "source_count": 17,
+      "en": "Straight Rod Attachment",
+      "definition": "异性恋者；性取向为异性的人",
+      "synonyms": [
+        "异性恋者",
+        "异性恋人",
+        "直男/直女",
+        "直的"
+      ],
+      "hypernym": [
+        "人"
+      ],
+      "hyponyms": [
+        "性交者"
+      ]
+    },
+    "直杆": {
+      "source_count": 7,
+      "en": "straight bar",
+      "definition": "异性恋者；性取向为异性的人",
+      "synonyms": [
+        "异性恋者",
+        "异性恋人",
+        "直男/直女",
+        "直的"
+      ],
+      "hypernym": [
+        "人"
+      ],
+      "hyponyms": [
+        "性交者"
+      ]
+    },
+    "把手": {
+      "source_count": 1,
+      "en": "handle",
+      "definition": "附着在物体上的部分，设计用于抓握以使用或移动该物体",
+      "synonyms": [
+        "手柄",
+        "握把",
+        "手握",
+        "把手"
+      ],
+      "hypernym": [
+        "附属物"
+      ],
+      "hyponyms": [
+        "锄头柄",
+        "耙柄",
+        "农作物",
+        "扫帚柄",
+        "斧柄",
+        "柄",
+        "枪托",
+        "枪托",
+        "圆头",
+        "球形把手",
+        "拖把柄",
+        "圆头",
+        "刀柄",
+        "平底锅柄"
+      ]
+    },
+    "体操环": {
+      "source_count": 4,
+      "en": "gymnastics rings",
+      "definition": "一种涉及锻炼以展示力量、平衡和敏捷性的运动",
+      "synonyms": [
+        "体操",
+        "体操练习"
+      ],
+      "hypernym": [
+        "运动"
+      ],
+      "hyponyms": [
+        "杂技"
+      ]
+    },
+    "平衡盘": {
+      "source_count": 3,
+      "en": "balance disc",
+      "definition": "一种平衡状态",
+      "synonyms": [
+        "平衡"
+      ],
+      "hypernym": [
+        "平衡"
+      ],
+      "hyponyms": [
+        "电解质平衡、氮平衡、张力"
+      ],
+      "antonyms": [
+        "不平衡"
+      ]
+    },
+    "TRX悬挂训练系统": {
+      "source_count": 13,
+      "en": "TRX Suspension Training System"
+    },
+    "龙门架及直杆附件": {
+      "source_count": 5,
+      "en": "goal frame and upright accessories",
+      "definition": "计划旨在实现的状态，并且（当实现时）终止为实现该状态而进行的行为",
+      "synonyms": [
+        "目标",
+        "终点"
+      ],
+      "hypernym": [
+        "内容"
+      ],
+      "hyponyms": [
+        "最终目标",
+        "旨意",
+        "无目标",
+        "目的",
+        "意图",
+        "归宿",
+        "终点"
+      ]
+    },
+    "阶梯": {
+      "source_count": 2,
+      "en": "ladder",
+      "definition": "由两个平行部件和横档组成的步骤；用于上下攀爬",
+      "synonyms": [
+        "阶梯教室",
+        "梯子"
+      ],
+      "hypernym": [
+        "楼梯"
+      ],
+      "hyponyms": [
+        "关节梯",
+        "伸缩梯",
+        "雅各布梯",
+        "船梯",
+        "台阶梯",
+        "绳梯",
+        "攀爬梯",
+        "猴梯"
+      ]
+    },
+    "小型按摩球": {
+      "source_count": 1,
+      "en": "small massage ball",
+      "definition": "背部的细长部分",
+      "synonyms": [
+        "小的"
+      ],
+      "hypernym": [
+        "身体部位"
+      ]
+    },
+    "网球": {
+      "source_count": 3,
+      "en": "tennis",
+      "definition": "一种用球拍进行的游戏，由两名或四名玩家在分隔球场的网的两侧来回击球",
+      "synonyms": [
+        "网球",
+        "草地网球"
+      ],
+      "hypernym": [
+        "球场游戏"
+      ],
+      "hyponyms": [
+        "双打",
+        "职业网球",
+        "单打",
+        "皇家网球"
+      ]
+    },
+    "长杆": {
+      "source_count": 37,
+      "en": "long pole",
+      "synonyms": [
+        "长杆兰",
+        "山荸荠",
+        "苇草兰",
+        "竹叶兰"
+      ]
+    },
+    "踏板": {
+      "source_count": 12,
+      "en": "pedal",
+      "definition": "持续的低音",
+      "synonyms": [
+        "踏板音",
+        "踏板"
+      ],
+      "hypernym": [
+        "音符"
+      ]
+    },
+    "黄色锥桶": {
+      "source_count": 1,
+      "en": "yellow cone",
+      "definition": "黄色或颜料；类似向日葵或成熟柠檬色调的色彩",
+      "synonyms": [
+        "黄色",
+        "黄色度"
+      ],
+      "hypernym": [
+        "色彩"
+      ],
+      "hyponyms": [
+        "偏绿的黄",
+        "偏褐的黄",
+        "橙黄色",
+        "藤黄",
+        "老金色",
+        "浅黄色",
+        "琥珀色",
+        "金丝雀黄"
+      ]
+    },
+    "红色箱子": {
+      "source_count": 1,
+      "en": "red box",
+      "definition": "红色或颜料；类似血色的色彩",
+      "synonyms": [
+        "红色",
+        "红"
+      ],
+      "hypernym": [
+        "彩色"
+      ],
+      "hyponyms": [
+        "鲜红色",
+        "血红色",
+        "铬红",
+        "土耳其红",
+        "紫红色",
+        "深红色",
+        "樱桃红",
+        "猩红色",
+        "绯红"
+      ]
+    },
+    "水平坐姿腿举机": {
+      "source_count": 3,
+      "en": "Seated Leg Press Machine"
+    },
+    "水平腿举机": {
+      "source_count": 1,
+      "en": "Horizontal Leg Press Machine",
+      "definition": "横向排列的事物",
+      "synonyms": [
+        "水平的"
+      ],
+      "hypernym": [
+        "方向"
+      ]
+    }
+  }
+}
