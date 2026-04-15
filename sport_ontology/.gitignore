@@ -1,0 +1,11 @@
+# 忽略此目录下的一切
+*
+
+# 只保留本文件自身
+!.gitignore
+
+# 只追踪 .claude 和 .obsidian
+!.claude
+!.claude/**
+!.obsidian
+!.obsidian/**
