@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "86b5fcc9f4577e51",
+        "id": "9360c1be846dae04",
         "type": "tabs",
         "children": [
           {
-            "id": "c1e8f97b5b389162",
+            "id": "c52ca3dff0fdf777",
             "type": "leaf",
             "state": {
               "type": "graph",
@@ -190,8 +190,15 @@
       "claudian:Open Claudian": false
     }
   },
-  "active": "c1e8f97b5b389162",
+  "active": "c52ca3dff0fdf777",
   "lastOpenFiles": [
+    "exercise/仰卧坐起.md",
+    "exercise/不稳定平面提拉.md",
+    "exercise/4字拉伸.md",
+    "exercise/深蹲.md",
+    "force_part/三头肌.md",
+    "camera_view/正面视角.md",
+    "camera_view/侧前视角.md",
     "camera_view/正面.md",
     "camera_view/侧面.md",
     "未命名 1.canvas",
@@ -222,7 +229,6 @@
     "wiki/entities/Female.md",
     "wiki/summaries/Dataset Overview.md",
     "wiki/entities/Male.md",
-    "wiki/entities/Abdominals.md",
-    "Welcome.md"
+    "wiki/entities/Abdominals.md"
   ]
 }

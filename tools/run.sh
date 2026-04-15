@@ -12,5 +12,8 @@ source /home/baidu/envs/mineru/bin/activate
 # # 4. 节点信息收集
 # python3 4_fetch_vocab_info.py
 
-# 5. LLM
-python3 5_enrich_with_llm.py
+# # 5. LLM
+# python3 5_enrich_with_llm.py
+
+# 6. 图谱构建[可视化]
+python3 6_build_wiki.py
