@@ -1,5 +1,9 @@
 source /home/baidu/envs/mineru/bin/activate
 # source /home/baidu/envs/swift/bin/activate
+
+# 视频处理预热
+# python video_frames.py --prebuild [--max-side 720]
+
 # # 1. translate_wiki
 # python3 1_translate_wiki.py
 
