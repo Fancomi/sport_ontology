@@ -3,11 +3,10 @@
 
 工作流:
   1. 读取 slot_enriched.json（fetch_vocab_info.py 的输出）
-  2. 对每个节点，发送一次 LLM 调用：
-     - 验证现有属性是否符合体育运动/健身场景
-     - 纠正偏题内容（如 hypernym=动物、definition=语法格）
-     - 对空缺属性，联想 ≤5 条合理候选
-  3. 合并结果回节点，优先保留已有人工/程序填充内容
+  2. 对每个节点，发送两次 LLM 调用：
+     第一次（丰富）：验证现有属性是否符合体育运动/健身场景，纠正偏题内容，补充空缺属性
+     第二次（校验）：对第一次结果做严格二次审查，仅允许微小改动（删除英文/非健身内容）
+  3. 合并结果回节点，保留 source_count/en 等元字段
   4. 每词处理后立即落盘（增量，支持中断续跑）
 
 输入: slot_enriched.json
@@ -67,7 +66,8 @@ SLOT_EXAMPLES = {
         },
         {
             "word": "女性",
-            "current": {"en": "female", "hypernym": ["动物"], "antonyms": ["雄性"]},
+            "current": {"en": "female", "hypernym": ["动物"], "antonyms": ["雄性"],
+                        "hyponyms": ["雌性哺乳动物", "母鸡", "小母马"]},
             "expected": {
                 "definition": "健身视频中的女性被摄者",
                 "synonyms": ["女", "女子"],
@@ -95,7 +95,8 @@ SLOT_EXAMPLES = {
         },
         {
             "word": "侧面",
-            "current": {"en": "side view", "definition": "侧面或侧翼"},
+            "current": {"en": "side view", "definition": "侧面或侧翼",
+                        "hyponyms": ["profile", "left side", "右侧面"]},
             "expected": {
                 "definition": "摄像机位于被摄者身体左侧或右侧的拍摄视角",
                 "synonyms": ["侧视角", "侧视图"],
@@ -114,7 +115,7 @@ SLOT_EXAMPLES = {
                         "hypernym": ["努力"]},
             "expected": {
                 "definition": "一种两端固定重块、用于单手或双手力量训练的自由重量器械",
-                "synonyms": ["Dumbbell", "手铃"],
+                "synonyms": ["手铃"],
                 "hypernym": ["自由重量器械"],
                 "hyponyms": ["六角哑铃", "可调节哑铃"],
                 "antonyms": [],
@@ -127,7 +128,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "barbell", "hypernym": ["努力"]},
             "expected": {
                 "definition": "一根长杆两端加装可调节重量片的器械，常用于深蹲、硬拉、卧推",
-                "synonyms": ["Barbell"],
+                "synonyms": [],
                 "hypernym": ["自由重量器械"],
                 "hyponyms": ["奥杠铃", "EZ杠铃"],
                 "antonyms": [],
@@ -170,7 +171,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "overhand grip"},
             "expected": {
                 "definition": "手掌朝下（旋前位）握持器械的方式，也称旋前握",
-                "synonyms": ["旋前握", "overhand grip"],
+                "synonyms": ["旋前握"],
                 "hypernym": ["握法"],
                 "hyponyms": [],
                 "antonyms": ["反握"],
@@ -183,7 +184,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "underhand grip"},
             "expected": {
                 "definition": "手掌朝上（旋后位）握持器械的方式，也称旋后握",
-                "synonyms": ["旋后握", "underhand grip"],
+                "synonyms": ["旋后握"],
                 "hypernym": ["握法"],
                 "hyponyms": [],
                 "antonyms": ["正握"],
@@ -226,7 +227,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "concentric contraction"},
             "expected": {
                 "definition": "肌肉缩短产生力量的收缩阶段，如弯举上升阶段肱二头肌收缩",
-                "synonyms": ["向心阶段", "concentric phase"],
+                "synonyms": ["向心阶段"],
                 "hypernym": ["肌肉收缩类型"],
                 "hyponyms": [],
                 "antonyms": ["离心收缩"],
@@ -239,7 +240,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "eccentric contraction"},
             "expected": {
                 "definition": "肌肉拉长同时产生张力的减速阶段，如弯举下降阶段控制重量",
-                "synonyms": ["离心阶段", "eccentric phase"],
+                "synonyms": ["离心阶段"],
                 "hypernym": ["肌肉收缩类型"],
                 "hyponyms": [],
                 "antonyms": ["向心收缩"],
@@ -254,7 +255,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "deadlift"},
             "expected": {
                 "definition": "从地面将杠铃/哑铃拉起至髋部伸展的复合力量动作，主要发力部位为臀腿和背部",
-                "synonyms": ["Deadlift"],
+                "synonyms": [],
                 "hypernym": ["复合力量训练动作"],
                 "hyponyms": ["罗马尼亚硬拉", "直腿硬拉", "相扑硬拉"],
                 "antonyms": [],
@@ -267,7 +268,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "curl"},
             "expected": {
                 "definition": "通过肘关节屈曲将重量向上弯举的孤立动作，主要针对肱二头肌",
-                "synonyms": ["curl"],
+                "synonyms": [],
                 "hypernym": ["孤立训练动作"],
                 "hyponyms": ["哑铃弯举", "杠铃弯举", "锤式弯举"],
                 "antonyms": [],
@@ -282,7 +283,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "biceps", "hypernym": ["骨骼肌"]},
             "expected": {
                 "definition": "上臂前侧双头肌肉，主要功能为肘关节屈曲和前臂旋后，弯举动作的主发力肌",
-                "synonyms": ["二头肌", "biceps"],
+                "synonyms": ["二头肌"],
                 "hypernym": ["上臂肌群"],
                 "hyponyms": ["肱二头肌长头", "肱二头肌短头"],
                 "antonyms": [],
@@ -295,7 +296,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "latissimus dorsi", "hypernym": ["骨骼肌"]},
             "expected": {
                 "definition": "背部最宽大的扁平肌，负责肩关节内收和伸展，划船/下拉类动作的主发力肌",
-                "synonyms": ["背阔", "latissimus dorsi"],
+                "synonyms": ["背阔"],
                 "hypernym": ["背部肌群"],
                 "hyponyms": [],
                 "antonyms": [],
@@ -310,7 +311,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "pull"},
             "expected": {
                 "definition": "将重量或阻力向自身方向拉动的发力方式，如划船、弯举",
-                "synonyms": ["拉动", "pull"],
+                "synonyms": ["拉动"],
                 "hypernym": ["发力方式"],
                 "hyponyms": [],
                 "antonyms": ["推"],
@@ -323,7 +324,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "push"},
             "expected": {
                 "definition": "将重量或阻力向外推离身体的发力方式，如卧推、肩推",
-                "synonyms": ["推动", "push"],
+                "synonyms": ["推动"],
                 "hypernym": ["发力方式"],
                 "hyponyms": [],
                 "antonyms": ["拉"],
@@ -338,7 +339,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "bilateral"},
             "expected": {
                 "definition": "双侧同时发力的训练方式，如双手同时进行的杠铃弯举",
-                "synonyms": ["双边", "bilateral"],
+                "synonyms": ["双边"],
                 "hypernym": ["侧向性"],
                 "hyponyms": [],
                 "antonyms": ["单侧"],
@@ -351,7 +352,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "unilateral"},
             "expected": {
                 "definition": "单侧肢体独立发力的训练方式，如单臂哑铃划船",
-                "synonyms": ["单边", "unilateral"],
+                "synonyms": ["单边"],
                 "hypernym": ["侧向性"],
                 "hyponyms": ["左侧", "右侧"],
                 "antonyms": ["双侧"],
@@ -392,18 +393,28 @@ def _build_system() -> str:
 
 # 各属性说明
 - definition: 该节点在健身场景下的简短定义（1-2句，≤60字）
-- synonyms: 同义词/别称（中文优先，可含英文，≤5条）
+- synonyms: 同义词/别称（**纯中文表达**，≤5条）
 - hypernym: 上位概念（如"肱二头肌"→"上臂肌群"，≤3条）
 - hyponyms: 下位概念（如"硬拉"→"罗马尼亚硬拉"，≤5条）
 - antonyms: 反义词（如"正握"→"反握"，≤3条）
 - confusable_siblings: 容易混淆的兄弟节点（同槽位、相近但有区别，≤5条）
 - incompatibility: 语义互斥（不可同时成立，≤5条）
 
+# 语言规范
+- `en` 字段是英文译名，其值可以是英文
+- **其余所有输出字段**（definition、synonyms、hypernym、hyponyms、antonyms、confusable_siblings、incompatibility）的值必须使用**中文表达**，不得混入英文单词
+
 # 验证规则
-1. 如果 current 中的属性**偏离健身场景**（如 hypernym=动物、definition=语法格），必须纠正
-2. 如果属性为空或明显不足，在健身场景范围内补充合理候选（≤5条）
-3. 如果 current 中的属性**准确且符合场景**，直接保留，无需修改
-4. 返回的 JSON 必须包含所有7个属性字段（即使为空列表）
+1. 如果 current 中的属性**偏离健身场景**（如 hypernym=动物/植物、definition=语法格、hyponyms=动物名），**必须完全替换**，不得保留任何非健身内容条目
+2. 列表字段（synonyms/hypernym/hyponyms/antonyms/confusable_siblings/incompatibility）中，每个条目都必须同时满足：
+   a. 与该节点在同一槽位（slot）语义体系内直接相关
+   b. 纯中文表达（**禁止**任何英文单词，含缩写）
+   c. 与健身/体育/解剖学场景直接相关
+   不符合任一条件的条目一律**删除**，不得保留
+3. hyponyms 必须是该节点在**同槽位**下的下位变体（如"硬拉"的 hyponyms 只能是硬拉的变体动作，不能是其他动作或无关概念）
+4. 如果某属性无合法健身内容可填，使用空列表 []，不得硬凑无关内容
+5. 如果属性为空或明显不足，在健身场景范围内补充合理候选（≤5条）
+6. 返回的 JSON 必须包含所有7个属性字段（即使为空列表）
 """
 
 
@@ -460,6 +471,64 @@ def _parse_json(text: str) -> Optional[dict]:
 def enrich_node(slot: str, word: str, current: dict, client: LLMClient) -> Optional[dict]:
     system = _build_system()
     user   = _build_user(slot, word, current)
+    result = client.chat([
+        {"role": "system", "content": system},
+        {"role": "user",   "content": user},
+    ])
+    if not result:
+        return None
+    return _parse_json(result)
+
+
+# ── 二次校验 Prompt ───────────────────────────────────────────────────────────
+
+def _build_verify_system() -> str:
+    return """\
+你是运动健身本体质量审核员。你将收到一个本体节点的【草稿属性】，需执行严格的二次校验。
+
+# 校验职责（只修正违规项，不得无故改写）
+1. **语言违规**：若任何列表字段（synonyms/hypernym/hyponyms/antonyms/confusable_siblings/incompatibility）
+   中存在英文单词、拼音或中英混合词，将该条目从列表中删除
+2. **场景违规**：若任何字段的内容与体育运动/健身/解剖学场景无关（如动物名称、语法术语、地理名词、
+   日常生活概念等），将该条目删除；若 definition 包含无关内容，重新撰写（≤60字，纯健身场景）
+3. **逻辑违规**：
+   - hyponyms 中若有不属于该节点在同槽位下的下位概念，删除
+   - hypernym 中若有不合理的上位词（如槽位为 gender 却写 hypernym=动物），删除或替换
+
+# 改动原则
+- **最小改动**：不违规的字段和条目原样保留，不得"顺便"改写或扩充
+- 禁止引入新的英文单词
+- 禁止添加健身场景外的概念
+- 返回完整的7字段 JSON，不含任何说明文字
+"""
+
+
+def _build_verify_user(slot: str, word: str, draft: dict) -> str:
+    slot_desc = SLOT_DESC.get(slot, slot)
+    return f"""\
+# 待审核节点
+
+slot={slot}（{slot_desc}），word="{word}"
+
+【草稿属性】:
+{json.dumps(draft, ensure_ascii=False, indent=2)}
+
+请执行二次校验，仅修正违规项，输出校验后的 JSON：
+{{
+  "definition": "...",
+  "synonyms": [...],
+  "hypernym": [...],
+  "hyponyms": [...],
+  "antonyms": [...],
+  "confusable_siblings": [...],
+  "incompatibility": [...]
+}}"""
+
+
+def verify_node(slot: str, word: str, draft: dict, client: LLMClient) -> Optional[dict]:
+    """对第一次 LLM 结果进行二次校验，仅允许微小修正。"""
+    system = _build_verify_system()
+    user   = _build_verify_user(slot, word, draft)
     result = client.chat([
         {"role": "system", "content": system},
         {"role": "user",   "content": user},
@@ -538,17 +607,31 @@ def main() -> None:
                      if args.force or w not in out_slot}
         print(f"\n[{slot}] 共 {len(slot_data)} 词，待处理 {len(pending)} 个")
 
+        _ont_keys = ("definition", "synonyms", "hypernym", "hyponyms",
+                     "antonyms", "confusable_siblings", "incompatibility")
+
         for i, (word, current) in enumerate(pending.items(), 1):
             print(f"  {i}/{len(pending)} {word} ...", end=" ", flush=True)
             try:
+                # 第一次调用：丰富/纠正
                 llm_result = enrich_node(slot, word, current, client)
-                if llm_result:
-                    out_slot[word] = merge_node(current, llm_result)
-                    print(f"✓  def={out_slot[word].get('definition','')[:30]}...")
-                else:
-                    # LLM 失败：原样保留
+                if not llm_result:
                     out_slot[word] = current
-                    print("✗ LLM无结果，原样保留")
+                    print("✗ 第一次调用无结果，原样保留")
+                else:
+                    draft = merge_node(current, llm_result)
+
+                    # 第二次调用：校验
+                    draft_ont = {k: draft[k] for k in _ont_keys if k in draft}
+                    verified  = verify_node(slot, word, draft_ont, client)
+                    if verified:
+                        for k, v in verified.items():
+                            draft[k] = v
+                        print(f"✓✓ def={draft.get('definition','')[:30]}...")
+                    else:
+                        print(f"✓? def={draft.get('definition','')[:30]}... (校验无结果，保留第一次)")
+
+                    out_slot[word] = draft
             except Exception as e:
                 out_slot[word] = current
                 print(f"✗  {e}，原样保留")

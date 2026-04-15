@@ -8,9 +8,19 @@
       "Glob(**)",
       "WebFetch",
       "MCP",
-      "WebFetch(domain:*)",
       "WebSearch",
-      "Bash(python3:*)"
+      "WebFetch(domain:*)",
+      "Bash(python3:*)",
+      "Bash(pdftotext:*)",
+      "Bash(python:*)",
+      "Bash(java:*)",
+      "Bash(ls:*)",
+      "Bash(pgrep:*)",
+      "Bash(curl:*)",
+      "Bash(pip show:*)",
+      "Bash(which node:*)",
+      "Bash(cd:*)",
+      "Bash(git:*)"
     ]
   }
 }

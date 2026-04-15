@@ -11,9 +11,9 @@
 
 import argparse, json, re, time, warnings
 from pathlib import Path
-from typing import Optional
 
-import opencc, requests, translators as ts
+import argostranslate.package, argostranslate.translate
+import opencc, requests
 from nltk.corpus import wordnet as wn
 
 warnings.filterwarnings("ignore")
@@ -33,7 +33,63 @@ SLOTS = (
 )
 
 t2s = opencc.OpenCC("t2s.json")
-_RE_BRACKET = re.compile(r"\[([^\]]*)\]")
+_RE_SEP = re.compile(r"[：:,，]")
+
+# ── 槽位专属翻译提示词 ─────────────────────────────────────────────────────────
+# 通用场景前缀 + 槽位上下文 + 待译词（括号用于提取）
+_CTX_PREFIX = {
+    "zh2en": "运动健身场景，{slot_ctx}：{word}",
+    "en2zh": "In fitness/exercise context, {slot_ctx}: {word}",
+}
+_SLOT_CONTEXT: dict[str, dict[str, str]] = {
+    "gender":            {"zh2en": "运动员性别，",          "en2zh": "athlete gender, "},
+    "camera_view":       {"zh2en": "摄像机视角，",          "en2zh": "camera angle, "},
+    "equipment":         {"zh2en": "健身器械，",            "en2zh": "fitness equipment, "},
+    "contact_part":      {"zh2en": "身体接触部位，",         "en2zh": "body contact part, "},
+    "contact_type":      {"zh2en": "器械握法或接触方式，",   "en2zh": "grip or contact type, "},
+    "posture_alignment": {"zh2en": "运动姿态对齐，",         "en2zh": "posture alignment, "},
+    "trajectory":        {"zh2en": "动作运动轨迹，",         "en2zh": "movement trajectory, "},
+    "exercise":          {"zh2en": "健身动作名称，",         "en2zh": "exercise name, "},
+    "force_part":        {"zh2en": "肌肉或发力部位，",       "en2zh": "muscle or force part, "},
+    "force_type":        {"zh2en": "发力方式，",            "en2zh": "force type, "},
+    "laterality":        {"zh2en": "身体解剖侧别，",         "en2zh": "body laterality, "},
+}
+_DEFAULT_CONTEXT = {"zh2en": "运动术语，", "en2zh": "sport term, "}
+
+# ── 翻译单例 ──────────────────────────────────────────────────────────────────
+_translators: dict = {}
+
+
+def _ensure_pkg(fc: str, tc: str) -> None:
+    if argostranslate.translate.get_translation_from_codes(fc, tc):
+        return
+    argostranslate.package.update_package_index()
+    pkgs = argostranslate.package.get_available_packages()
+    pkg  = next((p for p in pkgs if p.from_code == fc and p.to_code == tc), None)
+    if pkg:
+        argostranslate.package.install_from_path(pkg.download())
+
+
+def _get_translator(fc: str, tc: str):
+    if (fc, tc) not in _translators:
+        _ensure_pkg(fc, tc)
+        _translators[(fc, tc)] = argostranslate.translate.get_translation_from_codes(fc, tc)
+    return _translators[(fc, tc)]
+
+
+def _translate(text: str, fc: str, tc: str) -> str:
+    t = _get_translator(fc, tc)
+    return t.translate(text).strip() if t else ""
+
+
+def _translate_term(word: str, slot: str, direction: str) -> str:
+    """带通用场景前缀+槽位上下文翻译短术语，取逗号/冒号切分后末段并去尾部句号。"""
+    fc, tc   = ("zh", "en") if direction == "zh2en" else ("en", "zh")
+    slot_ctx = _SLOT_CONTEXT.get(slot, _DEFAULT_CONTEXT)[direction]
+    prompt   = _CTX_PREFIX[direction].format(slot_ctx=slot_ctx, word=word)
+    result   = _translate(prompt, fc, tc)
+    parts = [p.strip().rstrip(".。") for p in _RE_SEP.split(result) if p.strip()]
+    return parts[-1] if parts else result
 
 
 # ── Wikidata ──────────────────────────────────────────────────────────────────
@@ -84,10 +140,12 @@ def wikidata_lookup(word: str) -> dict:
 def wordnet_lookup(en: str) -> dict:
     """返回 {definition, synonyms, hypernym, hyponyms, antonyms}，未命中返回 {}"""
     key = en.lower().replace(" ", "_").replace("-", "_")
-    # 依次尝试: 全名 → 去 _muscle/_exercise 后缀 → 首词
-    candidates = [key,
-                  re.sub(r"_(muscle|exercise|movement)$", "", key),
-                  key.split("_")[0]]
+    # 依次尝试: 全名 → 去 _muscle/_exercise 后缀 → morphy 形态还原
+    candidates = list(dict.fromkeys(filter(None, [
+        key,
+        re.sub(r"_(muscle|exercise|movement)$", "", key),
+        wn.morphy(key, pos=wn.NOUN),
+    ])))
     synsets = next((wn.synsets(c, pos=wn.NOUN) for c in candidates
                     if wn.synsets(c, pos=wn.NOUN)), [])
     if not synsets:
@@ -107,36 +165,27 @@ def wordnet_lookup(en: str) -> dict:
 
 # ── 翻译 ──────────────────────────────────────────────────────────────────────
 def zh_to_en(word: str, slot: str) -> str:
-    """带槽位上下文的中→英翻译，避免歧义匹配。"""
     try:
-        result = ts.translate_text(f"this is a word of {slot} in sport: [{word}]", translator="bing",
-                                   from_language="zh", to_language="en")
-        print(result)
-        m = _RE_BRACKET.search(result)
-        return m.group(1).strip() if m else ""
+        return _translate_term(word, slot, "zh2en")
     except Exception:
         return ""
 
 
-def translate_fields(fields: dict) -> dict:
-    """一次调用翻译所有英文字段，按括号位置解析。
-    fields: {key: str | list[str]}  →  {key: str | list[str]}（中文）
+def translate_fields(fields: dict, slot: str = "") -> dict:
+    """将 WordNet 英文字段逐项翻译为中文。
+    definition 整句直译；其余列表/字符串字段走槽位上下文术语翻译。
     """
-    parts = [(k, isinstance(v, list), v if isinstance(v, str) else ", ".join(v))
-             for k, v in fields.items() if v]
-    if not parts:
-        return {}
-    prompt = " | ".join(f"{k}: [{text}]" for k, _, text in parts)
-    try:
-        translated = ts.translate_text(prompt, translator="bing",
-                                       from_language="en", to_language="zh")
-    except Exception:
-        return {}
-    brackets = _RE_BRACKET.findall(translated)
-    return {
-        k: ([v.strip() for v in re.split(r"[,，]", b) if v.strip()] if is_list else b.strip())
-        for (k, is_list, _), b in zip(parts, brackets)
-    }
+    result = {}
+    for k, v in fields.items():
+        if not v:
+            continue
+        if k == "definition":
+            result[k] = _translate(v, "en", "zh")
+        elif isinstance(v, list):
+            result[k] = [_translate_term(item, slot, "en2zh") for item in v if item]
+        else:
+            result[k] = _translate_term(v, slot, "en2zh")
+    return result
 
 
 # ── 单词处理 ──────────────────────────────────────────────────────────────────
@@ -148,21 +197,21 @@ def process_word(word: str, count: int, slot: str) -> dict:
     if en:
         node["en"] = en
 
-    # Wikidata：仅取 zh别名 + P2329协同肌（不用其 en_label）
-    wd = wikidata_lookup(word)
-    zh_aliases = wd.get("zh_aliases", [])
-    if wd.get("confusable_siblings"):
-        node["confusable_siblings"] = wd["confusable_siblings"]
+    # # Wikidata：仅取 zh别名 + P2329协同肌（不用其 en_label）
+    # wd = wikidata_lookup(word)
+    # zh_aliases = wd.get("zh_aliases", [])
+    # if wd.get("confusable_siblings"):
+    #     node["confusable_siblings"] = wd["confusable_siblings"]
 
     # WordNet
     wn_data = wordnet_lookup(en) if en else {}
     if wn_data:
-        translated = translate_fields({k: v for k, v in wn_data.items() if v})
+        translated = translate_fields({k: v for k, v in wn_data.items() if v}, slot)
         node.update(translated)
 
-    # 合并 Wikidata zh别名 到 synonyms，去重
-    if zh_aliases:
-        node["synonyms"] = list(dict.fromkeys(zh_aliases + node.get("synonyms", [])))
+    # # 合并 Wikidata zh别名 到 synonyms，去重
+    # if zh_aliases:
+    #     node["synonyms"] = list(dict.fromkeys(zh_aliases + node.get("synonyms", [])))
 
     return node
 
@@ -196,7 +245,11 @@ def main():
                 slot_data[word] = node
                 OUT_PATH.write_text(
                     json.dumps(existing, ensure_ascii=False, indent=2), "utf-8")
-                print(f"✓  en={node.get('en', '-')}")
+                wn_ok   = "✓" if "definition" in node else "✗"
+                syn_cnt = len(node.get("synonyms", []))
+                hyp_cnt = len(node.get("hypernym", []))
+                print(f"✓  en={node.get('en', '-')!s:<30}"
+                      f"  wn:{wn_ok} syn={syn_cnt} hyp={hyp_cnt}")
             except Exception as e:
                 print(f"✗  {e}")
 
