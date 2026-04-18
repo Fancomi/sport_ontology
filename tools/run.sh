@@ -1,8 +1,11 @@
 source /home/baidu/envs/mineru/bin/activate
 # source /home/baidu/envs/swift/bin/activate
 
-# 视频处理预热
-# python video_frames.py --prebuild [--max-side 720]
+# 视频描述 / 处理预热
+# python video_frames.py --max-side 768
+# python video_frames.py --max-side 336
+# python video_frames.py --prebuild --max-side 768
+# python video_frames.py --prebuild --max-side 336
 
 # # 1. translate_wiki
 # python3 1_translate_wiki.py
@@ -17,7 +20,8 @@ source /home/baidu/envs/mineru/bin/activate
 # python3 4_fetch_vocab_info.py
 
 # 5. LLM
-python3 5_enrich_with_llm.py
+# python3 5_enrich_with_llm.py # 增强图谱
+python3 5_1_clean_ontology.py # 进一步删减
 
 # # 6. 图谱构建[可视化]
 # python3 6_build_wiki.py

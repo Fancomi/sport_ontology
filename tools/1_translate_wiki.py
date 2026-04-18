@@ -63,6 +63,33 @@ def _parse_json(text: str) -> Optional[dict]:
     except json.JSONDecodeError:
         return None
 
+# ── Key normalization（兼容历史写错的键名） ────────────────────────────────────
+_KEY_ALIASES: Dict[str, str] = {
+    'exercise_name': 'exercise',
+    'muscle_name':   'muscle',
+    'Muscle':        'Muscles',
+}
+
+def _normalize_keys(d: dict) -> dict:
+    return {_KEY_ALIASES.get(k, k): v for k, v in d.items()}
+
+# ── 完整性检查 ────────────────────────────────────────────────────────────────
+_RE_ASCII_ONLY = re.compile(r'^[\x00-\x7F]+$')
+_TRANSLATE_FIELDS = ('exercise', 'category', 'muscle', 'equipment',
+                     'Difficulty', 'Force', 'Grips', 'Mechanic')
+
+def _is_complete(cn_path: Path) -> bool:
+    """所有应翻译字段均已翻译（含中文字符）则返回 True。"""
+    try:
+        d = json.loads(cn_path.read_text('utf-8'))
+    except Exception:
+        return False
+    for field in _TRANSLATE_FIELDS:
+        val = d.get(field)
+        if isinstance(val, str) and _RE_ASCII_ONLY.match(val):
+            return False
+    return True
+
 # ── 翻译核心 ──────────────────────────────────────────────────────────────────
 def _apply(orig: dict, trans: dict) -> dict:
     cn = copy.deepcopy(orig)
@@ -79,7 +106,7 @@ def _apply(orig: dict, trans: dict) -> dict:
 
 
 def translate_one(path: Path, system: str, client: LLMClient) -> bool:
-    orig   = json.loads(path.read_text('utf-8'))
+    orig   = _normalize_keys(json.loads(path.read_text('utf-8')))
     result = client.chat(messages=[{'role': 'system', 'content': system},
                                    {'role': 'user',   'content': json.dumps(orig, ensure_ascii=False)}])
     if not result:
@@ -112,9 +139,13 @@ def main() -> None:
     args = parser.parse_args()
 
     all_files = sorted(DATA_ROOT.rglob('metadata.json'))
-    pending   = [f for f in all_files if not (f.parent / 'metadata_cn.json').exists()]
+    no_cn     = [f for f in all_files if not (f.parent / 'metadata_cn.json').exists()]
+    incomplete = [f for f in all_files
+                  if (f.parent / 'metadata_cn.json').exists()
+                  and not _is_complete(f.parent / 'metadata_cn.json')]
+    pending   = no_cn + incomplete
     total     = len(pending)
-    print(f'总计 {len(all_files)} 个，待翻译 {total} 个，跳过 {len(all_files) - total} 个')
+    print(f'总计 {len(all_files)} 个  |  无 cn 文件: {len(no_cn)}  |  翻译不完整: {len(incomplete)}  |  待处理: {total}')
     if not total:
         print('全部已完成')
         return
