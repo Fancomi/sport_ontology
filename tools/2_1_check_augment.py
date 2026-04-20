@@ -63,11 +63,11 @@ posture_alignment, trajectory, exercise, force_part, force_type, laterality
 【检查项】
 A. 【硬性】槽位键必须在上述11个中，不得有拼写错误（如 posture_part、exercises）或自创键。
 B. 【硬性】槽位值必须为中文，不得为英文或梵文。
-C. 【软性参考】metadata_cn 仅作辅助参考，不作强制对齐标准。category_3_slotted_description 由 VLM 结合视频生成，视频内容优先；metadata_cn 存在标注不精确（如 equipment 写成动作类型、描述含指导性台词）属正常情况，不应以此判定描述错误。
+C. 【软性】metadata_cn 仅作辅助参考，不作强制对齐标准。category_3_slotted_description 由 VLM 结合视频生成，视频内容优先；metadata_cn 存在标注不精确（如 equipment 写成动作类型、描述含指导性台词）属正常情况，不应以此判定描述错误。
 D. 【硬性】串位检查：某槽的值不应明显属于另一槽的语义（如 [equipment:推] 或 [force_type:哑铃]）。
-E. 【软性】用词准确性：force_type/trajectory 等槽位的值应与该阶段动作性质相符，如动态动作不应标注为纯静态的"保持"。
+E. 【软性】用词准确性：force_type/trajectory 等槽位的值应与该阶段动作性质相符。
 F. 【硬性】exercise 槽位值不得含序号/变式编号（如"变式四"、"变体二"、"第三式"中的数字序号），若有则去掉序号后缀只保留核心动作名。
-G. 【硬性】槽位值视觉可辨：每个槽位的值必须是视频观察者能直接识别、替换后语义实质改变的精准词汇，禁止使用抽象/宽泛词。常见违规如：
+G. 【软性】槽位值视觉可辨：每个槽位的值需要是视频观察者能直接识别、替换后语义实质改变的精准词汇，不要使用抽象/宽泛词。常见违规如：
    - [force_type:驱动] [force_type:传递] [force_type:带动] [force_type:激活] → 应为"拉/推/保持/下蹲/旋转/卷曲"等可观察的具体动作
    - [trajectory:运动] [trajectory:移动] [trajectory:转移重心] → 应为"向心上升/离心下降/顶峰收缩"等具体阶段
    - [contact_type:支撑] [contact_type:维持] [contact_type:固定] → 应为"正握/反握/踩地/点地"等具体方式
