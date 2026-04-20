@@ -81,6 +81,65 @@ def top3_cov(records: list[dict]) -> dict[str, float]:
     }
 
 
+def plot_compare(stats_a: dict, stats_b: dict,
+                 label_a: str, label_b: str,
+                 cov_a: dict, cov_b: dict,
+                 out: Path) -> None:
+    """双模型对比柱状图：每槽位两柱，各带 top-3 覆盖层。"""
+    all_slots = sorted(
+        set(stats_a) | set(stats_b),
+        key=lambda s: (acc(_all_recs(stats_a, s))[0] + acc(_all_recs(stats_b, s))[0]) / 2,
+    )
+    x         = np.arange(len(all_slots))
+    width     = 0.35
+    y_floor, y_top = 48, 102
+    label_off = (y_top - y_floor) * 0.012
+    colors    = ["#4C72B0", "#DD8452"]
+
+    fig, ax = plt.subplots(figsize=(max(12, len(all_slots) * 1.2), 6))
+
+    for i, (stats, label, cov, color) in enumerate([
+            (stats_a, label_a, cov_a, colors[0]),
+            (stats_b, label_b, cov_b, colors[1])]):
+        xs     = x + (i - 0.5) * width
+        a_vals = [acc(_all_recs(stats, s))[0] if s in stats else 50.0 for s in all_slots]
+        ns     = [acc(_all_recs(stats, s))[1] if s in stats else 0     for s in all_slots]
+
+        ax.bar(xs, [a - 50 for a in a_vals], width, bottom=50, color=color, label=label)
+
+        for bx, a, n in zip(xs, a_vals, ns):
+            if n > 0:
+                ax.text(bx, a + label_off, f"{a:.0f}%",
+                        ha="center", va="bottom", fontsize=6)
+
+        for bx, a, s in zip(xs, a_vals, all_slots):
+            t3      = cov.get(s, 0.0)
+            err_pct = 100 - a
+            t3_pct  = err_pct * t3
+            if t3_pct > 0.1:
+                ax.bar(bx, t3_pct, width,
+                       bottom=100 - t3_pct, color="tomato", alpha=0.6)
+
+    line_random = ax.axhline(50, color="gray", linestyle=":", linewidth=1.2)
+    ax.set_xlabel("Slot")
+    ax.set_ylabel("Accuracy (%)")
+    ax.set_title(f"VLM Comparison: {label_a}  vs  {label_b}")
+    ax.set_xticks(x)
+    ax.set_xticklabels(all_slots, rotation=30, ha="right")
+    ax.set_ylim(y_floor, y_top)
+    ax.legend(handles=[
+        mpatches.Patch(color=colors[0],               label=label_a),
+        mpatches.Patch(color=colors[1],               label=label_b),
+        mpatches.Patch(facecolor="tomato", alpha=0.6, label="Top-3 error concentration"),
+        line_random,
+    ], labels=[label_a, label_b, "Top-3 error concentration", "Random (50%)"],
+    loc="lower right")
+    ax.grid(axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    print(f"\n图表: {out}")
+
+
 def plot(stats: dict, out: Path, cov: dict | None = None) -> None:
     slots     = sorted(stats, key=lambda s: acc(_all_recs(stats, s))[0], reverse=False)
     x         = np.arange(len(slots))
@@ -198,12 +257,42 @@ def print_duplicates(records: list[dict], stats: dict, top_n: int = 5) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="评测结果统计（含 Cohen's Kappa）")
-    parser.add_argument("--input", default="eval_results.jsonl")
-    parser.add_argument("--out",   default="eval_accuracy.png")
-    parser.add_argument("--stats", default="eval_stats.json",
+    parser.add_argument("--input",   default="eval_results.jsonl")
+    parser.add_argument("--out",     default="eval_accuracy.png")
+    parser.add_argument("--stats",   default="eval_stats.json",
                         help="输出采样权重 JSON（供 7_gen_confusable.py 使用）")
+    parser.add_argument("--compare", nargs=2, metavar=("FILE_A", "FILE_B"), default=None,
+                        help="对比模式：输入两个 jsonl，每槽位并排两柱")
+    parser.add_argument("--labels",  nargs=2, metavar=("LABEL_A", "LABEL_B"), default=None,
+                        help="对比模式的模型名称（默认取文件名）")
     args = parser.parse_args()
 
+    # ── 对比模式 ──────────────────────────────────────────────────────────────
+    if args.compare:
+        path_a, path_b = Path(args.compare[0]), Path(args.compare[1])
+        label_a = args.labels[0] if args.labels else path_a.stem
+        label_b = args.labels[1] if args.labels else path_b.stem
+
+        recs_a = load(path_a)
+        recs_b = load(path_b)
+        print(f"[{label_a}] {len(recs_a)} 条    [{label_b}] {len(recs_b)} 条\n")
+
+        stats_a, stats_b = compute(recs_a), compute(recs_b)
+        cov_a,   cov_b   = top3_cov(recs_a), top3_cov(recs_b)
+
+        for label, records, stats in [(label_a, recs_a, stats_a),
+                                       (label_b, recs_b, stats_b)]:
+            tk, tn = kappa(records)
+            print(f"=== {label} ===")
+            print_table(stats, tk, tn)
+            print()
+
+        out = Path(args.out) if args.out != "eval_accuracy.png" \
+              else Path(f"eval_compare_{label_a}_vs_{label_b}.png")
+        plot_compare(stats_a, stats_b, label_a, label_b, cov_a, cov_b, out)
+        return
+
+    # ── 单文件模式 ────────────────────────────────────────────────────────────
     records = load(Path(args.input))
     print(f"有效记录: {len(records)} 条\n")
 

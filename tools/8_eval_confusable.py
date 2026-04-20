@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Script 8: VLM 评测 — 对比原句与混淆句，统计答对率。
-  评测 confusable_{view}.json → eval_results.jsonl
-  Hard Negative 评测由 9_extract_errors.py 负责提取。
+Script 8: VLM 评测 — 逐动作依次完成 confusable → hard。
+  confusable_{view}.json → eval_results.jsonl（断点续跑）
+  hard_{view}.json       → 仅累加 error_count，不写输出文件
 """
 
 import argparse, json, random, re, sys, time
@@ -101,6 +101,15 @@ def load_done(out_path: Path) -> set[str]:
     return done
 
 
+def _increment_hard_errors(src: Path, wrong_idxs: set[int]) -> None:
+    """hard_{view}.json 中答错条目的 error_count +1。"""
+    data = json.loads(src.read_text("utf-8"))
+    for i, neg in enumerate(data.get("negatives", [])):
+        if i in wrong_idxs:
+            neg["error_count"] = neg.get("error_count", 1) + 1
+    src.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Script 8: VLM 混淆句评测")
     parser.add_argument("--host",     default="127.0.0.1")
@@ -129,47 +138,55 @@ def main() -> None:
 
     out_path = Path(args.out)
 
-    # ── 收集文件，按目录索引 ────────────────────────────────────────────────────
-    by_dir: dict[Path, list[Path]] = defaultdict(list)
+    # ── 收集各 pattern 文件，按目录索引 ────────────────────────────────────────
+    conf_by_dir: dict[Path, list[Path]] = defaultdict(list)
+    hard_by_dir: dict[Path, list[Path]] = defaultdict(list)
     for view in VIEWS:
         for p in DATA_ROOT.rglob(f"confusable_{view}.json"):
-            by_dir[p.parent].append(p)
+            conf_by_dir[p.parent].append(p)
+        for p in DATA_ROOT.rglob(f"hard_{view}.json"):
+            hard_by_dir[p.parent].append(p)
 
-    dirs = sorted(by_dir)
+    all_dirs = sorted(conf_by_dir.keys() | hard_by_dir.keys())
     if args.limit:
-        dirs = dirs[:args.limit]
+        all_dirs = all_dirs[:args.limit]
 
-    if not dirs:
-        print("未找到 confusable_*.json 文件，退出")
+    if not all_dirs:
+        print("未找到评测文件，退出")
         sys.exit(0)
 
-    print(f"\n动作目录: {len(dirs)}  文件总计: {sum(len(v) for v in by_dir.values())}  输出: {out_path}")
+    conf_files = sum(len(v) for v in conf_by_dir.values())
+    hard_files = sum(len(v) for v in hard_by_dir.values())
+    print(f"\n动作目录: {len(all_dirs)}  "
+          f"confusable: {conf_files}  hard: {hard_files}  输出: {out_path}")
 
     done_keys = load_done(out_path)
     if done_keys:
-        print(f"[resume] 已完成 {len(done_keys)} 条，跳过\n")
+        print(f"[resume] confusable 已完成 {len(done_keys)} 条，跳过\n")
 
-    total = correct = skipped = 0
+    c_total = c_correct = c_skipped = 0
+    h_total = h_correct = h_skipped = 0
 
     with out_path.open("a", encoding="utf-8") as fout:
-        for i, dir_path in enumerate(dirs, 1):
+        for i, dir_path in enumerate(all_dirs, 1):
             rel = dir_path.relative_to(DATA_ROOT)
-            print(f"\n[{i}/{len(dirs)}] {rel}")
+            print(f"\n[{i}/{len(all_dirs)}] {rel}")
 
-            for src in sorted(by_dir[dir_path]):
+            # ── confusable ──────────────────────────────────────────────────
+            for src in sorted(conf_by_dir.get(dir_path, [])):
                 view       = src.stem.split("_")[-1]
                 video_path = dir_path / f"{view}.mp4"
-                print(f"  ── {view}")
+                print(f"  ── [confusable] {view}")
 
                 if not video_path.exists():
                     print("  ✗ 视频不存在，跳过")
-                    skipped += 1
+                    c_skipped += 1
                     continue
 
                 frames = ensure_frames(video_path, args.fps, args.max_side)
                 if not frames:
                     print("  ✗ 帧为空，跳过")
-                    skipped += 1
+                    c_skipped += 1
                     continue
 
                 t0      = time.time()
@@ -179,17 +196,55 @@ def main() -> None:
                 for record in records:
                     fout.write(json.dumps(record, ensure_ascii=False) + "\n")
                     fout.flush()
-                    total   += 1
-                    correct += int(record["is_correct"])
+                    c_total   += 1
+                    c_correct += int(record["is_correct"])
 
                 n    = len(records)
                 ok_n = sum(1 for r in records if r["is_correct"])
                 per  = f"{elapsed/n:.1f}s/条" if n else "-"
-                print(f"  ── {view} 完成: {n}条  ✓{ok_n} ✗{n-ok_n}  {elapsed:.1f}s  {per}")
+                print(f"  ── [confusable] {view} 完成: {n}条  "
+                      f"✓{ok_n} ✗{n-ok_n}  {elapsed:.1f}s  {per}")
 
-    a = correct / total * 100 if total else 0
-    print(f"\n总={total} 正确={correct} 准确率={a:.1f}%  跳过文件={skipped}")
-    print(f"结果: {out_path}")
+            # ── hard（仅累加 error_count，不写文件）─────────────────────────
+            for src in sorted(hard_by_dir.get(dir_path, [])):
+                view       = src.stem.split("_")[-1]
+                video_path = dir_path / f"{view}.mp4"
+                print(f"  ── [hard] {view}")
+
+                if not video_path.exists():
+                    print("  ✗ 视频不存在，跳过")
+                    h_skipped += 1
+                    continue
+
+                frames = ensure_frames(video_path, args.fps, args.max_side)
+                if not frames:
+                    print("  ✗ 帧为空，跳过")
+                    h_skipped += 1
+                    continue
+
+                t0      = time.time()
+                records = eval_file(src, frames, client, model, set(), args.dry_run)
+                elapsed = time.time() - t0
+
+                wrong_idxs = {r["neg_idx"] for r in records if not r["is_correct"]}
+                if wrong_idxs:
+                    _increment_hard_errors(src, wrong_idxs)
+
+                n    = len(records)
+                ok_n = sum(1 for r in records if r["is_correct"])
+                per  = f"{elapsed/n:.1f}s/条" if n else "-"
+                h_total   += n
+                h_correct += ok_n
+                print(f"  ── [hard] {view} 完成: {n}条  "
+                      f"✓{ok_n} ✗{n-ok_n}  {elapsed:.1f}s  {per}")
+
+    print()
+    if c_total:
+        print(f"[confusable] 总={c_total} 正确={c_correct} "
+              f"准确率={c_correct/c_total*100:.1f}%  跳过={c_skipped}  结果: {out_path}")
+    if h_total:
+        print(f"[hard]       总={h_total} 正确={h_correct} "
+              f"准确率={h_correct/h_total*100:.1f}%  跳过={h_skipped}  (error_count 已更新)")
 
 
 if __name__ == "__main__":
