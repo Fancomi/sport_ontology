@@ -83,7 +83,9 @@ _SYSTEM_TMPL = """\
 【输出要求】
 - 仅输出 JSON，不含任何说明文字或 markdown 代码块。
 - 结构示例（字段数量以实际 JSON 为准）：
-{{"category":"女性","muscle":"腹部","exercise":"动作名称","equipment":"器械名","descriptions":{{"1":"步骤一"}},"Difficulty":"初级","Force":"推","Grips":"正握（旋前）","Mechanic":"复合动作","Muscles":{{"calves":"无","abdominals":"主要"}}}}"""
+{{"category":"女性","muscle":"腹部","exercise":"动作名称","equipment":"器械名","descriptions":{{"1":"步骤一"}},"Difficulty":"初级","Force":"推","Grips":"正握（旋前）","Mechanic":"复合动作","Muscles":{{"calves":"无","abdominals":"主要"}}}}
+
+请保持思考过程简短高效，不要过度发散，思考过程请控制在 1000 字以内。"""
 
 # ── 翻译核心 ──────────────────────────────────────────────────────────────────
 def _sanitize(d: dict) -> None:

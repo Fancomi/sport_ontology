@@ -48,7 +48,7 @@ class Timer:
 
 IMG_TOKEN_CAP = 140           # Gemma-4 离散预算，有效值: 70/140/280/560/1120
 FPS_DEFAULT          = 1.0
-MAX_SIDE_DEFAULT     = 1080
+MAX_SIDE_DEFAULT     = 768 # 1080
 VIEWS                = ("front", "side")
 
 VIDEO_ROOT = Path("/media/baidu/8C1A3A981A3A7F70/DATAS/wiki_videos")

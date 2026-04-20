@@ -10,8 +10,10 @@ source /home/baidu/envs/mineru/bin/activate
 # # 1. 翻译metadata到metadata_cn
 # python3 1_translate_wiki.py
 
-# # 2. 基于Gemma4, 增强metadata_cn到augment_xxx.json
-# python3 2_augment_wiki.py --reverse
+# 2. 基于Gemma4, 增强metadata_cn到augment_xxx.json, check会调用2.1
+python3 2_augment_wiki.py --check
+
+# 2.1 基于Gemma4 校验augment_xxx.json的合规性
 
 # # 3. 槽位收集: 从augment_xxx.json获取
 # python3 3_collect_slots.py
@@ -34,15 +36,15 @@ source /home/baidu/envs/mineru/bin/activate
 # # 8. 评测混淆判断 产出json
 # python3 8_eval_confusable.py
 
-# 8.1 分析混淆判断结果
-python3 8_1_analyze.py --compare \
-BAKUP/eval_results_v2_gemma.jsonl \
-BAKUP/eval_results_v2_qwen3.6.jsonl \
---labels Gemma Qwen3.6
+# # 8.1 分析混淆判断结果
+# python3 8_1_analyze.py --compare \
+# BAKUP/eval_results_v2_gemma.jsonl \
+# BAKUP/eval_results_v2_qwen3.6.jsonl \
+# --labels Gemma Qwen3.6
 
 # # 8.2 基于手动的图谱删减
 # python3 8_2_cleanup_pairs.py
 
 
-# 9 从eval_results.jsonl提取hard并沉淀
-python3 9_extract_errors.py
+# # 9 从eval_results.jsonl提取hard并沉淀
+# python3 9_extract_errors.py
