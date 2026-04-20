@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
-"""对 muscle_wiki 每个动作的 front.mp4/side.mp4，调用 Gemma-4 VLM 扩写描述。
+"""对 muscle_wiki 每个动作的 front.mp4/side.mp4，调用 VLM 扩写描述。
 结果保存为同目录的 augment_front.json / augment_side.json。
+
+生产流程（四步）：
+  P1 [VLM] 生成 category_3_slotted_description
+  QC [LLM] 自校正循环，最多3轮（可选，--check）
+  P2 [VLM] 敲定 category_3 + 生成 category_1 / category_2
 
 启动时若检测到帧缓存缺失，自动触发全量预提取（可用 --no-prebuild 跳过）。
 
@@ -18,13 +23,14 @@ from video_frames import ensure_frames, prebuild_cache, cache_dir, FPS_DEFAULT, 
 # ── 引入 2_1 质检函数 ──────────────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 _c = importlib.import_module('2_1_check_augment')
-_check_rules, _llm_check, _CHECK_SYS = _c.check_rules, _c.llm_check, _c._SYSTEM
+_run_qc_loop = _c.run_qc_loop
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
-DATA_ROOT   = Path('/media/baidu/8C1A3A981A3A7F70/DATAS/wiki_videos')
-PROMPT_PATH = Path(__file__).resolve().parent / 'Prompt_Augment.md'
-MAX_TOKENS  = 4096
-VIEWS       = [('front', 'augment_front.json'), ('side', 'augment_side.json')]
+DATA_ROOT        = Path('/media/baidu/8C1A3A981A3A7F70/DATAS/wiki_videos')
+PROMPT_CAT3_PATH = Path(__file__).resolve().parent / 'Prompt_Augment.md'
+PROMPT_FULL_PATH = Path(__file__).resolve().parent / 'Prompt_Augment_full.md'
+MAX_TOKENS       = 4096
+VIEWS            = [('front', 'augment_front.json'), ('side', 'augment_side.json')]
 
 _RE_JSON = re.compile(r'\{[\s\S]*\}')
 
@@ -44,10 +50,17 @@ def _build_muscle_info(meta: dict) -> str:
     return json.dumps(active, ensure_ascii=False) if active else '无'
 
 
-def build_prompt(meta: dict, template: str) -> str:
+def build_cat3_prompt(meta: dict, template: str) -> str:
     return (template
             .replace('{{basic_description}}', _build_basic_desc(meta))
             .replace('{{muscle_info}}', _build_muscle_info(meta)))
+
+
+def build_full_prompt(meta: dict, cat3: str, template: str) -> str:
+    return (template
+            .replace('{{basic_description}}', _build_basic_desc(meta))
+            .replace('{{muscle_info}}', _build_muscle_info(meta))
+            .replace('{{category_3}}', cat3))
 
 
 # ── VLM 调用 ──────────────────────────────────────────────────────────────────
@@ -86,25 +99,13 @@ def call_vlm(video_path: Path, prompt: str, client: OpenAI, model: str,
 
 # ── 单条处理 ──────────────────────────────────────────────────────────────────
 
-def _retry_prompt(base: str, prev: dict, issues: list, reason: str) -> str:
-    """将完整上次输出 + 质检问题追加到原始 prompt，引导 VLM 修正后重新输出完整 JSON。"""
-    lines = ['', '【质检反馈·请修正后重新输出包含全部三类字段的完整JSON】',
-             f'上次完整输出：\n{json.dumps(prev, ensure_ascii=False, indent=2)}',
-             'category_3_slotted_description 存在以下问题：']
-    lines += [f'  · {i}' for i in issues] if issues else []
-    if reason:
-        lines.append(f'  · {reason}')
-    lines.append('请修正以上问题，重新输出完整JSON（category_1/2/3 全部字段）。')
-    return base + '\n'.join(lines)
-
-
-def process_one(meta_path: Path, template: str, client: OpenAI, model: str,
-                fps: float, max_side: int,
+def process_one(meta_path: Path, cat3_tmpl: str, full_tmpl: str,
+                client: OpenAI, model: str, fps: float, max_side: int,
                 check_client: Optional[LLMClient] = None) -> Tuple[int, int]:
     """处理一个动作的两个视频，返回 (新增数, 跳过数)。"""
-    meta        = json.loads(meta_path.read_text('utf-8'))
-    base_prompt = build_prompt(meta, template)
-    ok = skip   = 0
+    meta             = json.loads(meta_path.read_text('utf-8'))
+    base_cat3_prompt = build_cat3_prompt(meta, cat3_tmpl)
+    ok = skip        = 0
 
     for view, out_name in VIEWS:
         out_path = meta_path.parent / out_name
@@ -115,42 +116,47 @@ def process_one(meta_path: Path, template: str, client: OpenAI, model: str,
         if not video_path.exists():
             print(f'  {view}: ✗ 视频不存在'); continue
 
-        prompt       = base_prompt
-        final        = None
-        check_failed = False
-        n_frames     = 0
-
+        # ── P1: VLM 生成 category_3 ──────────────────────────────────────────
+        cat3     = None
+        n_frames = 0
         for attempt in range(1, 4):
-            result, n_frames = call_vlm(video_path, prompt, client, model, fps, max_side)
-            if not result:
-                print(f'  {view}({attempt}): ✗ 解析失败'); continue  # 同 prompt 重试
+            result, n_frames = call_vlm(video_path, base_cat3_prompt, client, model, fps, max_side)
+            if result:
+                cat3 = result.get('category_3_slotted_description', '')
+                if cat3:
+                    break
+            print(f'  {view} P1({attempt}): ✗ 解析失败')
 
-            if check_client is None:
-                final = result; break
+        if not cat3:
+            print(f'  {view}: → 跳过(P1解析失败)'); continue
 
-            cat3        = result.get('category_3_slotted_description', '')
-            rule_issues = _check_rules(cat3)
-            passed, _, reason = _llm_check(meta, cat3, rule_issues, _CHECK_SYS, check_client)
-            if passed:
+        # ── QC: LLM 自校正循环 ────────────────────────────────────────────────
+        if check_client:
+            cat3, passed = _run_qc_loop(meta, cat3, check_client)
+            tag = '✓ 质检通过' if passed else '→ 质检未完全通过，继续'
+            print(f'  {view} P1: {tag} ({n_frames}帧)')
+        else:
+            print(f'  {view} P1: ✓ ({n_frames}帧)')
+
+        # ── P2: VLM 敲定 category_3 + 生成 category_1/2 ─────────────────────
+        full_prompt = build_full_prompt(meta, cat3, full_tmpl)
+        final       = None
+        for attempt in range(1, 4):
+            result, _ = call_vlm(video_path, full_prompt, client, model, fps, max_side)
+            if result:
                 final = result
-                tag   = f'(第{attempt}次)' if attempt > 1 else ''
-                print(f'  {view}: ✓ 质检通过{tag} ({n_frames}帧)'); break
-
-            print(f'  {view}({attempt}): ✗ 质检: {reason}')
-            if attempt < 3:
-                prompt = _retry_prompt(base_prompt, result, rule_issues, reason)
-            else:
-                check_failed = True
+                if 'category_3_slotted_description' not in final:
+                    final['category_3_slotted_description'] = cat3
+                tag = f'(第{attempt}次)' if attempt > 1 else ''
+                print(f'  {view} P2: ✓{tag}')
+                break
+            print(f'  {view} P2({attempt}): ✗ 解析失败')
 
         if final:
             out_path.write_text(json.dumps(final, ensure_ascii=False, indent=2), 'utf-8')
             ok += 1
-            if check_client is None:
-                print(f'  {view}: ✓ ({n_frames}帧)')
-        elif check_failed:
-            print(f'  {view}: → 跳过(质检3次未通过)')
         else:
-            print(f'  {view}: → 跳过(3次解析失败)')
+            print(f'  {view}: → 跳过(P2解析3次失败)')
 
     return ok, skip
 
@@ -170,21 +176,21 @@ def _any_cache_missing(meta_paths: list[Path], max_side: int) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description='批量扩写 muscle_wiki 视频描述')
-    parser.add_argument('--host',           default='127.0.0.1')
-    parser.add_argument('--port',           type=int,   default=8000)
-    parser.add_argument('--fps',            type=float, default=FPS_DEFAULT)
-    parser.add_argument('--max-side',       type=int,   default=MAX_SIDE_DEFAULT, dest='max_side')
-    parser.add_argument('--reverse',        action='store_true',
+    parser.add_argument('--host',          default='127.0.0.1')
+    parser.add_argument('--port',          type=int,   default=8000)
+    parser.add_argument('--fps',           type=float, default=FPS_DEFAULT)
+    parser.add_argument('--max-side',      type=int,   default=MAX_SIDE_DEFAULT, dest='max_side')
+    parser.add_argument('--reverse',       action='store_true',
                         help='从末尾向前处理，避免与正向机器重叠')
-    parser.add_argument('--no-prebuild',    action='store_true',
+    parser.add_argument('--no-prebuild',   action='store_true',
                         help='跳过自动帧缓存预提取')
     # 可选质检
-    parser.add_argument('--check',          action='store_true',
-                        help='生成后立即质检，失败则带反馈重新生成（最多3次）')
-    parser.add_argument('--check-backend',  default='local', choices=['local', 'poe'], dest='check_backend')
-    parser.add_argument('--check-host',     default=None, dest='check_host',
+    parser.add_argument('--check',         action='store_true',
+                        help='P1后启动LLM质检自校正循环（最多3轮）')
+    parser.add_argument('--check-backend', default='local', choices=['local', 'poe'], dest='check_backend')
+    parser.add_argument('--check-host',    default=None, dest='check_host',
                         help='质检LLM host（默认同 --host）')
-    parser.add_argument('--check-port',     type=int, default=None, dest='check_port',
+    parser.add_argument('--check-port',    type=int, default=None, dest='check_port',
                         help='质检LLM port（默认同 --port）')
     args = parser.parse_args()
 
@@ -199,7 +205,6 @@ def main() -> None:
         print('全部已完成')
         return
 
-    # 自动预提取帧缓存
     if not args.no_prebuild and _any_cache_missing(pending, args.max_side):
         print(f'检测到帧缓存缺失，自动预提取 (max_side={args.max_side}px)...')
         prebuild_cache(DATA_ROOT, args.fps, args.max_side)
@@ -223,14 +228,16 @@ def main() -> None:
             print(f'质检LLM连接失败: {e}，禁用质检', file=sys.stderr)
     print()
 
-    template   = PROMPT_PATH.read_text('utf-8')
+    cat3_tmpl    = PROMPT_CAT3_PATH.read_text('utf-8')
+    full_tmpl    = PROMPT_FULL_PATH.read_text('utf-8')
     total_ok = total_skip = 0
 
     for i, meta_path in enumerate(pending, 1):
         rel = meta_path.parent.relative_to(DATA_ROOT)
         print(f'[{i}/{len(pending)}] {rel}')
         t0 = time.time()
-        ok, skip = process_one(meta_path, template, client, model, args.fps, args.max_side, check_client)
+        ok, skip = process_one(meta_path, cat3_tmpl, full_tmpl, client, model,
+                                args.fps, args.max_side, check_client)
         print(f'  ⏱ {time.time()-t0:.1f}s')
         total_ok   += ok
         total_skip += skip
