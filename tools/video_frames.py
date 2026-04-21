@@ -25,6 +25,8 @@ import cv2
 import requests
 from openai import OpenAI
 
+from config import DATA_ROOT
+
 # ── Timer ─────────────────────────────────────────────────────────────────────
 
 class Timer:
@@ -51,7 +53,7 @@ FPS_DEFAULT          = 1.0
 MAX_SIDE_DEFAULT     = 768 # 1080
 VIEWS                = ("front", "side")
 
-VIDEO_ROOT = Path("/media/baidu/8C1A3A981A3A7F70/DATAS/wiki_videos")
+VIDEO_ROOT = DATA_ROOT
 
 PROMPT = (
     "以上是一段健身动作视频，请用中文详细描述："

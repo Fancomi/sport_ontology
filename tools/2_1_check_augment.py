@@ -5,11 +5,13 @@
 """
 
 import argparse, json, re, sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from threading import Lock
 from typing import Optional, Tuple
 
 from config import DATA_ROOT
-from llm_client import LLMClient
+from llm_client import LLMClient, parse_ports, parse_json_response
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
 FIELD       = 'category_3_slotted_description'
@@ -22,7 +24,6 @@ VALID_SLOTS = frozenset({
 
 RE_SLOT  = re.compile(r'\[([a-zA-Z_]+):([^\]]+)\]')
 RE_ASCII = re.compile(r'^[\x00-\x7F]+$')
-RE_JSON  = re.compile(r'\{[\s\S]*\}')
 
 # ── Part 1：规则校验 ──────────────────────────────────────────────────────────
 def check_rules(text: str) -> list:
@@ -83,6 +84,16 @@ F. exercise 槽位值不得含序号/变式编号（如"变式四"、"变体二"
 **注意**：第二层只去除标注符号，不修改句子的其他部分，不替换词汇。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【多轮历史记录】
+输入 JSON 中可能含 previous_rounds 字段，记录本次之前各轮的质检情况：
+- round: 轮次编号
+- reason: 当轮发现的问题
+- text_before: 当轮输入的原文
+- corrected: 当轮输出的修正文本
+你必须阅读历史记录，确保本轮不重复之前已修正过的错误，也不撤销之前已正确的修正。
+若历史中某问题已被修正且当前文本中已不存在，请勿再次标注该问题为错误。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【输出格式】仅输出 JSON，不含 markdown 或任何说明：
 合格：{"pass": true}
 不合格：{"pass": false, "reason": "问题短句1, 问题短句2（错误原因描述，不写修正意见）", "corrected": "修正后的完整文本（仅 category_3_slotted_description 内容）"}
@@ -104,23 +115,25 @@ def _ref_from_meta(meta_cn: dict) -> dict:
     }
 
 def llm_check(meta_cn: dict, text: str, rule_hints: list,
-              system: str, client: LLMClient) -> Tuple[bool, Optional[str], str]:
-    """LLM 质检。返回 (pass, corrected_or_None, reason)。"""
-    user = json.dumps({
+              system: str, client: LLMClient,
+              history: list = None) -> Tuple[bool, Optional[str], str]:
+    """LLM 质检。返回 (pass, corrected_or_None, reason)。
+    history: 历史轮次记录，列表元素为 {'round': N, 'reason': ..., 'corrected': ...}
+    """
+    payload = {
         'metadata_cn':     _ref_from_meta(meta_cn),
         'pre_rule_issues': rule_hints,
         FIELD:             text,
-    }, ensure_ascii=False, indent=2)
+    }
+    if history:
+        payload['previous_rounds'] = history
+    user = json.dumps(payload, ensure_ascii=False, indent=2)
 
     raw = client.chat(messages=[{'role': 'system', 'content': system},
                                  {'role': 'user',   'content': user}])
     if not raw:
         return False, None, '无响应'
-    m = RE_JSON.search(raw)
-    try:
-        result = json.loads(m.group()) if m else None
-    except json.JSONDecodeError:
-        result = None
+    result = parse_json_response(raw)
     if not result:
         return False, None, f'JSON解析失败: {raw[:120]}'
 
@@ -130,12 +143,14 @@ def llm_check(meta_cn: dict, text: str, rule_hints: list,
 
 def run_qc_loop(meta: dict, text: str, client: LLMClient) -> Tuple[str, bool]:
     """LLM自校正循环，最多12轮。返回 (最终文本, 是否通过)。"""
+    history = []
     for round_num in range(1, 13):
         rule_issues = check_rules(text)
-        passed, corrected, reason = llm_check(meta, text, rule_issues, _SYSTEM, client)
+        passed, corrected, reason = llm_check(meta, text, rule_issues, _SYSTEM, client, history)
         if passed:
             return text, True
         print(f'    QC({round_num}): ✗ {reason}')
+        history.append({'round': round_num, 'reason': reason, 'text_before': text, 'corrected': corrected})
         if not corrected:
             break
         text = corrected
@@ -170,8 +185,11 @@ def process_one(aug_path: Path, client: LLMClient) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description='校验/修正 augment_*.json 的 category_3_slotted_description')
     ap.add_argument('--host',    default='127.0.0.1')
-    ap.add_argument('--port',    type=int, default=8000)
+    ap.add_argument('--port',    default='8000',
+                    help='LLM 端口，逗号分隔多端口 (e.g. 8001,8002,...)')
     ap.add_argument('--backend', default='local', choices=['local', 'poe'])
+    ap.add_argument('--workers', '-w', type=int, default=1,
+                    help='并发 worker 数，建议与端口数一致')
     args = ap.parse_args()
 
     all_aug = sorted(DATA_ROOT.rglob('augment_*.json'))
@@ -194,20 +212,38 @@ def main() -> None:
         print('全部已完成'); return
 
     try:
-        client = (LLMClient(backend='local', host=args.host, port=args.port)
+        client = (LLMClient(backend='local', host=args.host, port=parse_ports(args.port))
                   if args.backend == 'local' else LLMClient(backend='poe'))
         print(f'模型: {client.model}\n')
     except Exception as e:
         print(f'连接失败: {e}', file=sys.stderr); sys.exit(1)
 
-    skipped = 0
-    for i, aug_path in enumerate(pending, 1):
+    print_lock = Lock()
+    workers    = min(args.workers, total)
+    skipped    = 0
+
+    def _worker(idx_path):
+        i, aug_path = idx_path
         rel = aug_path.relative_to(DATA_ROOT)
-        print(f'[{i}/{total}] {rel} ... ', end='', flush=True)
+        with print_lock:
+            print(f'[{i}/{total}] {rel} ... ', end='', flush=True)
         status = process_one(aug_path, client)
-        print(status)
-        if '未通过' in status:
-            skipped += 1
+        with print_lock:
+            print(status)
+        return '未通过' in status
+
+    if workers == 1:
+        for i, aug_path in enumerate(pending, 1):
+            if _worker((i, aug_path)):
+                skipped += 1
+    else:
+        print(f'并发 workers={workers}')
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_worker, (i, p)): p
+                       for i, p in enumerate(pending, 1)}
+            for fut in as_completed(futures):
+                if fut.result():
+                    skipped += 1
 
     if skipped:
         print(f'\n未通过 {skipped} 个')

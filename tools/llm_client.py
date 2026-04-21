@@ -1,5 +1,6 @@
 """统一 LLM 客户端：支持 poe / local 两种后端，提供流式调用 + 进度监控 + 批量并发"""
 
+import json
 import re
 import threading
 import time
@@ -7,6 +8,82 @@ from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 from openai import OpenAI
+
+# ── 后端检测工具 ──────────────────────────────────────────────────────────────
+
+def detect_server_info(client: OpenAI) -> tuple[str, str]:
+    """检测服务端类型和模型 ID。
+    返回 (backend_type, model_id)
+      backend_type: 'vllm' | 'llama.cpp' | 'unknown'
+    """
+    try:
+        models = client.models.list().data
+        if not models:
+            return 'unknown', ''
+        m = models[0]
+        owned_by = (getattr(m, 'owned_by', '') or '').lower()
+        model_id = m.id
+        if 'vllm' in owned_by:
+            return 'vllm', model_id
+        if 'llama' in owned_by:
+            return 'llama.cpp', model_id
+        return 'unknown', model_id
+    except Exception:
+        return 'unknown', ''
+
+
+def make_extra_body(backend: str, model_id: str) -> dict:
+    """为不同后端生成 extra_body。
+    vllm + Qwen3 系列：关闭思考模式，避免推理过程混入输出内容。
+    """
+    if backend == 'vllm' and 'qwen' in model_id.lower():
+        return {"chat_template_kwargs": {"enable_thinking": False}}
+    return {}
+
+
+# ── 多端口工具 ────────────────────────────────────────────────────────────────
+
+def parse_ports(ports) -> list[int]:
+    """解析端口参数，支持 int / str(逗号分隔) / list。"""
+    if isinstance(ports, list):
+        return [int(p) for p in ports]
+    return [int(p.strip()) for p in str(ports).split(',')]
+
+
+_RE_FENCE = re.compile(r'```(?:json)?\s*|\s*```')
+
+
+def parse_json_response(text: str) -> Optional[dict]:
+    """从 LLM 响应中提取第一个 JSON 对象，兼容 markdown fence 和尾随内容。"""
+    text = _RE_FENCE.sub('', text).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    idx = text.find('{')
+    if idx == -1:
+        return None
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text, idx)
+        return obj if isinstance(obj, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
+def build_vlm_clients(host: str, ports: list[int]) -> list[tuple]:
+    """构建 VLM (OpenAI) 客户端列表，每个元素为 (client, model_id, extra_body)。"""
+    clients = []
+    for port in ports:
+        try:
+            c = OpenAI(api_key='EMPTY', base_url=f'http://{host}:{port}/v1')
+            bk, mid = detect_server_info(c)
+            eb = make_extra_body(bk, mid)
+            clients.append((c, mid, eb))
+            print(f'  VLM [{port}]: {mid.split("/")[-1]}' + (f'  {eb}' if eb else ''))
+        except Exception as e:
+            print(f'  VLM [{port}]: 连接失败 {e}')
+    return clients
+
 
 # ── POE 默认配置 ──────────────────────────────────────────────────────────────
 POE_API_KEY  = "sNTL5h9vOWThftZdJHCho0gCGNpycuEcUMkSZkLxZzs"
@@ -36,7 +113,7 @@ class LLMClient:
     """
     统一封装 LLM 调用，支持两种后端：
       - poe   : 调用 POE API（流式，含进度追踪）
-      - local : 调用本地 OpenAI 兼容服务（非流式，适合本地部署）
+      - local : 调用本地 OpenAI 兼容服务（非流式，多端口轮询）
     """
 
     def __init__(self, backend: str = "poe", **kwargs):
@@ -45,7 +122,8 @@ class LLMClient:
             backend: "poe" 或 "local"
             kwargs:
               poe   - api_key, model, extra_body
-              local - host, port, model, max_tokens, temperature
+              local - host, port(s), model, max_tokens, temperature
+                      port 支持 int / str(逗号分隔) / list，多端口自动轮询
         """
         assert backend in ("poe", "local"), f"未知后端: {backend}"
         self.backend = backend
@@ -58,16 +136,41 @@ class LLMClient:
             self.model      = kwargs.get("model", MODEL)
             self.extra_body = kwargs.get("extra_body", EXTRA_BODY)
         else:
-            host = kwargs.get("host", "127.0.0.1")
-            port = kwargs.get("port", 8000)
-            self.client      = OpenAI(api_key="EMPTY", base_url=f"http://{host}:{port}/v1")
-            self.model       = kwargs.get("model") or self._detect_model()
+            host  = kwargs.get("host", "127.0.0.1")
+            ports = parse_ports(kwargs.get("port", 8000))
             self.temperature = kwargs.get("temperature", 0.3)
             self.max_tokens  = kwargs.get("max_tokens", 16384)
 
-    def _detect_model(self) -> str:
-        """自动从服务端获取第一个可用模型名"""
-        return self.client.models.list().data[0].id
+            # 构建多端点：[(client, extra_body), ...]
+            self._endpoints: list[tuple[OpenAI, dict]] = []
+            detected_model = kwargs.get("model")
+            for port in ports:
+                c  = OpenAI(api_key="EMPTY", base_url=f"http://{host}:{port}/v1")
+                bk, mid = detect_server_info(c)
+                if not detected_model:
+                    detected_model = mid or self._detect_model(c)
+                eb = kwargs.get("extra_body") or make_extra_body(bk, detected_model or mid)
+                self._endpoints.append((c, eb))
+                if eb:
+                    print(f"  [LLMClient] {host}:{port} {bk}/{(detected_model or mid).split('/')[-1]}"
+                          f" → extra_body={eb}")
+            self.model  = detected_model or ''
+            self.client = self._endpoints[0][0]   # 兼容旧代码
+            self.extra_body = self._endpoints[0][1]
+
+            # 轮询状态
+            self._rr_idx  = 0
+            self._rr_lock = threading.Lock()
+
+    def _detect_model(self, client: OpenAI) -> str:
+        return client.models.list().data[0].id
+
+    def _next_ep(self) -> tuple[OpenAI, dict]:
+        """线程安全的轮询，返回下一个 (client, extra_body)。"""
+        with self._rr_lock:
+            ep = self._endpoints[self._rr_idx % len(self._endpoints)]
+            self._rr_idx += 1
+        return ep
 
     # ── 核心调用 ──────────────────────────────────────────────────────────────
 
@@ -104,12 +207,17 @@ class LLMClient:
         """非流式同步调用（local 后端主用，poe 也可用）"""
         kwargs = dict(model=self.model, messages=messages, stream=False)
         if self.backend == "local":
+            c, eb = self._next_ep()
             kwargs["max_tokens"]  = max_tokens  or self.max_tokens
             kwargs["temperature"] = temperature or self.temperature
+            if eb:
+                kwargs["extra_body"] = eb
         else:
-            kwargs["extra_body"]  = self.extra_body
+            c  = self.client
+            eb = self.extra_body
+            kwargs["extra_body"] = eb
         try:
-            resp = self.client.chat.completions.create(**kwargs)
+            resp = c.chat.completions.create(**kwargs)
             return strip_thinking(resp.choices[0].message.content.strip()) or None
         except Exception as e:
             print(f"\n✗ chat失败: {e}")

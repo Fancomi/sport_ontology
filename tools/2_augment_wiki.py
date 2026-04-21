@@ -12,7 +12,7 @@
 用法：python 2_augment_wiki.py [--host HOST] [--port PORT] [--fps FPS] [--max-side N]
 """
 
-import argparse, importlib, json, re, sys, time
+import argparse, importlib, json, sys, time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import Lock
@@ -20,7 +20,7 @@ from typing import Optional, Tuple
 from openai import OpenAI
 
 from config import DATA_ROOT
-from llm_client import LLMClient
+from llm_client import LLMClient, build_vlm_clients, parse_ports, parse_json_response
 from video_frames import ensure_frames, prebuild_cache, cache_dir, load_cache, FPS_DEFAULT, MAX_SIDE_DEFAULT
 
 # ── 引入 2_1 质检函数 ──────────────────────────────────────────────────────────
@@ -33,8 +33,6 @@ PROMPT_CAT3_PATH = Path(__file__).resolve().parent / 'Prompt_Augment.md'
 PROMPT_FULL_PATH = Path(__file__).resolve().parent / 'Prompt_Augment_full.md'
 MAX_TOKENS       = 4096
 VIEWS            = [('front', 'augment_front.json'), ('side', 'augment_side.json')]
-
-_RE_JSON = re.compile(r'\{[\s\S]*\}')
 
 
 # ── Prompt 构建 ────────────────────────────────────────────────────────────────
@@ -67,16 +65,10 @@ def build_full_prompt(meta: dict, cat3: str, template: str) -> str:
 
 # ── VLM 调用 ──────────────────────────────────────────────────────────────────
 
-def _parse_json(text: str) -> Optional[dict]:
-    m = _RE_JSON.search(text)
-    try:
-        return json.loads(m.group()) if m else None
-    except json.JSONDecodeError:
-        return None
-
 
 def call_vlm(video_path: Path, prompt: str, client: OpenAI, model: str,
-             fps: float, max_side: int) -> Tuple[Optional[dict], int]:
+             fps: float, max_side: int,
+             extra_body: dict = None) -> Tuple[Optional[dict], int]:
     frames = ensure_frames(video_path, fps, max_side)
     if not frames:
         return None, 0
@@ -92,8 +84,9 @@ def call_vlm(video_path: Path, prompt: str, client: OpenAI, model: str,
             messages=[{"role": "user", "content": content}],
             max_tokens=MAX_TOKENS,
             temperature=0.3,
+            **({"extra_body": extra_body} if extra_body else {}),
         )
-        return _parse_json(resp.choices[0].message.content.strip()), len(frames)
+        return parse_json_response(resp.choices[0].message.content.strip()), len(frames)
     except Exception as e:
         print(f'  ✗ VLM失败: {e}')
         return None, len(frames)
@@ -103,7 +96,8 @@ def call_vlm(video_path: Path, prompt: str, client: OpenAI, model: str,
 
 def process_one(meta_path: Path, cat3_tmpl: str, full_tmpl: str,
                 client: OpenAI, model: str, fps: float, max_side: int,
-                check_client: Optional[LLMClient] = None) -> Tuple[int, int]:
+                check_client: Optional[LLMClient] = None,
+                extra_body: dict = None) -> Tuple[int, int]:
     """处理一个动作的两个视频，返回 (新增数, 跳过数)。"""
     meta             = json.loads(meta_path.read_text('utf-8'))
     base_cat3_prompt = build_cat3_prompt(meta, cat3_tmpl)
@@ -123,7 +117,8 @@ def process_one(meta_path: Path, cat3_tmpl: str, full_tmpl: str,
         cat3     = None
         n_frames = 0
         for attempt in range(1, 4):
-            result, n_frames = call_vlm(video_path, base_cat3_prompt, client, model, fps, max_side)
+            result, n_frames = call_vlm(video_path, base_cat3_prompt, client, model,
+                                        fps, max_side, extra_body)
             if result:
                 cat3 = result.get('category_3_slotted_description', '')
                 if cat3:
@@ -145,7 +140,8 @@ def process_one(meta_path: Path, cat3_tmpl: str, full_tmpl: str,
         full_prompt = build_full_prompt(meta, cat3, full_tmpl)
         final       = None
         for attempt in range(1, 4):
-            result, _ = call_vlm(video_path, full_prompt, client, model, fps, max_side)
+            result, _ = call_vlm(video_path, full_prompt, client, model,
+                                  fps, max_side, extra_body)
             if result:
                 final = result
                 if 'category_3_slotted_description' not in final:
@@ -180,7 +176,8 @@ def _any_cache_missing(meta_paths: list[Path], max_side: int) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(description='批量扩写 muscle_wiki 视频描述')
     parser.add_argument('--host',          default='127.0.0.1')
-    parser.add_argument('--port',          type=int,   default=8000)
+    parser.add_argument('--port',          default='8001',
+                        help='VLM 端口，逗号分隔多端口 (e.g. 8001,8002,...,8008)')
     parser.add_argument('--fps',           type=float, default=FPS_DEFAULT)
     parser.add_argument('--max-side',      type=int,   default=MAX_SIDE_DEFAULT, dest='max_side')
     parser.add_argument('--reverse',       action='store_true',
@@ -188,15 +185,11 @@ def main() -> None:
     parser.add_argument('--no-prebuild',   action='store_true',
                         help='跳过自动帧缓存预提取')
     parser.add_argument('--workers', '-w', type=int, default=1,
-                        help='并发 worker 数（默认8，需与 llama-server --parallel 匹配）')
+                        help='并发 worker 数，建议与 --port 端口数一致')
     # 可选质检
     parser.add_argument('--check',         action='store_true',
-                        help='P1后启动LLM质检自校正循环（最多3轮）')
+                        help='P1后启动LLM质检自校正循环（最多3轮），复用 --port 端口')
     parser.add_argument('--check-backend', default='local', choices=['local', 'poe'], dest='check_backend')
-    parser.add_argument('--check-host',    default=None, dest='check_host',
-                        help='质检LLM host（默认同 --host）')
-    parser.add_argument('--check-port',    type=int, default=None, dest='check_port',
-                        help='质检LLM port（默认同 --port）')
     args = parser.parse_args()
 
     all_meta = sorted(DATA_ROOT.rglob('metadata_cn.json'))
@@ -214,23 +207,23 @@ def main() -> None:
         print(f'检测到帧缓存缺失，自动预提取 (max_side={args.max_side}px)...')
         prebuild_cache(DATA_ROOT, args.fps, args.max_side)
 
-    try:
-        client = OpenAI(api_key='EMPTY', base_url=f'http://{args.host}:{args.port}/v1')
-        model  = client.models.list().data[0].id
-        print(f'模型: {model}')
-    except Exception as e:
-        print(f'错误: 无法连接 {args.host}:{args.port}: {e}', file=sys.stderr)
+    # ── 构建 VLM 客户端列表 ───────────────────────────────────────────────────
+    ports   = parse_ports(args.port)
+    clients = build_vlm_clients(args.host, ports)
+    if not clients:
+        print('错误: 无可用 VLM 端口', file=sys.stderr)
         sys.exit(1)
 
-    check_client = None
+    # ── 构建质检客户端列表 ────────────────────────────────────────────────────
+    check_clients = []
     if args.check:
         try:
-            ch, cp = args.check_host or args.host, args.check_port or args.port
-            check_client = (LLMClient(backend='local', host=ch, port=cp)
-                            if args.check_backend == 'local' else LLMClient(backend='poe'))
-            print(f'质检模型: {check_client.model}')
+            cc = (LLMClient(backend='local', host=args.host, port=parse_ports(args.port))
+                  if args.check_backend == 'local' else LLMClient(backend='poe'))
+            check_clients = [cc]
+            print(f'  质检: {cc.model.split("/")[-1]} ({len(parse_ports(args.port))} 端口)')
         except Exception as e:
-            print(f'质检LLM连接失败: {e}，禁用质检', file=sys.stderr)
+            print(f'  质检LLM连接失败，禁用质检: {e}', file=sys.stderr)
     print()
 
     cat3_tmpl    = PROMPT_CAT3_PATH.read_text('utf-8')
@@ -240,10 +233,12 @@ def main() -> None:
 
     def _worker(idx_meta):
         i, meta_path = idx_meta
+        c, mid, eb = clients[(i - 1) % len(clients)]
+        cc = check_clients[0] if check_clients else None
         rel = meta_path.parent.relative_to(DATA_ROOT)
         t0 = time.time()
-        ok, skip = process_one(meta_path, cat3_tmpl, full_tmpl, client, model,
-                                args.fps, args.max_side, check_client)
+        ok, skip = process_one(meta_path, cat3_tmpl, full_tmpl, c, mid,
+                                args.fps, args.max_side, cc, eb)
         with print_lock:
             print(f'[{i}/{len(pending)}] {rel}  ⏱ {time.time()-t0:.1f}s')
         return ok, skip

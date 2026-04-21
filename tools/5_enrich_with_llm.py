@@ -17,11 +17,13 @@
   python 5_enrich_with_llm.py --slots force_part exercise --poe
 """
 
-import argparse, json, re, sys
+import argparse, json, sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from threading import Lock
 from typing import Optional
 
-from llm_client import LLMClient
+from llm_client import LLMClient, parse_ports, parse_json_response
 
 # ── 配置 ─────────────────────────────────────────────────────────────────────
 IN_PATH  = Path(__file__).parent / "slot_enriched.json"
@@ -363,8 +365,6 @@ SLOT_EXAMPLES = {
     ],
 }
 
-_RE_JSON_OBJ = re.compile(r'\{[\s\S]*\}')
-
 
 # ── Prompt 构建 ───────────────────────────────────────────────────────────────
 
@@ -461,13 +461,7 @@ slot={slot}, word="{word}", current={json.dumps(current_compact, ensure_ascii=Fa
 # ── LLM 调用与解析 ────────────────────────────────────────────────────────────
 
 def _parse_json(text: str) -> Optional[dict]:
-    m = _RE_JSON_OBJ.search(text)
-    if not m:
-        return None
-    try:
-        return json.loads(m.group())
-    except json.JSONDecodeError:
-        return None
+    return parse_json_response(text)
 
 
 def enrich_node(slot: str, word: str, current: dict, client: LLMClient) -> Optional[dict]:
@@ -572,7 +566,10 @@ def main() -> None:
     parser.add_argument("--force", action="store_true", help="强制重新处理已有条目")
     parser.add_argument("--poe",   action="store_true", help="使用 POE 后端")
     parser.add_argument("--host",  default="127.0.0.1")
-    parser.add_argument("--port",  type=int, default=8000)
+    parser.add_argument("--port",  default="8000",
+                        help="LLM 端口，逗号分隔多端口 (e.g. 8001,8002,...)")
+    parser.add_argument("--workers", "-w", type=int, default=1,
+                        help="并发 worker 数，建议与端口数一致")
     args = parser.parse_args()
 
     in_path  = Path(args.in_path)
@@ -593,58 +590,83 @@ def main() -> None:
     try:
         client = LLMClient(
             backend="poe" if args.poe else "local",
-            host=args.host, port=args.port,
+            host=args.host,
+            port=parse_ports(args.port) if not args.poe else 8000,
         )
         print(f"模型: {client.model}  后端: {client.backend}\n")
     except Exception as e:
         print(f"✗ 连接失败: {e}", file=sys.stderr)
         sys.exit(1)
 
+    # 展平待处理列表：[(slot, word, current), ...]
+    items = []
     for slot in args.slots:
         slot_data = enriched.get(slot, {})
         if not slot_data:
             print(f"[跳过] {slot}: 不在 slot_enriched 中")
             continue
+        out_slot = existing.setdefault(slot, {})
+        pending  = {w: v for w, v in slot_data.items() if args.force or w not in out_slot}
+        print(f"[{slot}] 共 {len(slot_data)} 词，待处理 {len(pending)} 个")
+        for word, current in pending.items():
+            items.append((slot, word, current))
 
-        out_slot  = existing.setdefault(slot, {})
-        pending   = {w: v for w, v in slot_data.items()
-                     if args.force or w not in out_slot}
-        print(f"\n[{slot}] 共 {len(slot_data)} 词，待处理 {len(pending)} 个")
+    total      = len(items)
+    file_lock  = Lock()
+    print_lock = Lock()
+    workers    = min(args.workers, total) if total else 1
 
-        _ont_keys = ("definition", "synonyms", "hypernym", "hyponyms",
-                     "antonyms", "confusable_siblings", "incompatibility")
+    _ont_keys = ("definition", "synonyms", "hypernym", "hyponyms",
+                 "antonyms", "confusable_siblings", "incompatibility")
 
-        for i, (word, current) in enumerate(pending.items(), 1):
-            print(f"  {i}/{len(pending)} {word} ...", end=" ", flush=True)
-            try:
-                # 第一次调用：丰富/纠正
-                llm_result = enrich_node(slot, word, current, client)
-                if not llm_result:
-                    out_slot[word] = current
+    def _worker(idx_item):
+        i, (slot, word, current) = idx_item
+        with print_lock:
+            print(f"  [{slot}] {i}/{total} {word} ...", end=" ", flush=True)
+        try:
+            llm_result = enrich_node(slot, word, current, client)
+            if not llm_result:
+                with file_lock:
+                    existing[slot][word] = current
+                    out_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), "utf-8")
+                with print_lock:
                     print("✗ 第一次调用无结果，原样保留")
-                else:
-                    draft = merge_node(current, llm_result)
+                return
 
-                    # 第二次调用：校验
-                    draft_ont = {k: draft[k] for k in _ont_keys if k in draft}
-                    verified  = verify_node(slot, word, draft_ont, client)
-                    if verified:
-                        for k, v in verified.items():
-                            draft[k] = v
-                        print(f"✓✓ def={draft.get('definition','')[:30]}...")
-                    else:
-                        print(f"✓? def={draft.get('definition','')[:30]}... (校验无结果，保留第一次)")
+            draft     = merge_node(current, llm_result)
+            draft_ont = {k: draft[k] for k in _ont_keys if k in draft}
+            verified  = verify_node(slot, word, draft_ont, client)
+            if verified:
+                for k, v in verified.items():
+                    draft[k] = v
+                msg = f"✓✓ def={draft.get('definition','')[:30]}..."
+            else:
+                msg = f"✓? def={draft.get('definition','')[:30]}... (校验无结果，保留第一次)"
 
-                    out_slot[word] = draft
-            except Exception as e:
-                out_slot[word] = current
+            with file_lock:
+                existing[slot][word] = draft
+                out_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), "utf-8")
+            with print_lock:
+                print(msg)
+        except Exception as e:
+            with file_lock:
+                existing[slot][word] = current
+                out_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), "utf-8")
+            with print_lock:
                 print(f"✗  {e}，原样保留")
 
-            out_path.write_text(
-                json.dumps(existing, ensure_ascii=False, indent=2), "utf-8")
+    if workers == 1:
+        for i, item in enumerate(items, 1):
+            _worker((i, item))
+    else:
+        print(f"\n并发 workers={workers}")
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_worker, (i, item)) for i, item in enumerate(items, 1)]
+            for fut in as_completed(futures):
+                pass  # 结果已在 _worker 内落盘
 
-    total = sum(len(v) for v in existing.values())
-    print(f"\n✓ 完成，共 {total} 个节点 → {out_path}")
+    total_nodes = sum(len(v) for v in existing.values())
+    print(f"\n✓ 完成，共 {total_nodes} 个节点 → {out_path}")
 
 
 if __name__ == "__main__":

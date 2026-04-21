@@ -16,9 +16,11 @@ incompatibility 删除规则：
 进度：5_1_progress.json，支持中断续跑
 """
 
-import argparse, json, re, sys
+import argparse, json, sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from llm_client import LLMClient
+from threading import Lock
+from llm_client import LLMClient, parse_ports, parse_json_response
 
 ONTO_PATH     = Path(__file__).parent / "slot_ontology.json"
 PROGRESS_PATH = Path(__file__).parent / "5_1_progress.json"
@@ -43,7 +45,6 @@ SLOT_DESC = {
     "laterality":        "解剖学左右侧（左侧、右侧、双侧、交替）",
 }
 
-_RE_JSON = re.compile(r'\{[\s\S]*\}')
 
 # ── System Prompt ─────────────────────────────────────────────────────────────
 
@@ -257,19 +258,15 @@ def clean_node(slot: str, word: str, node: dict, client: LLMClient) -> dict | No
     ])
     if not result:
         return None
-    m = _RE_JSON.search(result)
-    if not m:
+    parsed = parse_json_response(result)
+    if not parsed:
         return None
-    try:
-        parsed = json.loads(m.group())
-        return {
-            "confusable_siblings": parsed.get("confusable_siblings",
-                                              node.get("confusable_siblings", [])),
-            "incompatibility":     parsed.get("incompatibility",
-                                              node.get("incompatibility", [])),
-        }
-    except json.JSONDecodeError:
-        return None
+    return {
+        "confusable_siblings": parsed.get("confusable_siblings",
+                                          node.get("confusable_siblings", [])),
+        "incompatibility":     parsed.get("incompatibility",
+                                          node.get("incompatibility", [])),
+    }
 
 
 # ── 主流程 ────────────────────────────────────────────────────────────────────
@@ -280,7 +277,10 @@ def main() -> None:
     parser.add_argument("--force", action="store_true", help="强制重新处理已完成节点")
     parser.add_argument("--poe",   action="store_true", help="使用 POE 后端")
     parser.add_argument("--host",  default="127.0.0.1")
-    parser.add_argument("--port",  type=int, default=8000)
+    parser.add_argument("--port",  default="8000",
+                        help="LLM 端口，逗号分隔多端口 (e.g. 8001,8002,...)")
+    parser.add_argument("--workers", "-w", type=int, default=1,
+                        help="并发 worker 数，建议与端口数一致")
     args = parser.parse_args()
 
     ontology = json.loads(ONTO_PATH.read_text("utf-8"))
@@ -288,54 +288,82 @@ def main() -> None:
 
     try:
         client = LLMClient(backend="poe" if args.poe else "local",
-                           host=args.host, port=args.port)
+                           host=args.host,
+                           port=parse_ports(args.port) if not args.poe else 8000)
         print(f"模型: {client.model}  后端: {client.backend}\n")
     except Exception as e:
         print(f"✗ 连接失败: {e}", file=sys.stderr)
         sys.exit(1)
 
+    # 展平待处理列表：[(slot, word, node), ...]
+    items = []
     for slot in args.slots:
         if slot not in ontology:
             print(f"[跳过] {slot}: 不在 ontology 中")
             continue
-
         done    = set(progress.get(slot, []))
         nodes   = ontology[slot]
         pending = {w: v for w, v in nodes.items() if args.force or w not in done}
-        print(f"\n[{slot}] 共 {len(nodes)} 节点，待处理 {len(pending)} 个")
+        print(f"[{slot}] 共 {len(nodes)} 节点，待处理 {len(pending)} 个")
+        for word, node in pending.items():
+            items.append((slot, word, node))
 
-        for i, (word, node) in enumerate(pending.items(), 1):
-            conf_before = node.get("confusable_siblings", [])
-            inco_before = node.get("incompatibility", [])
+    total      = len(items)
+    file_lock  = Lock()
+    print_lock = Lock()
+    workers    = min(args.workers, total) if total else 1
 
-            if not conf_before and not inco_before:
-                done.add(word)
-                print(f"  {i}/{len(pending)} {word}: 空列表，跳过")
+    def _worker(idx_item):
+        i, (slot, word, node) = idx_item
+        conf_before = node.get("confusable_siblings", [])
+        inco_before = node.get("incompatibility", [])
+
+        if not conf_before and not inco_before:
+            with file_lock:
+                progress.setdefault(slot, [])
+                if word not in progress[slot]:
+                    progress[slot].append(word)
+                PROGRESS_PATH.write_text(json.dumps(progress, ensure_ascii=False, indent=2), "utf-8")
+            with print_lock:
+                print(f"  [{slot}] {i}/{total} {word}: 空列表，跳过")
+            return
+
+        with print_lock:
+            print(f"  [{slot}] {i}/{total} {word} ...", end=" ", flush=True)
+        try:
+            cleaned = clean_node(slot, word, node, client)
+            if not cleaned:
+                with print_lock:
+                    print("✗ 无结果，保留原值")
             else:
-                print(f"  {i}/{len(pending)} {word} ...", end=" ", flush=True)
-                try:
-                    cleaned = clean_node(slot, word, node, client)
-                    if not cleaned:
-                        print("✗ 无结果，保留原值")
-                    else:
-                        ontology[slot][word]["confusable_siblings"] = cleaned["confusable_siblings"]
-                        ontology[slot][word]["incompatibility"]     = cleaned["incompatibility"]
-                        d_conf = set(conf_before) - set(cleaned["confusable_siblings"])
-                        d_inco = set(inco_before) - set(cleaned["incompatibility"])
-                        print(f"✓  -conf:{sorted(d_conf) or '∅'}  -inco:{sorted(d_inco) or '∅'}")
-                        done.add(word)
-                except Exception as e:
-                    print(f"✗ {e}，保留原值")
+                d_conf = set(conf_before) - set(cleaned["confusable_siblings"])
+                d_inco = set(inco_before) - set(cleaned["incompatibility"])
+                with file_lock:
+                    ontology[slot][word]["confusable_siblings"] = cleaned["confusable_siblings"]
+                    ontology[slot][word]["incompatibility"]     = cleaned["incompatibility"]
+                    ONTO_PATH.write_text(json.dumps(ontology, ensure_ascii=False, indent=2), "utf-8")
+                    progress.setdefault(slot, [])
+                    if word not in progress[slot]:
+                        progress[slot].append(word)
+                    PROGRESS_PATH.write_text(json.dumps(progress, ensure_ascii=False, indent=2), "utf-8")
+                with print_lock:
+                    print(f"✓  -conf:{sorted(d_conf) or '∅'}  -inco:{sorted(d_inco) or '∅'}")
+        except Exception as e:
+            with print_lock:
+                print(f"✗ {e}，保留原值")
 
-            # 每词落盘
-            ONTO_PATH.write_text(
-                json.dumps(ontology, ensure_ascii=False, indent=2), "utf-8")
-            progress[slot] = list(done)
-            PROGRESS_PATH.write_text(
-                json.dumps(progress, ensure_ascii=False, indent=2), "utf-8")
+    if workers == 1:
+        for i, item in enumerate(items, 1):
+            _worker((i, item))
+    else:
+        print(f"并发 workers={workers}")
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_worker, (i, item)) for i, item in enumerate(items, 1)]
+            for fut in as_completed(futures):
+                pass
 
-    total = sum(len(v) for v in progress.values())
-    print(f"\n✓ 完成，累计 {total} 节点 → {ONTO_PATH}")
+    total_done = sum(len(v) for v in progress.values())
+    print(f"\n✓ 完成，累计 {total_done} 节点 → {ONTO_PATH}")
 
 
 if __name__ == "__main__":

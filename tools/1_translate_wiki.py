@@ -5,11 +5,13 @@
 """
 
 import argparse, copy, json, re, sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from threading import Lock
 from typing import Optional, Tuple
 
 from config import DATA_ROOT
-from llm_client import LLMClient
+from llm_client import LLMClient, parse_ports, parse_json_response
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
 DICT_PATH = Path(__file__).resolve().parent / 'wiki_dict.json'
@@ -17,7 +19,6 @@ DICT_PATH = Path(__file__).resolve().parent / 'wiki_dict.json'
 _KEY_MAP   = {'exercise_name': 'exercise', 'muscle_name': 'muscle', 'Muscle': 'Muscles'}
 _TR_FIELDS = ('category', 'muscle', 'exercise', 'equipment', 'Difficulty', 'Force', 'Grips', 'Mechanic')
 _RE_ASCII  = re.compile(r'^[\x00-\x7F]+$')
-_RE_JSON   = re.compile(r'\{[\s\S]*\}')
 _RE_JUNK   = re.compile(r'[》《」「』『】【\s]+$')  # LLM 偶发的尾部乱码
 
 def _normalize(d: dict) -> dict:
@@ -53,19 +54,20 @@ def _clean_dict() -> int:
         DICT_PATH.write_text(json.dumps(d, ensure_ascii=False, indent=2), 'utf-8')
     return removed
 
-def _update_dict(payload: dict, trans: dict) -> None:
-    d, changed = _load_dict(), False
-    for f in _DICT_FIELDS:
-        en, cn = payload.get(f), trans.get(f)
-        if isinstance(en, str) and isinstance(cn, str) and cn and not _RE_ASCII.match(cn) \
-                and d.setdefault(f, {}).get(en) != cn:
-            d[f][en] = cn; changed = True
-    for m, en in payload.get('Muscles', {}).items():
-        cn = trans.get('Muscles', {}).get(m)
-        if cn and not _RE_ASCII.match(cn) and d.setdefault('muscle_role', {}).get(en) != cn:
-            d['muscle_role'][en] = cn; changed = True
-    if changed:
-        DICT_PATH.write_text(json.dumps(d, ensure_ascii=False, indent=2), 'utf-8')
+def _update_dict(payload: dict, trans: dict, lock: Lock = None) -> None:
+    with (lock or Lock()):
+        d, changed = _load_dict(), False
+        for f in _DICT_FIELDS:
+            en, cn = payload.get(f), trans.get(f)
+            if isinstance(en, str) and isinstance(cn, str) and cn and not _RE_ASCII.match(cn) \
+                    and d.setdefault(f, {}).get(en) != cn:
+                d[f][en] = cn; changed = True
+        for m, en in payload.get('Muscles', {}).items():
+            cn = trans.get('Muscles', {}).get(m)
+            if cn and not _RE_ASCII.match(cn) and d.setdefault('muscle_role', {}).get(en) != cn:
+                d['muscle_role'][en] = cn; changed = True
+        if changed:
+            DICT_PATH.write_text(json.dumps(d, ensure_ascii=False, indent=2), 'utf-8')
 
 # ── Prompt ────────────────────────────────────────────────────────────────────
 _SYSTEM_TMPL = """\
@@ -106,11 +108,10 @@ def _apply(orig: dict, trans: dict) -> dict:
     return cn
 
 def _parse(text: str) -> Optional[dict]:
-    m = _RE_JSON.search(text)
-    try: return json.loads(m.group()) if m else None
-    except json.JSONDecodeError: return None
+    return parse_json_response(text)
 
-def translate_one(path: Path, tmpl: str, client: LLMClient) -> Tuple[bool, str]:
+def translate_one(path: Path, tmpl: str, client: LLMClient,
+                  dict_lock: Lock = None) -> Tuple[bool, str]:
     orig    = _normalize(json.loads(path.read_text('utf-8')))
     cn_path = path.parent / 'metadata_cn.json'
 
@@ -152,7 +153,7 @@ def translate_one(path: Path, tmpl: str, client: LLMClient) -> Tuple[bool, str]:
     if still:
         return False, f'字段仍为英文: {list(still)}'
 
-    _update_dict(payload, trans)
+    _update_dict(payload, trans, lock=dict_lock)
     cn_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), 'utf-8')
     return True, ''
 
@@ -160,7 +161,10 @@ def translate_one(path: Path, tmpl: str, client: LLMClient) -> Tuple[bool, str]:
 def main() -> None:
     ap = argparse.ArgumentParser(description='批量翻译 wiki_videos metadata.json')
     ap.add_argument('--host', default='127.0.0.1')
-    ap.add_argument('--port', type=int, default=8000)
+    ap.add_argument('--port', default='8000',
+                    help='LLM 端口，逗号分隔多端口 (e.g. 8001,8002,...)')
+    ap.add_argument('--workers', '-w', type=int, default=1,
+                    help='并发 worker 数，建议与端口数一致')
     args = ap.parse_args()
 
     all_files  = sorted(DATA_ROOT.rglob('metadata.json'))
@@ -178,21 +182,45 @@ def main() -> None:
         print('全部已完成'); return
 
     try:
-        client = LLMClient(backend='local', host=args.host, port=args.port)
+        client = LLMClient(backend='local', host=args.host, port=parse_ports(args.port))
         print(f'模型: {client.model}\n')
     except Exception as e:
         print(f'连接失败 {args.host}:{args.port}: {e}', file=sys.stderr); sys.exit(1)
 
-    skipped = 0
-    for i, path in enumerate(pending, 1):
-        print(f'[{i}/{total}] {path.relative_to(DATA_ROOT)} ... ', end='', flush=True)
+    dict_lock  = Lock()
+    print_lock = Lock()
+    workers    = min(args.workers, total)
+    skipped    = 0
+
+    def _worker(idx_path):
+        i, path = idx_path
+        with print_lock:
+            print(f'[{i}/{total}] {path.relative_to(DATA_ROOT)} ... ', end='', flush=True)
         for attempt in range(1, 4):
-            ok, reason = translate_one(path, _SYSTEM_TMPL, client)
+            ok, reason = translate_one(path, _SYSTEM_TMPL, client, dict_lock)
             if ok:
-                print('✓'); break
-            print(f'✗({attempt}: {reason})', end=' ', flush=True)
-        else:
-            print('→ 跳过'); skipped += 1
+                with print_lock:
+                    print('✓')
+                return True
+            with print_lock:
+                print(f'✗({attempt}: {reason})', end=' ', flush=True)
+        with print_lock:
+            print('→ 跳过')
+        return False
+
+    if workers == 1:
+        for i, path in enumerate(pending, 1):
+            if not _worker((i, path)):
+                skipped += 1
+    else:
+        print(f'并发 workers={workers}')
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_worker, (i, p)): p
+                       for i, p in enumerate(pending, 1)}
+            for fut in as_completed(futures):
+                if not fut.result():
+                    skipped += 1
+
     if skipped:
         print(f'\n跳过 {skipped} 个（连续3次失败）')
 
