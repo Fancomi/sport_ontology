@@ -9,17 +9,29 @@
 用法：python 3_collect_slots.py [--top N] [--out-dir DIR]
 """
 
-import argparse, json, re
+import argparse, json, re, warnings
 from collections import defaultdict
 from pathlib import Path
 
+warnings.filterwarnings("ignore", message="Glyph.*missing from font")
+
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib.font_manager as _fm
+
+# 注册本地黑体字体（支持完整 CJK）
+_HEITI_PATH = ("/root/paddlejob/workspace/env_run/penghaotian/envs/dino/lib/"
+               "python3.11/site-packages/matplotlib/mpl-data/fonts/ttf/HeiTi.ttf")
 try:
-    import matplotlib_fontja
-    matplotlib_fontja.japanize()          # 注册 IPAex 字体，支持 CJK
-except ImportError:
+    _fe = _fm.FontEntry(fname=_HEITI_PATH, name="HeiTi",
+                        style="normal", variant="normal",
+                        weight=400, stretch="normal", size="scalable")
+    _fm.fontManager.ttflist.append(_fe)
+    matplotlib.rcParams["font.sans-serif"] = ["HeiTi"] + list(matplotlib.rcParams["font.sans-serif"])
+except Exception:
     pass
+matplotlib.rcParams["axes.unicode_minus"] = False
+
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
