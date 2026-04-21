@@ -10,9 +10,8 @@ from collections import defaultdict
 from pathlib import Path
 from openai import OpenAI
 
+from config import DATA_ROOT
 from video_frames import ensure_frames, FPS_DEFAULT
-
-DATA_ROOT  = Path('/media/baidu/8C1A3A981A3A7F70/DATAS/wiki_videos')
 VIEWS      = ("front", "side")
 MAX_TOKENS = 8
 PROMPT_TMPL = (

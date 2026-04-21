@@ -8,10 +8,10 @@ import argparse, json, re, sys
 from pathlib import Path
 from typing import Optional, Tuple
 
+from config import DATA_ROOT
 from llm_client import LLMClient
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
-DATA_ROOT   = Path('/media/baidu/8C1A3A981A3A7F70/DATAS/wiki_videos')
 FIELD       = 'category_3_slotted_description'
 VALID_KEY   = '_cat3_validated'
 
@@ -78,9 +78,8 @@ F. exercise 槽位值不得含序号/变式编号（如"变式四"、"变体二"
 - `[force_type:带动]` → `带动`（去除括号，词语留在句中）
 - `[force_type:驱动]` → `驱动`
 - `[trajectory:运动]` → `运动`
-- `[contact_type:支撑]` → `支撑`
 - `[force_part:核心]` → `核心`（宽泛代称，去除标注）
-常见需去除标注的词：驱动、传递、带动、激活、做功、借力、运动、移动、转移重心、支撑、维持、固定、核心、肌肉。
+常见需去除标注的词：驱动、传递、带动、激活、做功、借力、运动、移动、转移重心、支撑、维持、核心、肌肉。
 **注意**：第二层只去除标注符号，不修改句子的其他部分，不替换词汇。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -130,8 +129,8 @@ def llm_check(meta_cn: dict, text: str, rule_hints: list,
     return False, result.get('corrected'), result.get('reason', '未知问题')
 
 def run_qc_loop(meta: dict, text: str, client: LLMClient) -> Tuple[str, bool]:
-    """LLM自校正循环，最多3轮。返回 (最终文本, 是否通过)。"""
-    for round_num in range(1, 4):
+    """LLM自校正循环，最多12轮。返回 (最终文本, 是否通过)。"""
+    for round_num in range(1, 13):
         rule_issues = check_rules(text)
         passed, corrected, reason = llm_check(meta, text, rule_issues, _SYSTEM, client)
         if passed:

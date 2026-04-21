@@ -126,6 +126,9 @@ def ensure_frames(video_path: Path, fps: float = FPS_DEFAULT,
     if frames is not None:
         print(f"  [cache] hit  read={t.elapsed_time:.3f}s  {len(frames)}帧")
         return frames
+    if not video_path.exists():
+        print(f"  [cache] miss + 视频不存在: {video_path}")
+        return []
     print("  [cache] miss → 提取帧...")
     frames = extract_frames(video_path, fps, max_side)
     if frames:

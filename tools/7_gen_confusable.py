@@ -9,8 +9,9 @@ Script 7: 基于 slot_ontology.json 生成混淆负样本
 import json, math, re, random
 from pathlib import Path
 
+from config import DATA_ROOT
+
 # ── 常量 ──────────────────────────────────────────────────────────────────────
-DATA_ROOT   = Path('/media/baidu/8C1A3A981A3A7F70/DATAS/wiki_videos')
 ONTOLOGY_PATH = Path(__file__).parent / "slot_ontology.json"
 STATS_PATH    = Path(__file__).parent / "eval_stats.json"
 VIEWS         = ("front", "side")

@@ -13,12 +13,15 @@
 """
 
 import argparse, importlib, json, re, sys, time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from threading import Lock
 from typing import Optional, Tuple
 from openai import OpenAI
 
+from config import DATA_ROOT
 from llm_client import LLMClient
-from video_frames import ensure_frames, prebuild_cache, cache_dir, FPS_DEFAULT, MAX_SIDE_DEFAULT
+from video_frames import ensure_frames, prebuild_cache, cache_dir, load_cache, FPS_DEFAULT, MAX_SIDE_DEFAULT
 
 # ── 引入 2_1 质检函数 ──────────────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -26,7 +29,6 @@ _c = importlib.import_module('2_1_check_augment')
 _run_qc_loop = _c.run_qc_loop
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
-DATA_ROOT        = Path('/media/baidu/8C1A3A981A3A7F70/DATAS/wiki_videos')
 PROMPT_CAT3_PATH = Path(__file__).resolve().parent / 'Prompt_Augment.md'
 PROMPT_FULL_PATH = Path(__file__).resolve().parent / 'Prompt_Augment_full.md'
 MAX_TOKENS       = 4096
@@ -113,8 +115,9 @@ def process_one(meta_path: Path, cat3_tmpl: str, full_tmpl: str,
             skip += 1; print(f'  {view}: (跳过)'); continue
 
         video_path = meta_path.parent / f'{view}.mp4'
-        if not video_path.exists():
-            print(f'  {view}: ✗ 视频不存在'); continue
+        # 有缓存直接用；无缓存且无视频则跳过
+        if not video_path.exists() and load_cache(video_path, max_side) is None:
+            print(f'  {view}: ✗ 无缓存且视频不存在'); continue
 
         # ── P1: VLM 生成 category_3 ──────────────────────────────────────────
         cat3     = None
@@ -184,6 +187,8 @@ def main() -> None:
                         help='从末尾向前处理，避免与正向机器重叠')
     parser.add_argument('--no-prebuild',   action='store_true',
                         help='跳过自动帧缓存预提取')
+    parser.add_argument('--workers', '-w', type=int, default=1,
+                        help='并发 worker 数（默认8，需与 llama-server --parallel 匹配）')
     # 可选质检
     parser.add_argument('--check',         action='store_true',
                         help='P1后启动LLM质检自校正循环（最多3轮）')
@@ -231,16 +236,31 @@ def main() -> None:
     cat3_tmpl    = PROMPT_CAT3_PATH.read_text('utf-8')
     full_tmpl    = PROMPT_FULL_PATH.read_text('utf-8')
     total_ok = total_skip = 0
+    print_lock = Lock()
 
-    for i, meta_path in enumerate(pending, 1):
+    def _worker(idx_meta):
+        i, meta_path = idx_meta
         rel = meta_path.parent.relative_to(DATA_ROOT)
-        print(f'[{i}/{len(pending)}] {rel}')
         t0 = time.time()
         ok, skip = process_one(meta_path, cat3_tmpl, full_tmpl, client, model,
                                 args.fps, args.max_side, check_client)
-        print(f'  ⏱ {time.time()-t0:.1f}s')
-        total_ok   += ok
-        total_skip += skip
+        with print_lock:
+            print(f'[{i}/{len(pending)}] {rel}  ⏱ {time.time()-t0:.1f}s')
+        return ok, skip
+
+    workers = min(args.workers, len(pending))
+    print(f'并发 workers={workers}')
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_worker, (i, p)): p
+                   for i, p in enumerate(pending, 1)}
+        for fut in as_completed(futures):
+            try:
+                ok, skip = fut.result()
+                total_ok   += ok
+                total_skip += skip
+            except Exception as e:
+                with print_lock:
+                    print(f'  ✗ worker异常: {futures[fut]}: {e}')
 
     print(f'\n✓ 完成: 新增 {total_ok} 个，跳过 {total_skip} 个')
 

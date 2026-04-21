@@ -8,10 +8,10 @@ import argparse, copy, json, re, sys
 from pathlib import Path
 from typing import Optional, Tuple
 
+from config import DATA_ROOT
 from llm_client import LLMClient
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
-DATA_ROOT = Path('/media/baidu/8C1A3A981A3A7F70/DATAS/wiki_videos')
 DICT_PATH = Path(__file__).resolve().parent / 'wiki_dict.json'
 
 _KEY_MAP   = {'exercise_name': 'exercise', 'muscle_name': 'muscle', 'Muscle': 'Muscles'}

@@ -1,4 +1,4 @@
-source /home/baidu/envs/mineru/bin/activate
+# source /home/baidu/envs/mineru/bin/activate
 # source /home/baidu/envs/swift/bin/activate
 
 # 视频描述 / 处理预热

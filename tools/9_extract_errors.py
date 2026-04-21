@@ -9,7 +9,7 @@ import argparse, json
 from collections import defaultdict
 from pathlib import Path
 
-DATA_ROOT = Path('/media/baidu/8C1A3A981A3A7F70/DATAS/wiki_videos')
+from config import DATA_ROOT
 HARD_ALL  = Path(__file__).parent / "hard_all.jsonl"
 
 
