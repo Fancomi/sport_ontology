@@ -20,11 +20,10 @@ python3 2_augment_wiki.py --host $HOST --port $PORT --check -w $WORKERS
 # 2.1 批量校验 augment_xxx.json 合规性
 # python3 2_1_check_augment.py --host $HOST --port $PORT -w $WORKERS
 
-# # 3. 槽位收集: 从augment_xxx.json获取
-# python3 3_collect_slots.py
+# # 3. 槽位统计: 覆盖输出 slot_vocab.json / slot_abnormal.json / slot_vocab.png
+# python3 3_collect_slots.py [--top 20]
 
-# # 4. 节点信息收集: 从Wordnet
-# python3 4_fetch_vocab_info.py
+# # 4. (已删除) 4_fetch_vocab_info.py — Wordnet 信息收集，用途有限
 
 # # 5. LLM 增强图谱
 # python3 5_enrich_with_llm.py --host $HOST --port $PORT -w $WORKERS
