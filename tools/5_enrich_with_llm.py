@@ -369,11 +369,12 @@ SLOT_EXAMPLES = {
 def _build_system() -> str:
     return """\
 你是运动健身领域的本体工程专家，熟悉解剖学、力量训练和运动科学。
-你的任务是：针对健身视频VQA（视觉问答）项目中的**本体节点**，验证并补充其语义属性。
+你的任务是：为健身视频VQA项目中的槽位节点从零生成完整的本体属性。
 
 # 场景说明
 - 本体用于健身动作视频的文本描述，涉及肌肉、器械、视角、动作名称等
-- 属性用于生成 Hard Negative（难负样本），要求语义精准、符合健身专业知识
+- 属性用于生成 **Hard Negative（难负样本）**：从正确描述中替换一个槽位词，
+  让VLM判断哪句更符合视频。负样本质量要求：人类通过观看12秒健身视频，能可靠区分替换前后哪句正确
 - 所有属性必须严格限定在体育运动/健身场景，不得引入无关含义
 
 # 11个槽位定义
@@ -383,10 +384,10 @@ def _build_system() -> str:
 - contact_part: 身体与器械/地面的接触部位（手掌/脚跟/背部等）
 - contact_type: 抓握或接触方式（正握/反握/对握/踩地等）
 - posture_alignment: 身体姿态/对齐状态（腰背挺直/双脚与肩同宽等）
-- trajectory: 动作轨迹（向心收缩/离心收缩/顶峰收缩等）
+- trajectory: 动作轨迹（向心收缩/离心收缩/顶峰收缩/旋转等）
 - exercise: 健身动作专有名词（硬拉/深蹲/弯举等）
 - force_part: 视觉可见的发力/收缩肌肉部位（肱二头肌/背阔肌/臀大肌等）
-- force_type: 发力方式（拉/推/保持/旋转等）
+- force_type: 发力方式（拉/推/保持/下蹲等）
 - laterality: 解剖学左右侧（左侧/右侧/双侧/交替等）
 
 # 各属性说明
@@ -396,31 +397,28 @@ def _build_system() -> str:
 - hypernym: 上位概念（如"肱二头肌"→"上臂肌群"，≤3条）
 - hyponyms: 下位概念（如"硬拉"→"罗马尼亚硬拉"，≤5条）
 - antonyms: 反义词（如"正握"→"反握"，≤3条）
-- confusable_siblings: 容易混淆的兄弟节点（同槽位、相近但有区别，≤5条）
-- incompatibility: 语义互斥（不可同时成立，≤5条）
+- confusable_siblings: 用于生成**难负样本**的易混淆同槽位兄弟节点（≤5条）
+  ✓ 保留：同槽位、语义相近、在12秒健身视频中**人眼能可靠区分**的词
+  ✗ 删除：与节点词同义/别名（同义词应放 synonyms）
+  ✗ 删除：节点词的上位或下位概念（应放 hypernym/hyponyms）
+  ✗ 删除：在12秒健身视频中人眼**无法可靠区分**的词（视觉差异不足以构成有效负样本）
+- incompatibility: 与节点词在**同一动作视频中不可合法共现**的语义互斥词（≤5条）
+  ✓ 保留：真正互斥，如"正握"↔"反握"、"男性"↔"女性"、"向心上升"↔"离心下降"
+  ✗ 删除：与节点词近义/别名，不构成真正互斥
+  ✗ 删除：在同一动作视频中实际可以合法共现的词
 
 # 语言规范
 - `en` 字段必须是英文
 - **其余所有输出字段**（definition、synonyms、hypernym、hyponyms、antonyms、confusable_siblings、incompatibility）的值必须使用**中文表达**，不得混入英文单词
 
 # 生成规则
-1. 列表字段（synonyms/hypernym/hyponyms/antonyms/confusable_siblings/incompatibility）中，每个条目都必须同时满足：
-   a. 与该节点在同一槽位（slot）语义体系内直接相关
-   b. 纯中文表达（**禁止**任何英文单词，含缩写）
-   c. 与健身/体育/解剖学场景直接相关
-2. hyponyms 必须是该节点在**同槽位**下的下位变体（如"硬拉"的 hyponyms 只能是硬拉的变体动作）
-3. 如果某属性无合法健身内容可填，使用空列表 []，不得硬凑无关内容
+1. 列表字段每个条目必须同时满足：纯中文、与该槽位语义体系直接相关、与健身/体育/解剖学场景直接相关
+2. hyponyms 只能是该节点在**同槽位**下的下位变体（如"硬拉"的 hyponyms 只能是硬拉的变体动作）
+3. 某属性无合法内容可填时，使用空列表 []，不得硬凑
 4. 返回的 JSON 必须包含所有8个属性字段（即使为空列表）
 
 请保持思考过程简短高效，不要过度发散，思考过程请控制在 1000 字以内。
 """
-
-
-def _build_user(slot: str, word: str, current: dict) -> str:
-    slot_desc = SLOT_DESC.get(slot, slot)
-    examples = SLOT_EXAMPLES.get(slot, [])
-
-    # 构造 few-shot 示例
 def _build_user(slot: str, word: str) -> str:
     slot_desc = SLOT_DESC.get(slot, slot)
     examples  = SLOT_EXAMPLES.get(slot, [])
