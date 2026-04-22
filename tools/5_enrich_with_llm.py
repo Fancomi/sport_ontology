@@ -56,7 +56,6 @@ SLOT_EXAMPLES = {
     "gender": [
         {
             "word": "男性",
-            "current": {"en": "male", "hypernym": ["动物"], "antonyms": ["雌性"]},
             "expected": {
                 "en": "male",
                 "definition": "健身视频中的男性被摄者",
@@ -70,8 +69,6 @@ SLOT_EXAMPLES = {
         },
         {
             "word": "女性",
-            "current": {"en": "female", "hypernym": ["动物"], "antonyms": ["雄性"],
-                        "hyponyms": ["雌性哺乳动物", "母鸡", "小母马"]},
             "expected": {
                 "en": "female",
                 "definition": "健身视频中的女性被摄者",
@@ -87,7 +84,6 @@ SLOT_EXAMPLES = {
     "camera_view": [
         {
             "word": "正面",
-            "current": {"en": "front view", "definition": "向前突出的一面", "hypernym": ["侧面"]},
             "expected": {
                 "en": "front view",
                 "definition": "摄像机正对被摄者面部/胸腹侧的拍摄视角",
@@ -101,8 +97,6 @@ SLOT_EXAMPLES = {
         },
         {
             "word": "侧面",
-            "current": {"en": "side view", "definition": "侧面或侧翼",
-                        "hyponyms": ["profile", "left side", "右侧面"]},
             "expected": {
                 "en": "side view",
                 "definition": "摄像机位于被摄者身体左侧或右侧的拍摄视角",
@@ -118,8 +112,6 @@ SLOT_EXAMPLES = {
     "equipment": [
         {
             "word": "哑铃",
-            "current": {"en": "dumbbell", "definition": "以各种方式使用肌肉保持健康的活动",
-                        "hypernym": ["努力"]},
             "expected": {
                 "en": "dumbbell",
                 "definition": "一种两端固定重块、用于单手或双手力量训练的自由重量器械",
@@ -133,7 +125,6 @@ SLOT_EXAMPLES = {
         },
         {
             "word": "杠铃",
-            "current": {"en": "barbell", "hypernym": ["努力"]},
             "expected": {
                 "en": "barbell",
                 "definition": "一根长杆两端加装可调节重量片的器械，常用于深蹲、硬拉、卧推",
@@ -149,7 +140,6 @@ SLOT_EXAMPLES = {
     "contact_part": [
         {
             "word": "手掌",
-            "current": {"en": "palm"},
             "expected": {
                 "en": "palm",
                 "definition": "手部与器械/地面接触的掌心区域",
@@ -163,7 +153,6 @@ SLOT_EXAMPLES = {
         },
         {
             "word": "脚跟",
-            "current": {"en": "heel"},
             "expected": {
                 "en": "heel",
                 "definition": "足部后侧跟骨区域，深蹲/硬拉时常见踩地接触部位",
@@ -179,7 +168,6 @@ SLOT_EXAMPLES = {
     "contact_type": [
         {
             "word": "正握",
-            "current": {"en": "overhand grip"},
             "expected": {
                 "en": "overhand grip",
                 "definition": "手掌朝下（旋前位）握持器械的方式，也称旋前握",
@@ -193,7 +181,6 @@ SLOT_EXAMPLES = {
         },
         {
             "word": "反握",
-            "current": {"en": "underhand grip"},
             "expected": {
                 "en": "underhand grip",
                 "definition": "手掌朝上（旋后位）握持器械的方式，也称旋后握",
@@ -209,7 +196,6 @@ SLOT_EXAMPLES = {
     "posture_alignment": [
         {
             "word": "腰背挺直",
-            "current": {"en": "straight back"},
             "expected": {
                 "en": "straight back",
                 "definition": "腰椎保持中立位、背部不弓不超伸的对齐状态",
@@ -223,7 +209,6 @@ SLOT_EXAMPLES = {
         },
         {
             "word": "双脚与肩同宽",
-            "current": {"en": "feet shoulder-width apart"},
             "expected": {
                 "en": "feet shoulder-width apart",
                 "definition": "两脚间距与肩部同宽的站立/深蹲起始位对齐要求",
@@ -239,7 +224,6 @@ SLOT_EXAMPLES = {
     "trajectory": [
         {
             "word": "向心收缩",
-            "current": {"en": "concentric contraction"},
             "expected": {
                 "en": "concentric contraction",
                 "definition": "肌肉缩短产生力量的收缩阶段，如弯举上升阶段肱二头肌收缩",
@@ -253,7 +237,6 @@ SLOT_EXAMPLES = {
         },
         {
             "word": "离心收缩",
-            "current": {"en": "eccentric contraction"},
             "expected": {
                 "en": "eccentric contraction",
                 "definition": "肌肉拉长同时产生张力的减速阶段，如弯举下降阶段控制重量",
@@ -269,7 +252,6 @@ SLOT_EXAMPLES = {
     "exercise": [
         {
             "word": "硬拉",
-            "current": {"en": "deadlift"},
             "expected": {
                 "en": "deadlift",
                 "definition": "从地面将杠铃/哑铃拉起至髋部伸展的复合力量动作，主要发力部位为臀腿和背部",
@@ -283,7 +265,6 @@ SLOT_EXAMPLES = {
         },
         {
             "word": "弯举",
-            "current": {"en": "curl"},
             "expected": {
                 "en": "curl",
                 "definition": "通过肘关节屈曲将重量向上弯举的孤立动作，主要针对肱二头肌",
@@ -299,7 +280,6 @@ SLOT_EXAMPLES = {
     "force_part": [
         {
             "word": "肱二头肌",
-            "current": {"en": "biceps", "hypernym": ["骨骼肌"]},
             "expected": {
                 "en": "biceps brachii",
                 "definition": "上臂前侧双头肌肉，主要功能为肘关节屈曲和前臂旋后，弯举动作的主发力肌",
@@ -313,7 +293,6 @@ SLOT_EXAMPLES = {
         },
         {
             "word": "背阔肌",
-            "current": {"en": "latissimus dorsi", "hypernym": ["骨骼肌"]},
             "expected": {
                 "en": "latissimus dorsi",
                 "definition": "背部最宽大的扁平肌，负责肩关节内收和伸展，划船/下拉类动作的主发力肌",
@@ -329,7 +308,6 @@ SLOT_EXAMPLES = {
     "force_type": [
         {
             "word": "拉",
-            "current": {"en": "pull"},
             "expected": {
                 "en": "pull",
                 "definition": "将重量或阻力向自身方向拉动的发力方式，如划船、弯举",
@@ -343,7 +321,6 @@ SLOT_EXAMPLES = {
         },
         {
             "word": "推",
-            "current": {"en": "push"},
             "expected": {
                 "en": "push",
                 "definition": "将重量或阻力向外推离身体的发力方式，如卧推、肩推",
@@ -359,7 +336,6 @@ SLOT_EXAMPLES = {
     "laterality": [
         {
             "word": "双侧",
-            "current": {"en": "bilateral"},
             "expected": {
                 "en": "bilateral",
                 "definition": "双侧同时发力的训练方式，如双手同时进行的杠铃弯举",
@@ -373,7 +349,6 @@ SLOT_EXAMPLES = {
         },
         {
             "word": "单侧",
-            "current": {"en": "unilateral"},
             "expected": {
                 "en": "unilateral",
                 "definition": "单侧肢体独立发力的训练方式，如单臂哑铃划船",
@@ -428,17 +403,14 @@ def _build_system() -> str:
 - `en` 字段必须是英文
 - **其余所有输出字段**（definition、synonyms、hypernym、hyponyms、antonyms、confusable_siblings、incompatibility）的值必须使用**中文表达**，不得混入英文单词
 
-# 验证规则
-1. 如果 current 中的属性**偏离健身场景**（如 hypernym=动物/植物、definition=语法格、hyponyms=动物名），**必须完全替换**，不得保留任何非健身内容条目
-2. 列表字段（synonyms/hypernym/hyponyms/antonyms/confusable_siblings/incompatibility）中，每个条目都必须同时满足：
+# 生成规则
+1. 列表字段（synonyms/hypernym/hyponyms/antonyms/confusable_siblings/incompatibility）中，每个条目都必须同时满足：
    a. 与该节点在同一槽位（slot）语义体系内直接相关
    b. 纯中文表达（**禁止**任何英文单词，含缩写）
    c. 与健身/体育/解剖学场景直接相关
-   不符合任一条件的条目一律**删除**，不得保留
-3. hyponyms 必须是该节点在**同槽位**下的下位变体（如"硬拉"的 hyponyms 只能是硬拉的变体动作，不能是其他动作或无关概念）
-4. 如果某属性无合法健身内容可填，使用空列表 []，不得硬凑无关内容
-5. 如果属性为空或明显不足，在健身场景范围内补充合理候选（≤5条）
-6. 返回的 JSON 必须包含所有8个属性字段（即使为空列表）
+2. hyponyms 必须是该节点在**同槽位**下的下位变体（如"硬拉"的 hyponyms 只能是硬拉的变体动作）
+3. 如果某属性无合法健身内容可填，使用空列表 []，不得硬凑无关内容
+4. 返回的 JSON 必须包含所有8个属性字段（即使为空列表）
 
 请保持思考过程简短高效，不要过度发散，思考过程请控制在 1000 字以内。
 """
@@ -449,28 +421,28 @@ def _build_user(slot: str, word: str, current: dict) -> str:
     examples = SLOT_EXAMPLES.get(slot, [])
 
     # 构造 few-shot 示例
+def _build_user(slot: str, word: str) -> str:
+    slot_desc = SLOT_DESC.get(slot, slot)
+    examples  = SLOT_EXAMPLES.get(slot, [])
+
     ex_lines = []
     for ex in examples:
         ex_lines.append(
-            f'输入: slot={slot}, word="{ex["word"]}", current={json.dumps(ex["current"], ensure_ascii=False)}\n'
+            f'word="{ex["word"]}"\n'
             f'输出: {json.dumps(ex["expected"], ensure_ascii=False)}'
         )
     few_shot = "\n\n".join(ex_lines)
 
-    # 当前待处理节点（只发关键字段，压缩 token）
-    current_compact = {k: v for k, v in current.items()
-                       if k not in ("source_count",) and v}
-
     return f"""\
-# 参考示例（同槽位 {slot}：{slot_desc}）
+# 参考示例（槽位 {slot}：{slot_desc}）
 
 {few_shot}
 
 # 待处理节点
 
-slot={slot}, word="{word}", current={json.dumps(current_compact, ensure_ascii=False)}
+slot={slot}, word="{word}"
 
-请验证并补充以上节点的属性，严格输出 JSON（不含任何说明文字）：
+请为以上节点生成本体属性，严格输出 JSON（不含任何说明文字）：
 {{
   "en": "...",
   "definition": "...",
@@ -489,12 +461,10 @@ def _parse_json(text: str) -> Optional[dict]:
     return parse_json_response(text)
 
 
-def enrich_node(slot: str, word: str, current: dict, client: LLMClient) -> Optional[dict]:
-    system = _build_system()
-    user   = _build_user(slot, word, current)
+def enrich_node(slot: str, word: str, client: LLMClient) -> Optional[dict]:
     result = client.chat([
-        {"role": "system", "content": system},
-        {"role": "user",   "content": user},
+        {"role": "system", "content": _build_system()},
+        {"role": "user",   "content": _build_user(slot, word)},
     ])
     if not result:
         return None
@@ -565,22 +535,9 @@ def verify_node(slot: str, word: str, draft: dict, client: LLMClient) -> Optiona
 
 # ── 合并策略 ──────────────────────────────────────────────────────────────────
 
-def merge_node(current: dict, llm_result: dict) -> dict:
-    """将 LLM 结果合并回节点：优先保留 current 中非空的属性，LLM 补充空缺项。"""
-    merged = dict(current)  # 保留 source_count 等原始字段
-    fill_keys = ("en", "definition", "synonyms", "hypernym", "hyponyms",
-                 "antonyms", "confusable_siblings", "incompatibility")
-    for key in fill_keys:
-        llm_val = llm_result.get(key)
-        cur_val = current.get(key)
-        if not cur_val and llm_val:
-            # 空缺 → 用 LLM 填充
-            merged[key] = llm_val
-        elif cur_val and llm_val:
-            # 两者都有：LLM 返回非空则视为已验证/纠正，使用 LLM 版本
-            # 对于 definition（字符串），直接替换；对于列表，LLM 优先
-            merged[key] = llm_val
-    return merged
+def merge_node(source_count: int, llm_result: dict) -> dict:
+    """将 LLM 结果与元字段合并，保留 source_count。"""
+    return {"source_count": source_count, **llm_result}
 
 
 # ── 入口 ─────────────────────────────────────────────────────────────────────
@@ -657,8 +614,7 @@ def main() -> None:
         print(f"[{slot}] vocab {len(slot_vocab)} 词，ontology {len(out_slot)} 词，"
               f"待补充 {len(pending)} 个")
         for word, count in pending.items():
-            # 把 source_count 作为唯一元字段传入，LLM prompt 会过滤掉它
-            items.append((slot, word, {"source_count": count}))
+            items.append((slot, word, count))
 
     total      = len(items)
     file_lock  = Lock()
@@ -669,25 +625,21 @@ def main() -> None:
                  "antonyms", "confusable_siblings", "incompatibility")
 
     def _worker(idx_item):
-        i, (slot, word, current) = idx_item
+        i, (slot, word, count) = idx_item
         with print_lock:
             print(f"  [{slot}] {i}/{total} {word} ...", end=" ", flush=True)
         try:
-            llm_result = enrich_node(slot, word, current, client)
+            llm_result = enrich_node(slot, word, client)
             if not llm_result:
-                with file_lock:
-                    existing[slot][word] = current
-                    out_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), "utf-8")
                 with print_lock:
-                    print("✗ 第一次调用无结果，原样保留")
+                    print("✗ 第一次调用无结果，跳过")
                 return
 
-            draft     = merge_node(current, llm_result)
+            draft     = merge_node(count, llm_result)
             draft_ont = {k: draft[k] for k in _ont_keys if k in draft}
             verified  = verify_node(slot, word, draft_ont, client)
             if verified:
-                for k, v in verified.items():
-                    draft[k] = v
+                draft.update(verified)
                 msg = f"✓✓ def={draft.get('definition','')[:30]}..."
             else:
                 msg = f"✓? def={draft.get('definition','')[:30]}... (校验无结果，保留第一次)"
@@ -698,11 +650,8 @@ def main() -> None:
             with print_lock:
                 print(msg)
         except Exception as e:
-            with file_lock:
-                existing[slot][word] = current
-                out_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), "utf-8")
             with print_lock:
-                print(f"✗  {e}，原样保留")
+                print(f"✗  {e}，跳过")
 
     if workers == 1:
         for i, item in enumerate(items, 1):
