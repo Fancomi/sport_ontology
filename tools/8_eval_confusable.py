@@ -61,7 +61,8 @@ def eval_file(src: Path, frames: list[str], client: OpenAI, model: str,
     results  = []
 
     for idx, neg in enumerate(data.get("negatives", [])):
-        if f"{rel}|{view}|{idx}" in done_keys:
+        _key = f"{rel}|{view}|{neg['replaced_slot']}|{neg['original_value']}|{neg['new_value']}"
+        if _key in done_keys:
             continue
 
         negative      = strip_slots(neg["category_3_slotted_description"])
@@ -82,7 +83,6 @@ def eval_file(src: Path, frames: list[str], client: OpenAI, model: str,
         results.append({
             "video":          rel,
             "view":           view,
-            "neg_idx":        idx,
             "source":         neg["source"],
             "replaced_slot":  neg["replaced_slot"],
             "original_value": neg["original_value"],
@@ -103,17 +103,18 @@ def load_done(out_path: Path) -> set[str]:
         for line in out_path.read_text("utf-8").splitlines():
             try:
                 r = json.loads(line)
-                done.add(f"{r['video']}|{r['view']}|{r['neg_idx']}")
+                done.add(f"{r['video']}|{r['view']}|{r['replaced_slot']}|{r['original_value']}|{r['new_value']}")
             except Exception:
                 pass
     return done
 
 
-def _increment_hard_errors(src: Path, wrong_idxs: set[int]) -> None:
-    """hard_{view}.json 中答错条目的 error_count +1。"""
+def _increment_hard_errors(src: Path, wrong_keys: set[tuple]) -> None:
+    """hard_{view}.json 中答错条目的 error_count +1（按内容元组匹配）。"""
     data = json.loads(src.read_text("utf-8"))
-    for i, neg in enumerate(data.get("negatives", [])):
-        if i in wrong_idxs:
+    for neg in data.get("negatives", []):
+        k = (neg["replaced_slot"], neg["original_value"], neg["new_value"])
+        if k in wrong_keys:
             neg["error_count"] = neg.get("error_count", 1) + 1
     src.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
 
@@ -243,9 +244,10 @@ def main() -> None:
             records = eval_file(src, frames, c, mid, set(), eb, args.dry_run)
             elapsed = time.time() - t0
 
-            wrong_idxs = {r["neg_idx"] for r in records if not r["is_correct"]}
-            if wrong_idxs:
-                _increment_hard_errors(src, wrong_idxs)
+            wrong_keys = {(r["replaced_slot"], r["original_value"], r["new_value"])
+                          for r in records if not r["is_correct"]}
+            if wrong_keys:
+                _increment_hard_errors(src, wrong_keys)
 
             n, ok_n = len(records), sum(1 for r in records if r["is_correct"])
             ht += n; hc += ok_n

@@ -51,7 +51,7 @@ def get_candidates(lookup: dict, slot: str, value: str, rel: str) -> list[str]:
 
 
 def replace_slot(text: str, slot: str, old_val: str, new_val: str) -> str:
-    return text.replace(f"[{slot}:{old_val}]", f"[{slot}:{new_val}]", 1)
+    return text.replace(f"[{slot}:{old_val}]", f"[{slot}:{new_val}]")
 
 
 _warned: set[tuple[str, str, str]] = set()  # (rel, slot, value) 全局去重警告

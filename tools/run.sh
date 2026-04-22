@@ -50,5 +50,11 @@ WORKERS=8
 # # 8.2 基于手动的图谱删减
 # python3 8_2_cleanup_pairs.py
 
-# # 9 从eval_results.jsonl提取hard并沉淀
-# python3 9_extract_errors.py
+# 9 从eval_results.jsonl提取hard并沉淀
+#   --input 可指定多个文件取并集；--clean 清理 augment 更新后失效的历史条目并重建 hard_{view}.json
+# python3 9_extract_errors.py --input eval_results.jsonl
+python3 9_extract_errors.py \
+--input \
+/root/paddlejob/workspace/env_run/penghaotian/llm_infer/sport_ontology/tools/BAKUP/eval_results_v2_gemma.jsonl \
+/root/paddlejob/workspace/env_run/penghaotian/llm_infer/sport_ontology/tools/BAKUP/eval_results_v2_qwen3.6.jsonl \
+--clean
