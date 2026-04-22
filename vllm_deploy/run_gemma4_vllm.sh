@@ -11,6 +11,11 @@ export RAY_memory_monitor_refresh_ms=0
 export NCCL_IB_DISABLE=1
 export NCCL_P2P_LEVEL=NVL
 
+# 清理 torch compile 缓存（避免旧缓存损坏导致启动报错）
+echo "清理 torch compile 缓存..."
+rm -rf /root/.cache/vllm/torch_compile_cache
+echo "缓存已清理"
+
 MODEL=/root/paddlejob/workspace/env_run/penghaotian/models/gemma-4-26B-A4B-it
 SHM_MODEL=/dev/shm/models/$(basename $MODEL)
 

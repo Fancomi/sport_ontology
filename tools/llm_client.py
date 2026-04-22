@@ -71,17 +71,39 @@ def parse_json_response(text: str) -> Optional[dict]:
 
 
 def build_vlm_clients(host: str, ports: list[int]) -> list[tuple]:
-    """构建 VLM (OpenAI) 客户端列表，每个元素为 (client, model_id, extra_body)。"""
+    """构建 VLM (OpenAI) 客户端列表，每个元素为 (client, model_id, extra_body)。
+    并发探测各端口，不可达或返回错误的端口自动跳过。
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed as _as_completed
+
+    def _probe(port: int):
+        c = OpenAI(api_key='EMPTY', base_url=f'http://{host}:{port}/v1')
+        bk, mid = detect_server_info(c)
+        if not mid:
+            raise RuntimeError('no model')
+        eb = make_extra_body(bk, mid)
+        return port, c, mid, eb
+
+    results = {}  # port -> (c, mid, eb) | Exception
+    with ThreadPoolExecutor(max_workers=len(ports)) as pool:
+        futures = {pool.submit(_probe, p): p for p in ports}
+        for fut in _as_completed(futures):
+            port = futures[fut]
+            try:
+                _, c, mid, eb = fut.result()
+                results[port] = (c, mid, eb)
+            except Exception as e:
+                results[port] = e
+
     clients = []
     for port in ports:
-        try:
-            c = OpenAI(api_key='EMPTY', base_url=f'http://{host}:{port}/v1')
-            bk, mid = detect_server_info(c)
-            eb = make_extra_body(bk, mid)
-            clients.append((c, mid, eb))
+        r = results[port]
+        if isinstance(r, Exception):
+            print(f'  VLM [{port}]: 连接失败 {r}')
+        else:
+            c, mid, eb = r
             print(f'  VLM [{port}]: {mid.split("/")[-1]}' + (f'  {eb}' if eb else ''))
-        except Exception as e:
-            print(f'  VLM [{port}]: 连接失败 {e}')
+            clients.append((c, mid, eb))
     return clients
 
 
@@ -141,20 +163,35 @@ class LLMClient:
             self.temperature = kwargs.get("temperature", 0.3)
             self.max_tokens  = kwargs.get("max_tokens", 16384)
 
-            # 构建多端点：[(client, extra_body), ...]
+            # 构建多端点：[(client, extra_body), ...]，并发探测，失败端口跳过
             self._endpoints: list[tuple[OpenAI, dict]] = []
             detected_model = kwargs.get("model")
-            for port in ports:
+
+            def _probe_ep(port):
                 c  = OpenAI(api_key="EMPTY", base_url=f"http://{host}:{port}/v1")
                 bk, mid = detect_server_info(c)
-                if not detected_model:
-                    detected_model = mid or self._detect_model(c)
-                eb = kwargs.get("extra_body") or make_extra_body(bk, detected_model or mid)
-                self._endpoints.append((c, eb))
-                if eb:
-                    print(f"  [LLMClient] {host}:{port} {bk}/{(detected_model or mid).split('/')[-1]}"
-                          f" → extra_body={eb}")
+                return port, c, bk, mid
+
+            with ThreadPoolExecutor(max_workers=len(ports)) as pool:
+                ep_results = {pool.submit(_probe_ep, p): p for p in ports}
+                for fut in as_completed(ep_results):
+                    port = ep_results[fut]
+                    try:
+                        _, c, bk, mid = fut.result()
+                        if not mid:
+                            raise RuntimeError('no model')
+                        if not detected_model:
+                            detected_model = mid
+                        eb = kwargs.get("extra_body") or make_extra_body(bk, detected_model or mid)
+                        self._endpoints.append((c, eb))
+                        if eb:
+                            print(f"  [LLMClient] {host}:{port} {bk}/{(detected_model or mid).split('/')[-1]}"
+                                  f" → extra_body={eb}")
+                    except Exception as e:
+                        print(f"  [LLMClient] {host}:{port} 连接失败 {e}")
             self.model  = detected_model or ''
+            if not self._endpoints:
+                raise RuntimeError(f"所有端口均不可达: {ports}")
             self.client = self._endpoints[0][0]   # 兼容旧代码
             self.extra_body = self._endpoints[0][1]
 
