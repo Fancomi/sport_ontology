@@ -32,6 +32,12 @@ WORKERS=8
 # # 5.1 基于 LLM 清理 slot_ontology.json 中不恰当的混淆关系。
 # python3 5_1_clean_ontology.py --host $HOST --port $PORT -w $WORKERS
 
+# # 5.2 关系对称传播增强（无 LLM，纯集合运算，可反复运行直到 5_1 收敛）
+# #    --input/--output 可指定临时文件测试，默认原地覆盖 slot_ontology.json
+# python3 5_2.py
+# # 5.2 完成后建议重跑 5.1 清理传播引入的噪声（循环直到两脚本均无变化）
+# python3 5_1_clean_ontology.py --host $HOST --port $PORT -w $WORKERS
+
 # # 6. 图谱构建[可视化]
 # python3 6_build_wiki.py
 

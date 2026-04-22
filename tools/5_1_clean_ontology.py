@@ -249,23 +249,43 @@ def build_user(slot: str, word: str, node: dict) -> str:
     )
 
 
+# ── 确定性预清理（5_2 传播后常见问题）────────────────────────────────────────
+
+def preclean_node(word: str, node: dict) -> dict:
+    """去除 confusable_siblings/incompatibility 中的自身及自身同义词，保序去重。
+    返回含清洁字段的副本，其他字段不变。
+    """
+    banned = {word} | set(node.get("synonyms", []))
+    result = {**node}
+    for f in ("confusable_siblings", "incompatibility"):
+        seen, out = set(), []
+        for v in node.get(f, []):
+            if v not in banned and v not in seen:
+                out.append(v); seen.add(v)
+        result[f] = out
+    return result
+
+
 # ── 节点清理 ─────────────────────────────────────────────────────────────────
 
 def clean_node(slot: str, word: str, node: dict, client: LLMClient) -> dict | None:
+    pre = preclean_node(word, node)
+    if not pre.get("confusable_siblings") and not pre.get("incompatibility"):
+        return pre                              # 预清理后已空，无需 LLM
     result = client.chat([
         {"role": "system", "content": SYSTEM},
-        {"role": "user",   "content": build_user(slot, word, node)},
+        {"role": "user",   "content": build_user(slot, word, pre)},   # 送入预清理后的版本
     ])
     if not result:
-        return None
+        return pre                              # LLM 失败，退化为预清理结果
     parsed = parse_json_response(result)
     if not parsed:
-        return None
+        return pre
     return {
         "confusable_siblings": parsed.get("confusable_siblings",
-                                          node.get("confusable_siblings", [])),
+                                          pre.get("confusable_siblings", [])),
         "incompatibility":     parsed.get("incompatibility",
-                                          node.get("incompatibility", [])),
+                                          pre.get("incompatibility", [])),
     }
 
 
@@ -332,22 +352,18 @@ def main() -> None:
             print(f"  [{slot}] {i}/{total} {word} ...", end=" ", flush=True)
         try:
             cleaned = clean_node(slot, word, node, client)
-            if not cleaned:
-                with print_lock:
-                    print("✗ 无结果，保留原值")
-            else:
-                d_conf = set(conf_before) - set(cleaned["confusable_siblings"])
-                d_inco = set(inco_before) - set(cleaned["incompatibility"])
-                with file_lock:
-                    ontology[slot][word]["confusable_siblings"] = cleaned["confusable_siblings"]
-                    ontology[slot][word]["incompatibility"]     = cleaned["incompatibility"]
-                    ONTO_PATH.write_text(json.dumps(ontology, ensure_ascii=False, indent=2), "utf-8")
-                    progress.setdefault(slot, [])
-                    if word not in progress[slot]:
-                        progress[slot].append(word)
-                    PROGRESS_PATH.write_text(json.dumps(progress, ensure_ascii=False, indent=2), "utf-8")
-                with print_lock:
-                    print(f"✓  -conf:{sorted(d_conf) or '∅'}  -inco:{sorted(d_inco) or '∅'}")
+            d_conf  = set(conf_before) - set(cleaned["confusable_siblings"])
+            d_inco  = set(inco_before) - set(cleaned["incompatibility"])
+            with file_lock:
+                ontology[slot][word]["confusable_siblings"] = cleaned["confusable_siblings"]
+                ontology[slot][word]["incompatibility"]     = cleaned["incompatibility"]
+                ONTO_PATH.write_text(json.dumps(ontology, ensure_ascii=False, indent=2), "utf-8")
+                progress.setdefault(slot, [])
+                if word not in progress[slot]:
+                    progress[slot].append(word)
+                PROGRESS_PATH.write_text(json.dumps(progress, ensure_ascii=False, indent=2), "utf-8")
+            with print_lock:
+                print(f"✓  -conf:{sorted(d_conf) or '∅'}  -inco:{sorted(d_inco) or '∅'}")
         except Exception as e:
             with print_lock:
                 print(f"✗ {e}，保留原值")
