@@ -2,7 +2,8 @@
 """
 Script 8: VLM 评测 — 逐动作依次完成 confusable → hard。
   confusable_{view}.json → eval_results.jsonl（断点续跑）
-  hard_{view}.json       → 仅累加 error_count，不写输出文件
+  hard_{view}.json       → 直接更新 hard_all.jsonl 中的 error_count / error_by_model
+                           （step 8 是 error_count 的唯一来源）
 """
 
 import argparse, json, random, re, sys, time
@@ -13,8 +14,10 @@ from threading import Lock
 from openai import OpenAI
 
 from config import DATA_ROOT
+from hard_utils import HARD_ALL, load_hard_all, save_hard_all
 from llm_client import build_vlm_clients, parse_ports
 from video_frames import ensure_frames, FPS_DEFAULT
+
 VIEWS      = ("front", "side")
 MAX_TOKENS = 8
 PROMPT_TMPL = (
@@ -24,8 +27,11 @@ PROMPT_TMPL = (
 )
 _SLOT_RE = re.compile(r'\[\w+:([^\]]+)\]')
 
+_hard_all_lock = Lock()
+
 
 def strip_slots(text: str) -> str:
+    text = re.sub(r'\]\s+\[', '][', text)   # 去除相邻槽位标签间的空格
     return _SLOT_RE.sub(r'\1', text)
 
 
@@ -60,7 +66,7 @@ def eval_file(src: Path, frames: list[str], client: OpenAI, model: str,
     rel      = str(src.parent.relative_to(DATA_ROOT))
     results  = []
 
-    for idx, neg in enumerate(data.get("negatives", [])):
+    for neg in data.get("negatives", []):
         _key = f"{rel}|{view}|{neg['replaced_slot']}|{neg['original_value']}|{neg['new_value']}"
         if _key in done_keys:
             continue
@@ -109,18 +115,26 @@ def load_done(out_path: Path) -> set[str]:
     return done
 
 
-def _increment_hard_errors(src: Path, wrong_keys: set[tuple]) -> None:
-    """hard_{view}.json 中答错条目的 error_count +1（按内容元组匹配）。"""
-    data = json.loads(src.read_text("utf-8"))
-    for neg in data.get("negatives", []):
-        k = (neg["replaced_slot"], neg["original_value"], neg["new_value"])
-        if k in wrong_keys:
-            neg["error_count"] = neg.get("error_count", 1) + 1
-    src.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
+def _increment_hard_all(wrong_keys: set[tuple], model_name: str) -> None:
+    """hard_all.jsonl 中对应条目的 error_count +1，error_by_model[model_name] +1。
+    step 8 是 error_count 的唯一来源，step 9 不干预计数。
+    """
+    with _hard_all_lock:
+        hist = load_hard_all()
+        for key in wrong_keys:
+            if key not in hist:
+                continue
+            hist[key]["error_count"] = hist[key].get("error_count", 0) + 1
+            by = hist[key].setdefault("error_by_model", {})
+            by[model_name] = by.get(model_name, 0) + 1
+        save_hard_all(hist)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Script 8: VLM 混淆句评测")
+    parser.add_argument("--mode", choices=["confusable", "hard", "all"], default="all",
+                        help="评测模式：confusable=只评测 step7 新产物；"
+                             "hard=只刷累计 hard 分数；all=全部（默认）")
     parser.add_argument("--host",     default="127.0.0.1")
     parser.add_argument("--port",     default="8000",
                         help="VLM 端口，逗号分隔多端口 (e.g. 8001,8002,...)")
@@ -153,10 +167,12 @@ def main() -> None:
     conf_by_dir: dict[Path, list[Path]] = defaultdict(list)
     hard_by_dir: dict[Path, list[Path]] = defaultdict(list)
     for view in VIEWS:
-        for p in DATA_ROOT.rglob(f"confusable_{view}.json"):
-            conf_by_dir[p.parent].append(p)
-        for p in DATA_ROOT.rglob(f"hard_{view}.json"):
-            hard_by_dir[p.parent].append(p)
+        if args.mode in ("confusable", "all"):
+            for p in DATA_ROOT.rglob(f"confusable_{view}.json"):
+                conf_by_dir[p.parent].append(p)
+        if args.mode in ("hard", "all"):
+            for p in DATA_ROOT.rglob(f"hard_{view}.json"):
+                hard_by_dir[p.parent].append(p)
 
     all_dirs = sorted(conf_by_dir.keys() | hard_by_dir.keys())
     if args.limit:
@@ -244,17 +260,23 @@ def main() -> None:
             records = eval_file(src, frames, c, mid, set(), eb, args.dry_run)
             elapsed = time.time() - t0
 
-            wrong_keys = {(r["replaced_slot"], r["original_value"], r["new_value"])
-                          for r in records if not r["is_correct"]}
-            if wrong_keys:
-                _increment_hard_errors(src, wrong_keys)
+            # step 8 是 error_count 的唯一来源：将答错对写入 hard_all.jsonl
+            wrong_full_keys = {
+                (str(dir_path.relative_to(DATA_ROOT)), view,
+                 r["replaced_slot"], r["original_value"], r["new_value"])
+                for r in records if not r["is_correct"]
+            }
+            model_name = (mid or "unknown").split("/")[-1]
+            if wrong_full_keys and not args.dry_run:
+                _increment_hard_all(wrong_full_keys, model_name)
 
             n, ok_n = len(records), sum(1 for r in records if r["is_correct"])
             ht += n; hc += ok_n
             per = f"{elapsed/n:.1f}s/条" if n else "-"
             with print_lock:
                 print(f"  ── [hard] {view} 完成: {n}条  "
-                      f"✓{ok_n} ✗{n-ok_n}  {elapsed:.1f}s  {per}")
+                      f"✓{ok_n} ✗{n-ok_n}  {elapsed:.1f}s  {per}"
+                      f"  model={model_name}")
 
         return ct, cc, cs, ht, hc, hs
 
@@ -283,7 +305,7 @@ def main() -> None:
               f"准确率={c_correct/c_total*100:.1f}%  跳过={c_skipped}  结果: {out_path}")
     if h_total:
         print(f"[hard]       总={h_total} 正确={h_correct} "
-              f"准确率={h_correct/h_total*100:.1f}%  跳过={h_skipped}  (error_count 已更新)")
+              f"准确率={h_correct/h_total*100:.1f}%  跳过={h_skipped}  (error_count 已更新至 hard_all.jsonl)")
 
 
 if __name__ == "__main__":

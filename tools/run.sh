@@ -39,6 +39,11 @@ WORKERS=8
 # python3 7_gen_confusable.py
 
 # # 8. 评测混淆判断 产出json
+# #    --mode confusable  只评测 step7 新产物（confusable_xxx.json），结果追加 eval_results.jsonl
+# #    --mode hard        只刷累计 hard 分数（hard_xxx.json），更新 error_count（先跑 9 --reset-counts）
+# #    --mode all         全部（默认）
+# python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode confusable
+# python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode hard
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS
 
 # # 8.1 分析混淆判断结果
@@ -47,14 +52,16 @@ WORKERS=8
 # BAKUP/eval_results_v2_qwen3.6.jsonl \
 # --labels Gemma Qwen3.6
 
-# # 8.2 基于手动的图谱删减
-# python3 8_2_cleanup_pairs.py
+# # 9 从eval_results.jsonl提取hard并沉淀
+# #   --input 可指定多个文件取并集；--clean 清理 augment 更新后失效的历史条目并重建 hard_{view}.json
+# #   --reset-counts 清零所有 error_count（在重新跑 step 8 前执行）
+# # python3 9_extract_errors.py --input eval_results.jsonl
+# python3 9_extract_errors.py \
+# --input \
+# /root/paddlejob/workspace/env_run/penghaotian/llm_infer/sport_ontology/tools/BAKUP/eval_results_v2_gemma.jsonl \
+# /root/paddlejob/workspace/env_run/penghaotian/llm_infer/sport_ontology/tools/BAKUP/eval_results_v2_qwen3.6.jsonl \
+# --clean --reset-counts 
 
-# 9 从eval_results.jsonl提取hard并沉淀
-#   --input 可指定多个文件取并集；--clean 清理 augment 更新后失效的历史条目并重建 hard_{view}.json
-# python3 9_extract_errors.py --input eval_results.jsonl
-python3 9_extract_errors.py \
---input \
-/root/paddlejob/workspace/env_run/penghaotian/llm_infer/sport_ontology/tools/BAKUP/eval_results_v2_gemma.jsonl \
-/root/paddlejob/workspace/env_run/penghaotian/llm_infer/sport_ontology/tools/BAKUP/eval_results_v2_qwen3.6.jsonl \
---clean
+# 9.1 LLM 审核 Hard Negative 句子级有效性（--dry-run 只看不删）
+# python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS --dry-run --verbose --limit 4
+python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS
