@@ -58,6 +58,7 @@ SLOT_EXAMPLES = {
             "word": "男性",
             "current": {"en": "male", "hypernym": ["动物"], "antonyms": ["雌性"]},
             "expected": {
+                "en": "male",
                 "definition": "健身视频中的男性被摄者",
                 "synonyms": ["男", "男子"],
                 "hypernym": ["性别"],
@@ -72,6 +73,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "female", "hypernym": ["动物"], "antonyms": ["雄性"],
                         "hyponyms": ["雌性哺乳动物", "母鸡", "小母马"]},
             "expected": {
+                "en": "female",
                 "definition": "健身视频中的女性被摄者",
                 "synonyms": ["女", "女子"],
                 "hypernym": ["性别"],
@@ -87,6 +89,7 @@ SLOT_EXAMPLES = {
             "word": "正面",
             "current": {"en": "front view", "definition": "向前突出的一面", "hypernym": ["侧面"]},
             "expected": {
+                "en": "front view",
                 "definition": "摄像机正对被摄者面部/胸腹侧的拍摄视角",
                 "synonyms": ["前视角", "正视图"],
                 "hypernym": ["拍摄视角"],
@@ -101,6 +104,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "side view", "definition": "侧面或侧翼",
                         "hyponyms": ["profile", "left side", "右侧面"]},
             "expected": {
+                "en": "side view",
                 "definition": "摄像机位于被摄者身体左侧或右侧的拍摄视角",
                 "synonyms": ["侧视角", "侧视图"],
                 "hypernym": ["拍摄视角"],
@@ -117,6 +121,7 @@ SLOT_EXAMPLES = {
             "current": {"en": "dumbbell", "definition": "以各种方式使用肌肉保持健康的活动",
                         "hypernym": ["努力"]},
             "expected": {
+                "en": "dumbbell",
                 "definition": "一种两端固定重块、用于单手或双手力量训练的自由重量器械",
                 "synonyms": ["手铃"],
                 "hypernym": ["自由重量器械"],
@@ -130,6 +135,7 @@ SLOT_EXAMPLES = {
             "word": "杠铃",
             "current": {"en": "barbell", "hypernym": ["努力"]},
             "expected": {
+                "en": "barbell",
                 "definition": "一根长杆两端加装可调节重量片的器械，常用于深蹲、硬拉、卧推",
                 "synonyms": [],
                 "hypernym": ["自由重量器械"],
@@ -145,6 +151,7 @@ SLOT_EXAMPLES = {
             "word": "手掌",
             "current": {"en": "palm"},
             "expected": {
+                "en": "palm",
                 "definition": "手部与器械/地面接触的掌心区域",
                 "synonyms": ["掌心"],
                 "hypernym": ["手部"],
@@ -158,6 +165,7 @@ SLOT_EXAMPLES = {
             "word": "脚跟",
             "current": {"en": "heel"},
             "expected": {
+                "en": "heel",
                 "definition": "足部后侧跟骨区域，深蹲/硬拉时常见踩地接触部位",
                 "synonyms": ["足跟"],
                 "hypernym": ["足部"],
@@ -173,6 +181,7 @@ SLOT_EXAMPLES = {
             "word": "正握",
             "current": {"en": "overhand grip"},
             "expected": {
+                "en": "overhand grip",
                 "definition": "手掌朝下（旋前位）握持器械的方式，也称旋前握",
                 "synonyms": ["旋前握"],
                 "hypernym": ["握法"],
@@ -186,6 +195,7 @@ SLOT_EXAMPLES = {
             "word": "反握",
             "current": {"en": "underhand grip"},
             "expected": {
+                "en": "underhand grip",
                 "definition": "手掌朝上（旋后位）握持器械的方式，也称旋后握",
                 "synonyms": ["旋后握"],
                 "hypernym": ["握法"],
@@ -201,6 +211,7 @@ SLOT_EXAMPLES = {
             "word": "腰背挺直",
             "current": {"en": "straight back"},
             "expected": {
+                "en": "straight back",
                 "definition": "腰椎保持中立位、背部不弓不超伸的对齐状态",
                 "synonyms": ["背部挺直", "脊柱中立"],
                 "hypernym": ["身体姿态"],
@@ -214,6 +225,7 @@ SLOT_EXAMPLES = {
             "word": "双脚与肩同宽",
             "current": {"en": "feet shoulder-width apart"},
             "expected": {
+                "en": "feet shoulder-width apart",
                 "definition": "两脚间距与肩部同宽的站立/深蹲起始位对齐要求",
                 "synonyms": ["与肩同宽站立"],
                 "hypernym": ["脚步位置"],
@@ -229,6 +241,7 @@ SLOT_EXAMPLES = {
             "word": "向心收缩",
             "current": {"en": "concentric contraction"},
             "expected": {
+                "en": "concentric contraction",
                 "definition": "肌肉缩短产生力量的收缩阶段，如弯举上升阶段肱二头肌收缩",
                 "synonyms": ["向心阶段"],
                 "hypernym": ["肌肉收缩类型"],
@@ -242,6 +255,7 @@ SLOT_EXAMPLES = {
             "word": "离心收缩",
             "current": {"en": "eccentric contraction"},
             "expected": {
+                "en": "eccentric contraction",
                 "definition": "肌肉拉长同时产生张力的减速阶段，如弯举下降阶段控制重量",
                 "synonyms": ["离心阶段"],
                 "hypernym": ["肌肉收缩类型"],
@@ -257,6 +271,7 @@ SLOT_EXAMPLES = {
             "word": "硬拉",
             "current": {"en": "deadlift"},
             "expected": {
+                "en": "deadlift",
                 "definition": "从地面将杠铃/哑铃拉起至髋部伸展的复合力量动作，主要发力部位为臀腿和背部",
                 "synonyms": [],
                 "hypernym": ["复合力量训练动作"],
@@ -270,6 +285,7 @@ SLOT_EXAMPLES = {
             "word": "弯举",
             "current": {"en": "curl"},
             "expected": {
+                "en": "curl",
                 "definition": "通过肘关节屈曲将重量向上弯举的孤立动作，主要针对肱二头肌",
                 "synonyms": [],
                 "hypernym": ["孤立训练动作"],
@@ -285,6 +301,7 @@ SLOT_EXAMPLES = {
             "word": "肱二头肌",
             "current": {"en": "biceps", "hypernym": ["骨骼肌"]},
             "expected": {
+                "en": "biceps brachii",
                 "definition": "上臂前侧双头肌肉，主要功能为肘关节屈曲和前臂旋后，弯举动作的主发力肌",
                 "synonyms": ["二头肌"],
                 "hypernym": ["上臂肌群"],
@@ -298,6 +315,7 @@ SLOT_EXAMPLES = {
             "word": "背阔肌",
             "current": {"en": "latissimus dorsi", "hypernym": ["骨骼肌"]},
             "expected": {
+                "en": "latissimus dorsi",
                 "definition": "背部最宽大的扁平肌，负责肩关节内收和伸展，划船/下拉类动作的主发力肌",
                 "synonyms": ["背阔"],
                 "hypernym": ["背部肌群"],
@@ -313,6 +331,7 @@ SLOT_EXAMPLES = {
             "word": "拉",
             "current": {"en": "pull"},
             "expected": {
+                "en": "pull",
                 "definition": "将重量或阻力向自身方向拉动的发力方式，如划船、弯举",
                 "synonyms": ["拉动"],
                 "hypernym": ["发力方式"],
@@ -326,6 +345,7 @@ SLOT_EXAMPLES = {
             "word": "推",
             "current": {"en": "push"},
             "expected": {
+                "en": "push",
                 "definition": "将重量或阻力向外推离身体的发力方式，如卧推、肩推",
                 "synonyms": ["推动"],
                 "hypernym": ["发力方式"],
@@ -341,6 +361,7 @@ SLOT_EXAMPLES = {
             "word": "双侧",
             "current": {"en": "bilateral"},
             "expected": {
+                "en": "bilateral",
                 "definition": "双侧同时发力的训练方式，如双手同时进行的杠铃弯举",
                 "synonyms": ["双边"],
                 "hypernym": ["侧向性"],
@@ -354,6 +375,7 @@ SLOT_EXAMPLES = {
             "word": "单侧",
             "current": {"en": "unilateral"},
             "expected": {
+                "en": "unilateral",
                 "definition": "单侧肢体独立发力的训练方式，如单臂哑铃划船",
                 "synonyms": ["单边"],
                 "hypernym": ["侧向性"],
@@ -393,6 +415,7 @@ def _build_system() -> str:
 - laterality: 解剖学左右侧（左侧/右侧/双侧/交替等）
 
 # 各属性说明
+- en: 该节点的英文术语/译名（1-3个词，纯英文）
 - definition: 该节点在健身场景下的简短定义（1-2句，≤60字）
 - synonyms: 同义词/别称（**纯中文表达**，≤5条）
 - hypernym: 上位概念（如"肱二头肌"→"上臂肌群"，≤3条）
@@ -402,7 +425,7 @@ def _build_system() -> str:
 - incompatibility: 语义互斥（不可同时成立，≤5条）
 
 # 语言规范
-- `en` 字段是英文译名，其值可以是英文
+- `en` 字段必须是英文
 - **其余所有输出字段**（definition、synonyms、hypernym、hyponyms、antonyms、confusable_siblings、incompatibility）的值必须使用**中文表达**，不得混入英文单词
 
 # 验证规则
@@ -415,7 +438,7 @@ def _build_system() -> str:
 3. hyponyms 必须是该节点在**同槽位**下的下位变体（如"硬拉"的 hyponyms 只能是硬拉的变体动作，不能是其他动作或无关概念）
 4. 如果某属性无合法健身内容可填，使用空列表 []，不得硬凑无关内容
 5. 如果属性为空或明显不足，在健身场景范围内补充合理候选（≤5条）
-6. 返回的 JSON 必须包含所有7个属性字段（即使为空列表）
+6. 返回的 JSON 必须包含所有8个属性字段（即使为空列表）
 
 请保持思考过程简短高效，不要过度发散，思考过程请控制在 1000 字以内。
 """
@@ -449,6 +472,7 @@ slot={slot}, word="{word}", current={json.dumps(current_compact, ensure_ascii=Fa
 
 请验证并补充以上节点的属性，严格输出 JSON（不含任何说明文字）：
 {{
+  "en": "...",
   "definition": "...",
   "synonyms": [...],
   "hypernym": [...],
@@ -484,19 +508,20 @@ def _build_verify_system() -> str:
 你是运动健身本体质量审核员。你将收到一个本体节点的【草稿属性】，需执行严格的二次校验。
 
 # 校验职责（只修正违规项，不得无故改写）
-1. **语言违规**：若任何列表字段（synonyms/hypernym/hyponyms/antonyms/confusable_siblings/incompatibility）
+1. **en 字段**：若缺失或为中文，补充/替换为标准英文术语（1-3词）
+2. **语言违规**：若任何列表字段（synonyms/hypernym/hyponyms/antonyms/confusable_siblings/incompatibility）
    中存在英文单词、拼音或中英混合词，将该条目从列表中删除
-2. **场景违规**：若任何字段的内容与体育运动/健身/解剖学场景无关（如动物名称、语法术语、地理名词、
+3. **场景违规**：若任何字段的内容与体育运动/健身/解剖学场景无关（如动物名称、语法术语、地理名词、
    日常生活概念等），将该条目删除；若 definition 包含无关内容，重新撰写（≤60字，纯健身场景）
-3. **逻辑违规**：
+4. **逻辑违规**：
    - hyponyms 中若有不属于该节点在同槽位下的下位概念，删除
    - hypernym 中若有不合理的上位词（如槽位为 gender 却写 hypernym=动物），删除或替换
 
 # 改动原则
 - **最小改动**：不违规的字段和条目原样保留，不得"顺便"改写或扩充
-- 禁止引入新的英文单词
+- 禁止在列表字段中引入新的英文单词
 - 禁止添加健身场景外的概念
-- 返回完整的7字段 JSON，不含任何说明文字
+- 返回完整的8字段 JSON，不含任何说明文字
 
 请保持思考过程简短高效，不要过度发散，思考过程请控制在 1000 字以内。
 """
@@ -514,6 +539,7 @@ slot={slot}（{slot_desc}），word="{word}"
 
 请执行二次校验，仅修正违规项，输出校验后的 JSON：
 {{
+  "en": "...",
   "definition": "...",
   "synonyms": [...],
   "hypernym": [...],
@@ -542,7 +568,7 @@ def verify_node(slot: str, word: str, draft: dict, client: LLMClient) -> Optiona
 def merge_node(current: dict, llm_result: dict) -> dict:
     """将 LLM 结果合并回节点：优先保留 current 中非空的属性，LLM 补充空缺项。"""
     merged = dict(current)  # 保留 source_count 等原始字段
-    fill_keys = ("definition", "synonyms", "hypernym", "hyponyms",
+    fill_keys = ("en", "definition", "synonyms", "hypernym", "hyponyms",
                  "antonyms", "confusable_siblings", "incompatibility")
     for key in fill_keys:
         llm_val = llm_result.get(key)
@@ -639,7 +665,7 @@ def main() -> None:
     print_lock = Lock()
     workers    = min(args.workers, total) if total else 1
 
-    _ont_keys = ("definition", "synonyms", "hypernym", "hyponyms",
+    _ont_keys = ("en", "definition", "synonyms", "hypernym", "hyponyms",
                  "antonyms", "confusable_siblings", "incompatibility")
 
     def _worker(idx_item):
