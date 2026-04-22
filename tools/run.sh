@@ -15,9 +15,9 @@ WORKERS=8
 # python3 1_translate_wiki.py --host $HOST --port $PORT -w $WORKERS
 
 # 2. VLM 扩写视频描述（--check 启用 LLM 质检，质检复用同一组端口）
-python3 2_augment_wiki.py --host $HOST --port $PORT --check -w $WORKERS
+# python3 2_augment_wiki.py --host $HOST --port $PORT --check -w $WORKERS
 
-# 2.1 批量校验 augment_xxx.json 合规性
+# 2.1 批量校验 augment_xxx.json 合规性 [已合入2混合调用]
 # python3 2_1_check_augment.py --host $HOST --port $PORT -w $WORKERS
 
 # # 3. 槽位统计: 覆盖输出 slot_vocab.json / slot_abnormal.json / slot_vocab.png
@@ -25,7 +25,8 @@ python3 2_augment_wiki.py --host $HOST --port $PORT --check -w $WORKERS
 
 # # 4. (已删除) 4_fetch_vocab_info.py — Wordnet 信息收集，用途有限
 
-# # 5. LLM 增强图谱
+# # 5. LLM 补充本体属性：读取 slot_vocab.json，产出/更新 slot_ontology.json
+# #    清理过期键、补充新词、保留已有条目
 # python3 5_enrich_with_llm.py --host $HOST --port $PORT -w $WORKERS
 
 # # 5.1 基于 LLM 清理 slot_ontology.json 中不恰当的混淆关系。

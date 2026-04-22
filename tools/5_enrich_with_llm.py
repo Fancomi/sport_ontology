@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""用 LLM 验证并补充 slot_enriched.json 中每个节点的本体属性。
+"""用 LLM 为 slot_vocab.json 中每个节点构建本体属性，直接产出 slot_ontology.json。
 
-工作流:
-  1. 读取 slot_enriched.json（fetch_vocab_info.py 的输出）
-  2. 对每个节点，发送两次 LLM 调用：
-     第一次（丰富）：验证现有属性是否符合体育运动/健身场景，纠正偏题内容，补充空缺属性
-     第二次（校验）：对第一次结果做严格二次审查，仅允许微小改动（删除英文/非健身内容）
-  3. 合并结果回节点，保留 source_count/en 等元字段
-  4. 每词处理后立即落盘（增量，支持中断续跑）
+更新策略（每次运行）：
+  (1) 清理：删除 slot_ontology.json 中已不存在于 slot_vocab.json 的键值
+  (2) 补充：为 slot_vocab.json 中有而 slot_ontology.json 中没有的键值生成属性
+  (3) 忽视：两者均存在的键值保持 slot_ontology.json 现有内容不动
 
-输入: slot_enriched.json
-输出: slot_ontology.json （同格式，属性更完整）
+对每个新节点，发送两次 LLM 调用：
+  第一次（丰富）：验证并补充本体属性
+  第二次（校验）：严格二次审查，仅允许微小改动
+
+输入: slot_vocab.json（3_collect_slots.py 的输出）
+输出: slot_ontology.json
 
 用法:
   python 5_enrich_with_llm.py [--slots SLOT ...] [--force] [--poe]
@@ -26,8 +27,8 @@ from typing import Optional
 from llm_client import LLMClient, parse_ports, parse_json_response
 
 # ── 配置 ─────────────────────────────────────────────────────────────────────
-IN_PATH  = Path(__file__).parent / "slot_enriched.json"
-OUT_PATH = Path(__file__).parent / "slot_ontology.json"
+VOCAB_PATH = Path(__file__).parent / "slot_vocab.json"
+OUT_PATH   = Path(__file__).parent / "slot_ontology.json"
 
 SLOTS = (
     "gender", "camera_view", "equipment", "contact_part", "contact_type",
@@ -559,33 +560,51 @@ def merge_node(current: dict, llm_result: dict) -> dict:
 # ── 入口 ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="LLM 验证并补充 slot_enriched.json 节点属性")
-    parser.add_argument("--in",    dest="in_path",  default=str(IN_PATH))
-    parser.add_argument("--out",   dest="out_path", default=str(OUT_PATH))
-    parser.add_argument("--slots", nargs="*",       default=list(SLOTS))
-    parser.add_argument("--force", action="store_true", help="强制重新处理已有条目")
-    parser.add_argument("--poe",   action="store_true", help="使用 POE 后端")
-    parser.add_argument("--host",  default="127.0.0.1")
-    parser.add_argument("--port",  default="8000",
+    parser = argparse.ArgumentParser(description="LLM 补充 slot_vocab.json 节点属性，产出/更新 slot_ontology.json")
+    parser.add_argument("--vocab",  dest="vocab_path", default=str(VOCAB_PATH))
+    parser.add_argument("--out",    dest="out_path",   default=str(OUT_PATH))
+    parser.add_argument("--slots",  nargs="*",         default=list(SLOTS))
+    parser.add_argument("--force",  action="store_true", help="强制重新处理已有条目")
+    parser.add_argument("--poe",    action="store_true", help="使用 POE 后端")
+    parser.add_argument("--host",   default="127.0.0.1")
+    parser.add_argument("--port",   default="8000",
                         help="LLM 端口，逗号分隔多端口 (e.g. 8001,8002,...)")
     parser.add_argument("--workers", "-w", type=int, default=1,
                         help="并发 worker 数，建议与端口数一致")
     args = parser.parse_args()
 
-    in_path  = Path(args.in_path)
-    out_path = Path(args.out_path)
+    vocab_path = Path(args.vocab_path)
+    out_path   = Path(args.out_path)
 
-    if not in_path.exists():
-        print(f"✗ 输入文件不存在: {in_path}，请先运行 4_fetch_vocab_info.py")
+    if not vocab_path.exists():
+        print(f"✗ 输入文件不存在: {vocab_path}，请先运行 3_collect_slots.py")
         sys.exit(1)
 
-    enriched = json.loads(in_path.read_text("utf-8"))
-    existing = {}
+    # slot_vocab 格式：{slot: {word: count}}
+    vocab: dict[str, dict[str, int]] = json.loads(vocab_path.read_text("utf-8"))
+
+    # 读取已有 ontology
+    existing: dict[str, dict] = {}
     if out_path.exists():
         try:
             existing = json.loads(out_path.read_text("utf-8"))
         except json.JSONDecodeError:
             pass
+
+    # ── (1) 清理：删除 ontology 中不再出现于 vocab 的键值 ──────────────────────
+    stale_total = 0
+    for slot in list(existing.keys()):
+        vocab_words = set(vocab.get(slot, {}).keys())
+        stale = [w for w in list(existing[slot].keys()) if w not in vocab_words]
+        for w in stale:
+            del existing[slot][w]
+            stale_total += 1
+            print(f"  [清理] {slot}/{w}")
+    if stale_total:
+        out_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), "utf-8")
+        print(f"✓ 清理完成，共删除 {stale_total} 个过期节点\n")
+    else:
+        print("✓ 无过期节点\n")
 
     try:
         client = LLMClient(
@@ -598,18 +617,22 @@ def main() -> None:
         print(f"✗ 连接失败: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # 展平待处理列表：[(slot, word, current), ...]
+    # ── (2) 展平待处理列表：slot_vocab 有而 ontology 没有的键值 ────────────────
     items = []
     for slot in args.slots:
-        slot_data = enriched.get(slot, {})
-        if not slot_data:
-            print(f"[跳过] {slot}: 不在 slot_enriched 中")
+        slot_vocab = vocab.get(slot, {})
+        if not slot_vocab:
+            print(f"[跳过] {slot}: 不在 slot_vocab 中")
             continue
         out_slot = existing.setdefault(slot, {})
-        pending  = {w: v for w, v in slot_data.items() if args.force or w not in out_slot}
-        print(f"[{slot}] 共 {len(slot_data)} 词，待处理 {len(pending)} 个")
-        for word, current in pending.items():
-            items.append((slot, word, current))
+        # (3) 两者均存在的忽视（除非 --force）
+        pending = {w: cnt for w, cnt in slot_vocab.items()
+                   if args.force or w not in out_slot}
+        print(f"[{slot}] vocab {len(slot_vocab)} 词，ontology {len(out_slot)} 词，"
+              f"待补充 {len(pending)} 个")
+        for word, count in pending.items():
+            # 把 source_count 作为唯一元字段传入，LLM prompt 会过滤掉它
+            items.append((slot, word, {"source_count": count}))
 
     total      = len(items)
     file_lock  = Lock()
