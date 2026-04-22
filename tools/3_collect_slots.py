@@ -51,13 +51,15 @@ OUT_DIR_DEFAULT = Path(__file__).parent
 
 # ── 收集 ──────────────────────────────────────────────────────────────────────
 
-def collect(data_root: Path) -> tuple[dict, dict]:
-    """返回 (vocab, abnormal)
-    vocab:    {slot: {value: count}}  合法槽位
-    abnormal: {key: count}            非法槽位键
+def collect(data_root: Path) -> tuple[dict, dict, set]:
+    """返回 (vocab, abnormal, abnormal_files)
+    vocab:          {slot: {value: count}}  合法槽位
+    abnormal:       {key: count}            非法槽位键
+    abnormal_files: 含非法槽位的 augment_*.json 路径集合
     """
     vocab    = {s: defaultdict(int) for s in SLOTS}
     abnormal: dict[str, int] = defaultdict(int)
+    abnormal_files: set[Path] = set()
 
     files = sorted(data_root.rglob("augment_*.json"))
     print(f"发现 {len(files)} 个增强文件，开始解析...")
@@ -74,8 +76,9 @@ def collect(data_root: Path) -> tuple[dict, dict]:
                 vocab[key][val] += 1
             else:
                 abnormal[key] += 1
+                abnormal_files.add(f)
 
-    return {s: dict(v) for s, v in vocab.items()}, dict(abnormal)
+    return {s: dict(v) for s, v in vocab.items()}, dict(abnormal), abnormal_files
 
 
 # ── 图1：槽位总览（占比 + 异常）──────────────────────────────────────────────
@@ -190,7 +193,7 @@ def main() -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    vocab, abnormal = collect(DATA_ROOT)
+    vocab, abnormal, abnormal_files = collect(DATA_ROOT)
 
     # ── 写入 JSON（覆盖）────────────────────────────────────────────────────
     vocab_path    = out_dir / "slot_vocab.json"
@@ -233,6 +236,16 @@ def main() -> None:
     # ── 绘图 ────────────────────────────────────────────────────────────────
     plot_overview(vocab, abnormal, out_dir / "slot_overview.png")
     plot_values(vocab, out_dir / "slot_vocab.png", args.top)
+
+    # ── 删除含异常槽位的 augment_*.json，便于 2_augment_wiki 重新生成 ──────────
+    if abnormal_files:
+        print(f"\n删除含异常槽位的文件（共 {len(abnormal_files)} 个）：")
+        for f in sorted(abnormal_files):
+            f.unlink()
+            print(f"  ✗ {f.relative_to(DATA_ROOT)}")
+        print(f"✓ 已删除 {len(abnormal_files)} 个文件，可重新运行 2_augment_wiki 修复")
+    else:
+        print("\n✓ 无需删除文件")
 
 
 if __name__ == "__main__":
