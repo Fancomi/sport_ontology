@@ -33,8 +33,9 @@ WORKERS=8
 # python3 5_1_clean_ontology.py --host $HOST --port $PORT -w $WORKERS
 
 # # 5.2 关系对称传播增强（无 LLM，纯集合运算，可反复运行直到 5_1 收敛）
-# #    --input/--output 可指定临时文件测试，默认原地覆盖 slot_ontology.json
-# python3 5_2.py
+# #    默认输出到临时文件 /tmp/slot_ontology_infer.json，确认后加 --output slot_ontology.json 覆盖
+# python3 5_2_infer_relations.py --output /tmp/slot_ontology_infer.json
+# python3 5_2_infer_relations.py --output slot_ontology.json
 # # 5.2 完成后建议重跑 5.1 清理传播引入的噪声（循环直到两脚本均无变化）
 # python3 5_1_clean_ontology.py --host $HOST --port $PORT -w $WORKERS
 
