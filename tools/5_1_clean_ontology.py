@@ -365,6 +365,10 @@ def main() -> None:
     total_done = sum(len(v) for v in progress.values())
     print(f"\n✓ 完成，累计 {total_done} 节点 → {ONTO_PATH}")
 
+    if PROGRESS_PATH.exists():
+        PROGRESS_PATH.unlink()
+        print(f"✓ 进度缓存已删除: {PROGRESS_PATH}")
+
 
 if __name__ == "__main__":
     main()
