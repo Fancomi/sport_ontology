@@ -84,7 +84,7 @@ def sample_replacements(
             key = (rel, slot, value)
             if key not in _warned:
                 _warned.add(key)
-                print(f"  ⚠️  [{rel}] no candidates: [{slot}:{value}]")
+                # print(f"  ⚠️  [{rel}] no candidates: [{slot}:{value}]")
         seen_sv.add(sv)
         for c in cands:
             t = (slot, value, c)

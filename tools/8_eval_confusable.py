@@ -212,11 +212,6 @@ def main() -> None:
             with print_lock:
                 print(f"  ── [confusable] {view}")
 
-            if not video_path.exists():
-                with print_lock:
-                    print("  ✗ 视频不存在，跳过")
-                cs += 1; continue
-
             frames = ensure_frames(video_path, args.fps, args.max_side)
             if not frames:
                 with print_lock:
@@ -244,11 +239,6 @@ def main() -> None:
             video_path = dir_path / f"{view}.mp4"
             with print_lock:
                 print(f"  ── [hard] {view}")
-
-            if not video_path.exists():
-                with print_lock:
-                    print("  ✗ 视频不存在，跳过")
-                hs += 1; continue
 
             frames = ensure_frames(video_path, args.fps, args.max_side)
             if not frames:
