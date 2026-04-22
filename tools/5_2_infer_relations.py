@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""5_2: slot_ontology 关系对称传播增强（纯集合运算，无 LLM）。
+"""5_2_infer_relations: slot_ontology 关系对称传播增强（纯集合运算，无 LLM）。
 
 不增删条目，只扩充字段值（取并集），迭代直到收敛后一次性去除自身引用。
 
@@ -72,7 +72,7 @@ def finalize(nodes: dict) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="5_2: slot_ontology 关系对称传播增强")
+    parser = argparse.ArgumentParser(description="5_2_infer_relations: slot_ontology 关系对称传播增强")
     parser.add_argument("--input",      default=str(ONTO_DEFAULT))
     parser.add_argument("--output",     default=None, help="输出路径（默认原地覆盖 --input）")
     parser.add_argument("--slots",      nargs="*",    help="只处理指定槽位（默认全部）")
