@@ -4,24 +4,14 @@
 """
 
 import json
-import re
 from collections import defaultdict
 from functools import lru_cache
 from pathlib import Path
 
 from config import DATA_ROOT
+from ontology_utils import replace_slot, strip_slots   # re-export，保持向后兼容
 
-HARD_ALL     = Path(__file__).parent / "hard_all.jsonl"
-_SLOT_RE     = re.compile(r'\[\w+:([^\]]+)\]')
-
-# ── 基础工具 ───────────────────────────────────────────────────────────────────
-
-def replace_slot(text: str, slot: str, old: str, new: str) -> str:
-    return text.replace(f"[{slot}:{old}]", f"[{slot}:{new}]")
-
-def strip_slots(text: str) -> str:
-    text = re.sub(r'\]\s+\[', '][', text)   # 去除相邻槽位标签间的空格
-    return _SLOT_RE.sub(r'\1', text)
+HARD_ALL = Path(__file__).parent / "hard_all.jsonl"
 
 def key_to_str(key: tuple) -> str:
     return "|".join(key)

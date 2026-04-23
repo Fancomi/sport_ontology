@@ -2,9 +2,8 @@
 # loop.sh — Hard Negative 迭代采集大循环
 #
 # 流程（× ROUNDS 轮）:
-#   7  → 生成混淆样本，读 eval_stats.json 加权采样
-#   8  → VLM 评测 confusable（每轮独立输出文件，支持中断续跑）
-#   8.1→ 分析结果，覆盖 eval_stats.json（供下一轮 step 7 加权）
+#   8  → VLM 评测（在线采样 confusable，读 eval_stats.json 加权；首轮均匀采样）
+#   8.1→ 分析结果，覆盖 eval_stats.json（供下一轮加权）
 #   9  → 提取 hard，merge 入 hard_all.jsonl（幂等去重）
 #
 # 全部轮次完成后：
@@ -14,10 +13,17 @@ set -euo pipefail
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
 HOST="127.0.0.1"
+# Gemma
 PORT="8001,8002,8003,8004,8005,8006,8007,8008"
 WORKERS=8
-ROUNDS=50
-BAKUP_DIR="BAKUP"
+
+# Qwen3.6
+PORT="8001,8002,8003,8004"
+WORKERS=4
+
+# 
+ROUNDS=60
+BAKUP_DIR="BAKUP/20260423_qwen3_6"
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,18 +47,14 @@ for i in $(seq 1 $ROUNDS); do
     printf "  Round %d / %d   [%s]\n" $i $ROUNDS "$TS"
     echo "────────────────────────────────────────────────────"
 
-    # 7. 生成混淆样本（读 eval_stats.json 加权采样；首轮文件不存在时均匀采样）
-    echo "[7] 生成混淆样本..."
-    python3 7_gen_confusable.py
-
-    # 8. VLM 评测 confusable（本轮独立文件，中断后可用同名文件断点续跑）
-    echo "[8] VLM 评测 confusable..."
+    # 8. VLM 评测 confusable（在线采样，读 eval_stats.json 加权；首轮文件不存在时均匀采样）
+    echo "[8] VLM 评测 confusable（在线采样）..."
     python3 8_eval_confusable.py \
         --host $HOST --port $PORT -w $WORKERS \
         --mode confusable \
         --out "$ROUND_OUT"
 
-    # 8.1 分析：覆盖 eval_stats.json 供下一轮 step 7 加权；同时备份到 BAKUP
+    # 8.1 分析：覆盖 eval_stats.json 供下一轮加权；同时备份到 BAKUP
     echo "[8.1] 分析结果..."
     python3 8_1_analyze.py \
         --input "$ROUND_OUT" \

@@ -16,11 +16,10 @@ from threading import Lock
 
 from config import DATA_ROOT
 from llm_client import build_vlm_clients, parse_ports
+from ontology_utils import ONTOLOGY_PATH, SLOT_RE, build_lookup
 from video_frames import ensure_frames, FPS_DEFAULT
 
-ONTOLOGY_PATH  = Path(__file__).parent / "slot_ontology.json"
 VIEWS          = ("front", "side")
-SLOT_RE        = re.compile(r"\[(\w+):([^\]]+)\]")
 ANS_RE         = re.compile(r"\((\d+)\)=([A-Da-d])")
 N_CHOICES_MAX  = 4
 MAX_TOKENS     = 256
@@ -37,20 +36,6 @@ PROMPT_TMPL = """\
 
 
 # ── ontology 工具 ─────────────────────────────────────────────────────────────
-
-def build_lookup(ontology: dict) -> dict:
-    lookup = {}
-    for slot, nodes in ontology.items():
-        lookup[slot] = {}
-        for name, info in nodes.items():
-            lookup[slot][name] = {
-                "confusable_siblings": info.get("confusable_siblings") or [],
-                "incompatibility": list(dict.fromkeys(
-                    (info.get("incompatibility") or []) + (info.get("antonyms") or [])
-                )),
-            }
-    return lookup
-
 
 def build_syn_rev(ontology: dict, slot: str) -> dict[str, str]:
     """value / synonym → canonical standard_name，用于 canonical-group 去重。"""

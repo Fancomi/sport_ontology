@@ -16,7 +16,7 @@
 
 5. **LLM 本体构建**：以词表为词汇基础，调用语言模型为每个节点生成完整的本体属性，包括英文名、定义、同义词、上位词、下位词、反义词、易混淆同层节点及互斥节点共八类关系。每个节点采用「生成 + 校验」两轮调用方式产出，确保关系的准确性。在此基础上，进一步由语言模型审查并删减不恰当的混淆与互斥关系（如实为同义词却被标为混淆、上下位关系被误标为互斥等），保证本体质量。本体可导出为可视化图谱，便于人工审阅整体结构。
 
-6. **Hard Negative 迭代采集**：基于已构建的本体，对每条视频描述进行 Type-Constrained 节点替换——仅在同一槽位内，以「易混淆节点」或「互斥节点」替换原槽位值，生成候选负样本。随后由 VLM 观看视频，在原始正样本描述与候选负样本描述之间进行二选一判断；VLM 答错的样本即被认定为对当前模型具有较高迷惑性的 Hard Negative，沉淀入全局难例库。整个采集过程以迭代方式进行：每轮结束后，统计各槽位维度上的错误率，下一轮在生成候选负样本时依错误率加权采样，优先对模型更易混淆的维度生成更多难例，使难例库随迭代不断强化。
+6. **Hard Negative 迭代采集**：基于已构建的本体，对每条视频描述进行 Type-Constrained 节点替换——在线从 `augment_{view}.json` 采样，仅在同一槽位内以「易混淆节点」或「互斥节点」替换原槽位值，生成候选负样本（无需预生成中间文件）。随后由 VLM 观看视频，在原始正样本描述与候选负样本描述之间进行二选一判断；VLM 答错的样本即被认定为对当前模型具有较高迷惑性的 Hard Negative，沉淀入全局难例库。整个采集过程以迭代方式进行：每轮结束后，统计各槽位维度上的错误率，下一轮在在线采样时依错误率加权（Gumbel-max trick），优先对模型更易混淆的维度生成更多难例，使难例库随迭代不断强化。
 
 7. **Hard Negative 质量审核**：迭代采集结束后，由语言模型对难例库中每条记录进行句子级语境审查，删除在具体动作语境中原词与替换词实质等价、或在视频画面中视觉上无法区分的条目。对语言模型判断存疑的记录，由标注员进行人工复核，确认每条难例在视频语境中确实构成有效的语义替换，最终形成可用的（视频, 正描述, 负描述）三元组。这是本流水线的第二类人工标注介入。
 
@@ -45,7 +45,7 @@
 | 阶段 | 脚本编号 | 目标 |
 |------|----------|------|
 | **Setup（一次性）** | 1 → 2 → 3 → 5 → 5.1 → 6 | 构建槽位描述与本体知识库 |
-| **Hard Negative Loop（迭代循环）** | 7 → 8 → 8.1 → 9 → 9.1 | 迭代采集、评测并沉淀 Hard Negative |
+| **Hard Negative Loop（迭代循环）** | 8 → 8.1 → 9 → 9.1 | 迭代采集、评测并沉淀 Hard Negative |
 
 > `loop.sh` 驱动 Hard Negative Loop 自动运行，默认 20 轮迭代后执行 LLM 终审（9.1）。
 
@@ -182,28 +182,18 @@ eval_stats.json（反馈加权）
 
 ---
 
-### Step 7 — 混淆负样本生成 (`7_gen_confusable.py`)
-
-基于 `slot_ontology.json` 对每条 `augment_{view}.json` 进行**Type-Constrained 节点替换**：仅在同一槽位内替换为语义相近或互斥的节点，分别从 `confusable_siblings`（易混淆）和 `incompatibility`（互斥）各生成 5 条负样本。
-
-采样策略采用 Gumbel-max trick 实现**加权无放回采样**：首轮 `eval_stats.json` 不存在时均匀随机；后续轮次依据上一轮各槽位的错误率（`error_rate`）加权，优先对 VLM 更易混淆的槽位进行更多替换，持续强化 Hard Negative 的难度。
-
-**输入** `augment_{view}.json` + `slot_ontology.json` + `eval_stats.json` → **输出** `confusable_{view}.json`
-
----
-
 ### Step 8 — VLM 二选一评测 (`8_eval_confusable.py`)
 
-让 VLM 观看视频帧后，在原始正样本描述与混淆负样本描述之间**二选一**（A/B 随机化位置以消除顺序偏差），记录每条结果到 `eval_results.jsonl`。
+让 VLM 观看视频帧后，在原始正样本描述与混淆负样本描述之间**二选一**（A/B 随机化位置以消除顺序偏差），记录每条结果。
 
 评测模式：
-- `--mode confusable`：评测 Step 7 新生成的混淆样本
-- `--mode hard`：对 `hard_{view}.json` 重新打分，并更新 `hard_all.jsonl` 中的 `error_count`
-- `--mode all`（默认）：顺序执行 confusable 与 hard
+- `--mode confusable`：从 `augment_{view}.json` **在线采样**混淆负样本后评测，结果写 `eval_results.jsonl`；采样权重来自上轮 `eval_stats.json`（首轮均匀采样）
+- `--mode hard`：对 `hard_{view}.json` 重新打分，结果写 `eval_results_hard.jsonl`，并更新 `hard_all.jsonl` 中的 `pred_count/error_count`
+- `--mode all`（默认）：顺序执行以上两种
 
-`error_count` 是 `hard_all.jsonl` 中衡量样本难度的唯一来源，**仅由 Step 8 更新**。支持断点续跑（基于已处理 key 跳过重复评测）。
+无需预生成 `confusable_{view}.json`，消除了中间文件冗余。多线程采样使用独立 RNG，保证线程安全。支持断点续跑。
 
-**输入** `confusable_{view}.json` / `hard_{view}.json` + 视频帧 → **输出** `eval_results.jsonl`（追加）
+**输入** `augment_{view}.json` / `hard_{view}.json` + 视频帧 → **输出** `eval_results.jsonl` / `eval_results_hard.jsonl`（追加）
 
 ---
 
@@ -323,10 +313,7 @@ bash loop.sh
 ### 手动单步参考
 
 ```bash
-# 生成混淆样本（加权采样）
-python3 7_gen_confusable.py
-
-# VLM 评测（仅 confusable 模式）
+# VLM 评测（在线采样 confusable 模式）
 python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode confusable
 
 # 统计分析，刷新 eval_stats.json

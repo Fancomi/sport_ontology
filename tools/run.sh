@@ -2,15 +2,15 @@
 # source /home/baidu/envs/swift/bin/activate
 
 # ── 统一配置 ──────────────────────────────────────────────────────────────────
-# Gemma
 HOST="127.0.0.1"
+# Gemma
 PORT="8001,8002,8003,8004,8005,8006,8007,8008"
 WORKERS=8
 
 # Qwen3.6
-HOST="127.0.0.1"
 PORT="8001,8002,8003,8004"
 WORKERS=4
+
 # ─────────────────────────────────────────────────────────────────────────────
 
 # 视频描述 / 处理预热
@@ -50,12 +50,9 @@ WORKERS=4
 # # 6. 图谱构建[可视化]
 # python3 6_build_wiki.py
 
-# # 7. 生成混淆样本
-# python3 7_gen_confusable.py
-
-# # 8. 评测混淆判断 产出json
-# #    --mode confusable  只评测 step7 新产物（confusable_xxx.json），结果追加 eval_results.jsonl
-# #    --mode hard        只刷累计 hard 分数（hard_xxx.json），更新 error_count（先跑 9 --reset-counts）
+# # 8. VLM 评测（在线采样 confusable / 重刷 hard）
+# #    --mode confusable  在线采样评测，结果追加 eval_results.jsonl
+# #    --mode hard        重刷累计 hard 分数（先跑 9 --reset-counts）
 # #    --mode all         全部（默认）
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode confusable
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode hard

@@ -14,10 +14,8 @@
 | `5_enrich_with_llm` | `slot_vocab.json` | `slot_ontology.json` | LLM 构建本体（8 类关系属性） |
 | `5_1_clean_ontology` | `slot_ontology.json` | `slot_ontology.json`（原地） | LLM 删减 R1/R2/R3/I1/I2 违规关系 |
 | `6_build_wiki` | `slot_ontology.json` | `../sport_ontology/**/*.md` | 构建 Obsidian 可视化本体 |
-| `7_gen_confusable` | `augment_{view}.json` + `slot_ontology.json` + `eval_stats.json` | `confusable_{view}.json` | 加权 Type-Constrained 节点替换，生成混淆负样本 |
-| `8_eval_confusable` | `confusable/{hard}_{view}.json` + 视频 | `eval_results.jsonl`（追加）+ `hard_all.jsonl`（`error_count` 更新） | VLM 二选一评测，是 `error_count` 的唯一更新来源 |
-| `8_1_analyze` | `eval_results.jsonl` | `eval_stats.json` + `eval_accuracy.png` | 统计准确率与 Cohen's Kappa，输出加权采样权重 |
-| `8_2_cleanup_pairs` | `eval_results.jsonl` + `slot_ontology.json` | 两者原地修改 | 人工排查后手动剔除非预期替换对 |
+| `8_eval_confusable` | `augment_{view}.json`（confusable 在线采样）/ `hard_{view}.json` + 视频 | `eval_results.jsonl` / `eval_results_hard.jsonl`（追加）+ `hard_all.jsonl`（`pred/error_count` 更新） | VLM 二选一评测；confusable 模式直接从 augment 在线采样，无需预生成文件 |
+| `8_1_analyze` | `eval_results*.jsonl` | `eval_stats.json` + `eval_accuracy.png` | 统计准确率与 Cohen's Kappa，输出加权采样权重 |
 | `9_extract_errors` | `eval_results*.jsonl`（可多个） | `hard_all.jsonl`（累计）+ `hard_{view}.json`（重建） | 提取 VLM 答错对，跨轮幂等累计 |
 | `9_1_clean_hard` | `hard_all.jsonl` + `augment_{view}.json` | `hard_all.jsonl`（原地）+ `hard_{view}.json`（重建） | LLM 句子级语境审核，删除上下文等价或视觉不可辨条目 |
 
@@ -46,14 +44,12 @@ flowchart LR
     AUG["augment_{view}.json"]
     STATS["eval_stats.json\n（上轮输出）"]
 
-    ONTO & AUG & STATS -->|7 加权采样| CONF["confusable_{view}.json"]
-    CONF -->|8 二选一评测| EVAL["eval_results.jsonl"]
+    ONTO & AUG & STATS -->|"8 在线采样+评测"| EVAL["eval_results.jsonl"]
     EVAL -->|8_1 分析| STATS2["eval_stats.json\n（本轮更新）"]
     EVAL -->|9 提取答错对| HALL["hard_all.jsonl"]
     HALL -->|9 全量重建| HARD["hard_{view}.json"]
     HARD -->|下轮 8 hard| EVAL
 
-    EVAL -.->|8_2 按需手动| ONTO
     HALL -.->|9_1 全轮结束后| HALL2["hard_all.jsonl\n（LLM 终审后）"]
     HALL2 -->|9_1 重建| HARD2["hard_{view}.json\n（最终版）"]
 ```
@@ -72,9 +68,8 @@ flowchart TB
 
     subgraph loop["Hard Negative Loop（loop.sh × ROUNDS 轮）"]
         direction LR
-        S7["7 gen_conf"] --> S8C["8 confusable"] --> S81["8_1 analyze"] --> S7
+        S8C["8 confusable\n（在线采样）"] --> S81["8_1 analyze"] --> S8C
         S8C --> S9["9 extract"]
-        S8C -.->|按需| S82["8_2 cleanup"] -.-> S7
         S9 -.->|可选| S8H["8 hard"] -.-> S9
     end
 
@@ -93,16 +88,15 @@ flowchart TB
   1 → 2 (含 2.1 QC) → 3 → 5 → 5.1 → 6
 
 第 1 轮（建立基线，loop.sh 第 1 次迭代）
-  7 (均匀采样，eval_stats.json 不存在) → 8 confusable → 8.1 → 9
+  8 confusable（均匀采样，eval_stats.json 不存在） → 8.1 → 9
 
 第 N 轮（加权迭代，loop.sh 第 N 次迭代）
-  7 (error_rate 加权采样) → 8 confusable → 8.1 → 9
+  8 confusable（error_rate 加权在线采样）→ 8.1 → 9
 
 全部轮次完成后
   9.1 LLM 句子级终审 → hard_all.jsonl（最终版）
 
 可选质量控制（手动按需执行）
-  8.2 cleanup_pairs   — 剔除非预期替换对（词对级，修改 ontology）
   5.1 clean_ontology  — 重新清理本体关系
   8 hard mode         — 对累计 hard 重新打分（需先 9 --reset-counts）
 ```
@@ -153,13 +147,11 @@ python3 6_build_wiki.py
 bash loop.sh
 
 # ── 手动单轮参考 ──────────────────────────────────────────────────────────────
-python3 7_gen_confusable.py
 python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode confusable
 python3 8_1_analyze.py
 python3 9_extract_errors.py --input eval_results.jsonl --clean
 
 # ── 质量控制（按需）──────────────────────────────────────────────────────────
-python3 8_2_cleanup_pairs.py
 python3 5_1_clean_ontology.py --poe
 # 重新对累计 hard 打分（先清零计数）
 python3 9_extract_errors.py --reset-counts
