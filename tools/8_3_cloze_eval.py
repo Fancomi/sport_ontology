@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """8_3: 完形填空 VLM 评测
 将 category_3_slotted_description 所有槽位置空为 (N)，
-VLM 从 4 选项中填空，统计整句 / 总槽位 / 逐槽位准确率。
+VLM 从选项中填空，统计整句 / 总槽位 / 逐槽位准确率。
+
+选项数自适应：按 canonical 去重后有几个不同干扰就出几道题（最多 N_CHOICES_MAX）。
+例：gender 只有两个 canonical 值 → 自动变成 2 选 1，不会用同义词凑数。
 抽样在线完成，无需预生成 confusable_xxx.json。
 """
 
@@ -15,12 +18,12 @@ from config import DATA_ROOT
 from llm_client import build_vlm_clients, parse_ports
 from video_frames import ensure_frames, FPS_DEFAULT
 
-ONTOLOGY_PATH = Path(__file__).parent / "slot_ontology.json"
-VIEWS         = ("front", "side")
-SLOT_RE       = re.compile(r"\[(\w+):([^\]]+)\]")
-ANS_RE        = re.compile(r"\((\d+)\)=([A-Da-d])")
-N_CHOICES     = 4
-MAX_TOKENS    = 256     # N 个空 × "(X)=A " 约需 ~3N tokens，256 足够
+ONTOLOGY_PATH  = Path(__file__).parent / "slot_ontology.json"
+VIEWS          = ("front", "side")
+SLOT_RE        = re.compile(r"\[(\w+):([^\]]+)\]")
+ANS_RE         = re.compile(r"\((\d+)\)=([A-Da-d])")
+N_CHOICES_MAX  = 4
+MAX_TOKENS     = 256
 
 PROMPT_TMPL = """\
 以上是一段健身动作视频。请根据视频内容完成以下完形填空，每空从给定选项中选出最符合视频的答案。
@@ -33,7 +36,7 @@ PROMPT_TMPL = """\
 {answer_fmt}"""
 
 
-# ── ontology 工具（与 7_gen_confusable 逻辑一致，因文件名带数字无法 import）───
+# ── ontology 工具 ─────────────────────────────────────────────────────────────
 
 def build_lookup(ontology: dict) -> dict:
     lookup = {}
@@ -49,38 +52,85 @@ def build_lookup(ontology: dict) -> dict:
     return lookup
 
 
-def sample_distractors(lookup: dict, ontology: dict, slot: str, correct: str, n: int = 3) -> list[str]:
-    """优先 confusable_siblings，不足补 incompatibility，再不足随机同 slot 节点。"""
-    node  = lookup.get(slot, {}).get(correct, {})
-    pool  = [c for c in node.get("confusable_siblings", []) if c != correct]
-    pool += [c for c in node.get("incompatibility",     []) if c != correct and c not in pool]
-    if len(pool) < n:
-        extra = [k for k in ontology.get(slot, {}) if k != correct and k not in pool]
+def build_syn_rev(ontology: dict, slot: str) -> dict[str, str]:
+    """value / synonym → canonical standard_name，用于 canonical-group 去重。"""
+    rev = {}
+    for name, info in ontology.get(slot, {}).items():
+        rev[name] = name
+        for syn in (info.get("synonyms") or []):
+            rev[syn] = name
+    return rev
+
+
+def sample_distractors(lookup: dict, ontology: dict,
+                        slot: str, correct: str, max_n: int = 3) -> list[str]:
+    """canonical 去重采样：同义词组只取一个，返回 ≤ max_n 个干扰项。
+
+    优先级：confusable_siblings → incompatibility → 随机同 slot 节点。
+    根因修复：step 5_2 传播后 incompatibility 会包含同义词别名，
+    不去重会导致 3 个干扰项语义相同（如 男性/男/男子），使题目退化为二选一。
+    """
+    syn_rev       = build_syn_rev(ontology, slot)
+    correct_canon = syn_rev.get(correct, correct)
+    used_canons   = {correct_canon}
+    pool          = []
+
+    def try_add(val: str) -> bool:
+        canon = syn_rev.get(val, val)
+        if canon not in used_canons:
+            used_canons.add(canon)
+            pool.append(val)
+            return True
+        return False
+
+    node = lookup.get(slot, {}).get(correct, {})
+    for c in node.get("confusable_siblings", []):
+        if len(pool) >= max_n: break
+        try_add(c)
+    for c in node.get("incompatibility", []):
+        if len(pool) >= max_n: break
+        try_add(c)
+    if len(pool) < max_n:
+        extra = [k for k in ontology.get(slot, {})
+                 if syn_rev.get(k, k) not in used_canons]
         random.shuffle(extra)
-        pool += extra
-    return pool[:n]
+        for c in extra:
+            if len(pool) >= max_n: break
+            try_add(c)
+
+    return pool
 
 
 # ── 完形填空构建 ──────────────────────────────────────────────────────────────
 
-def build_cloze(text: str, lookup: dict, ontology: dict) -> tuple[str, list[dict]]:
+def build_cloze(text: str, lookup: dict, ontology: dict,
+                min_choices: int = 2) -> tuple[str, list[dict]]:
     """将 [slot:value] 替换为 (N)，返回 (填空句, slots_info)。
 
-    slots_info 每项：{idx, slot, correct, options:[(label,val),...], correct_label}
+    选项数自适应：canonical 去重后有几个不同干扰就出几个选项（最多 N_CHOICES_MAX）。
+    min_choices: 干扰数不足 (min_choices-1) 的槽位跳过（保留原文不置空）。
+    slots_info 每项：{idx, slot, correct, options:[(label,val),...], correct_label, n_choices}
     """
     slots_info = []
     cloze_text = text
+    idx        = 0
 
-    for i, (slot, value) in enumerate(SLOT_RE.findall(text), 1):
-        opts     = [value] + sample_distractors(lookup, ontology, slot, value)
+    for slot, value in SLOT_RE.findall(text):
+        distractors = sample_distractors(lookup, ontology, slot, value, N_CHOICES_MAX - 1)
+        if len(distractors) + 1 < min_choices:
+            continue                             # 跳过：干扰项不足，不置空
+        idx  += 1
+        opts  = [value] + distractors
         random.shuffle(opts)
-        labels   = [chr(ord("A") + j) for j in range(len(opts))]
-        correct  = labels[opts.index(value)]
+        labels  = [chr(ord("A") + j) for j in range(len(opts))]
+        correct = labels[opts.index(value)]
         slots_info.append({
-            "idx": i, "slot": slot, "correct": value,
-            "options": list(zip(labels, opts)), "correct_label": correct,
+            "idx": idx, "slot": slot, "correct": value,
+            "options": list(zip(labels, opts)),
+            "correct_label": correct,
+            "n_choices": len(opts),
         })
-        cloze_text = cloze_text.replace(f"[{slot}:{value}]", f"({i})", 1)
+        cloze_text = cloze_text.replace(f"[{slot}:{value}]", f"({idx})", 1)
 
     return cloze_text, slots_info
 
@@ -113,13 +163,14 @@ def call_vlm(frames: list[str], prompt: str, client, model: str, extra_body: dic
 # ── 单文件评测 ────────────────────────────────────────────────────────────────
 
 def eval_file(src: Path, frames: list[str], client, model: str,
-              lookup: dict, ontology: dict, extra_body: dict) -> list[dict]:
+              lookup: dict, ontology: dict, extra_body: dict,
+              min_choices: int = 2) -> list[dict]:
     data = json.loads(src.read_text("utf-8"))
     text = data.get("category_3_slotted_description", "")
     if not text:
         return []
 
-    cloze_text, slots_info = build_cloze(text, lookup, ontology)
+    cloze_text, slots_info = build_cloze(text, lookup, ontology, min_choices)
     if not slots_info:
         return []
 
@@ -131,9 +182,9 @@ def eval_file(src: Path, frames: list[str], client, model: str,
     for s in slots_info:
         given = answers.get(s["idx"], "")
         ok    = given == s["correct_label"]
-        results.append({"slot": s["slot"], "correct": s["correct"],
+        results.append({"slot": s["slot"], "correct": s["correct"], "n_choices": s["n_choices"],
                         "correct_label": s["correct_label"], "answer": given, "is_correct": ok})
-        print(f"    ({s['idx']}) [{s['slot']}] {s['correct']}  ans={given or '?'} {'✓' if ok else '✗'}")
+        print(f"    ({s['idx']}) [{s['slot']}|{s['n_choices']}选1] {s['correct']}  ans={given or '?'} {'✓' if ok else '✗'}")
     return results
 
 
@@ -146,7 +197,9 @@ def main() -> None:
     parser.add_argument("--fps",      type=float, default=FPS_DEFAULT)
     parser.add_argument("--max-side", type=int,   default=768, dest="max_side")
     parser.add_argument("--out",      default="cloze_results.jsonl")
-    parser.add_argument("--limit",    type=int,   default=0, help="限制文件数（调试）")
+    parser.add_argument("--limit",       type=int, default=0,  help="限制文件数（调试）")
+    parser.add_argument("--min-choices", type=int, default=2,  dest="min_choices",
+                        help="槽位最少选项数，不足则跳过该槽（默认2=保留所有；4=只保留真正4选1）")
     parser.add_argument("--dry-run",  action="store_true", dest="dry_run")
     parser.add_argument("--seed",     type=int,   default=42)
     parser.add_argument("--workers",  "-w", type=int, default=1)
@@ -195,12 +248,12 @@ def main() -> None:
 
         if args.dry_run:
             text       = json.loads(src.read_text("utf-8")).get("category_3_slotted_description", "")
-            cloze, si  = build_cloze(text, lookup, ontology)
+            cloze, si  = build_cloze(text, lookup, ontology, args.min_choices)
             with print_lock: print(f"{'─'*60}\n{format_prompt(cloze, si)}\n{'─'*60}")
             return
 
         c, mid, eb = vlm_clients[(i - 1) % len(vlm_clients)]
-        records    = eval_file(src, frames, c, mid, lookup, ontology, eb)
+        records    = eval_file(src, frames, c, mid, lookup, ontology, eb, args.min_choices)
         if not records:
             return
 
