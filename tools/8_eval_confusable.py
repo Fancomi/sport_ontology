@@ -1,73 +1,77 @@
 #!/usr/bin/env python3
 """Script 8: VLM 评测 — confusable（在线采样）与 hard 两种模式。
 
-  confusable: 读 augment_{view}.json，在线生成混淆负样本 → eval_results.jsonl
-  hard:       读 hard_all.jsonl，按 (video,view) 分组   → eval_results_hard.jsonl
-                                                          + hard_all.jsonl (pred/error_count)
-
-性能设计：
-  - client 按「每次 VLM 调用」轮转（而非按目录），所有 GPU 均衡负载
-  - fout.flush() 批量化（每目录一次），消除每条 flush 的 IO 串行
-  - hard 模式 _increment_hard_all 批量写回（每目录一次），避免每条重写全量文件
+两阶段流水线（解决 GPU 空闲问题）：
+  Phase 1: 并行帧加载 + 负样本采样 → 全量 WorkItem 列表（IO/CPU 密集）
+  Phase 2: 每条 WorkItem = 独立 VLM 任务，workers 线程始终满载（GPU 密集）
+           两阶段完全解耦，GPU 不再等待帧加载/采样
 """
 
-import argparse, json, random, sys, threading, time
+import argparse, json, random, sys, threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 
-from openai import OpenAI
-
 from config import DATA_ROOT
-from hard_utils import load_hard_all, save_hard_all
+from hard_utils import load_hard_all, save_hard_all, slotted_desc
 from llm_client import build_vlm_clients, parse_ports
 from ontology_utils import (ONTOLOGY_PATH, build_lookup, load_weights,
-                             sample_negatives, strip_slots)
+                             replace_slot, sample_negatives, strip_slots)
 from video_frames import ensure_frames, FPS_DEFAULT
 
-VIEWS      = ("front", "side")
-MAX_TOKENS = 8
-PROMPT_TMPL = (
+VIEWS, MAX_TOKENS = ("front", "side"), 8
+PROMPT = (
     "以上是一段健身动作视频。以下有两句文字描述，哪一句更符合实际视频？\n"
     "A: {a}\nB: {b}\n只回复一个字母 A 或 B。"
     "请保持思考过程简短高效，不要过度发散，思考过程请控制在 1000 字以内。"
 )
 
-_hard_all_lock = Lock()
-
-# ── client 轮转计数（按 VLM 调用次数均匀分配，非按目录）──────────────────────────
-_client_counter      = 0
-_client_counter_lock = Lock()
-
-def _next_client(vlm_clients: list) -> tuple:
-    """每次调用取下一个 client，循环轮转，保证所有 GPU 均匀负载。"""
-    global _client_counter
-    with _client_counter_lock:
-        idx             = _client_counter % len(vlm_clients)
-        _client_counter += 1
-    return vlm_clients[idx]
+# ── 全局线程安全工具 ──────────────────────────────────────────────────────────
+_cli_idx, _cli_lock = 0, Lock()
+_tls      = threading.local()
+_prt_lock = Lock()
 
 
-# ── 多线程安全 RNG（采样用，与全局 random 独立）────────────────────────────────
-_thread_local = threading.local()
+def _next_client(clients: list) -> tuple:
+    global _cli_idx
+    with _cli_lock:
+        c = clients[_cli_idx % len(clients)]
+        _cli_idx += 1
+    return c
 
 
 def _rng(seed: int) -> random.Random:
-    """每线程独立 Random 实例，首次调用时按 seed ^ thread_id 初始化。"""
-    if not hasattr(_thread_local, "rng"):
-        _thread_local.rng = random.Random(seed ^ (threading.get_ident() & 0xFFFFFFFF))
-    return _thread_local.rng
+    """每线程独立 RNG，seed ^ thread_id 初始化，保证线程安全且各线程序列不同。"""
+    if not hasattr(_tls, "rng"):
+        _tls.rng = random.Random(seed ^ (threading.get_ident() & 0xFFFFFFFF))
+    return _tls.rng
+
+
+def _log(*a) -> None:
+    with _prt_lock:
+        print(*a)
+
+
+# ── 数据结构 ──────────────────────────────────────────────────────────────────
+
+@dataclass
+class WorkItem:
+    mode:     str    # "conf" | "hard"
+    frames:   list
+    neg:      dict   # {category_3_slotted_description, source, replaced_slot, original_value, new_value}
+    original: str    # strip_slots 后的正描述，直接用于 prompt
+    rel:      str
+    view:     str
 
 
 # ── VLM 调用 ──────────────────────────────────────────────────────────────────
 
-def call_vlm(frames: list[str], prompt: str, client: OpenAI,
-             model: str, extra_body: dict | None = None) -> str:
-    content = [
-        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{f}"}}
-        for f in frames
-    ] + [{"type": "text", "text": prompt}]
+def call_vlm(frames: list, prompt: str, client, model: str,
+             extra_body: dict | None = None) -> str:
+    content = ([{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{f}"}}
+                for f in frames] + [{"type": "text", "text": prompt}])
     try:
         kw = dict(model=model, messages=[{"role": "user", "content": content}],
                   max_tokens=MAX_TOKENS, temperature=0.0)
@@ -75,318 +79,242 @@ def call_vlm(frames: list[str], prompt: str, client: OpenAI,
             kw["extra_body"] = extra_body
         return client.chat.completions.create(**kw).choices[0].message.content.strip().upper()
     except Exception as e:
-        print(f"  ✗ VLM: {e}")
+        _log(f"  ✗ VLM: {e}")
         return ""
 
 
-# ── 评测核心 ──────────────────────────────────────────────────────────────────
+def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
+    """单条 neg 二选一评测，返回 record 或 None（无效响应）。"""
+    c, mid, eb = _next_client(clients)
+    a_is_orig  = _rng(seed).random() < 0.5
+    neg_text   = strip_slots(item.neg["category_3_slotted_description"])
+    a, b       = (item.original, neg_text) if a_is_orig else (neg_text, item.original)
+    answer     = call_vlm(item.frames, PROMPT.format(a=a, b=b), c, mid, eb)
+    letter     = answer[0] if answer and answer[0] in "AB" else ""
+    if not letter:
+        return None
+    ok = letter == ("A" if a_is_orig else "B")
+    _log(f"  [{item.mode}|{item.view}|{item.neg['replaced_slot']}] "
+         f"{item.neg['original_value']}→{item.neg['new_value']}  {letter} {'✓' if ok else '✗'}")
+    return {
+        "video": item.rel, "view": item.view,
+        "source": item.neg["source"], "replaced_slot": item.neg["replaced_slot"],
+        "original_value": item.neg["original_value"], "new_value": item.neg["new_value"],
+        "original_is_A": a_is_orig, "answer": letter, "is_correct": ok,
+    }
 
-def eval_pairs(negatives: list[dict], original_text: str,
-               frames: list[str], vlm_clients: list,
-               done_keys: set[str], extra_body_override: dict | None,
-               dry_run: bool, rel: str, view: str) -> list[dict]:
-    """对 negatives 列表逐条进行二选一评测。
 
-    client 在此函数内按条目轮转，保证跨线程均匀分配 GPU。
-    """
-    original = strip_slots(original_text)
-    results  = []
+# ── Phase 1: 采集 WorkItem（并行，IO/CPU 密集）───────────────────────────────
 
-    for neg in negatives:
-        key = f"{rel}|{view}|{neg['replaced_slot']}|{neg['original_value']}|{neg['new_value']}"
-        if key in done_keys:
+def collect_conf(src: Path, lookup, conf_w, inco_w, done: set,
+                 fps: float, max_side: int, seed: int) -> list[WorkItem]:
+    view   = src.stem.split("_")[-1]
+    frames = ensure_frames(src.parent / f"{view}.mp4", fps, max_side)
+    if not frames:
+        return []
+    aug    = json.loads(src.read_text("utf-8"))
+    orig_s = aug.get("category_3_slotted_description", "")
+    if not orig_s:
+        return []
+    rel  = str(src.parent.relative_to(DATA_ROOT))
+    orig = strip_slots(orig_s)
+    return [WorkItem("conf", frames, n, orig, rel, view)
+            for n in sample_negatives(orig_s, lookup, conf_w, inco_w, rng=_rng(seed))
+            if f"{rel}|{view}|{n['replaced_slot']}|{n['original_value']}|{n['new_value']}" not in done]
+
+
+def collect_hard(dir_path: Path, view: str, key_rec_map: dict,
+                 done: set, fps: float, max_side: int) -> list[WorkItem]:
+    frames = ensure_frames(dir_path / f"{view}.mp4", fps, max_side)
+    if not frames:
+        return []
+    rel    = str(dir_path.relative_to(DATA_ROOT))
+    orig_s = slotted_desc(rel, view)
+    if not orig_s:
+        return []
+    orig  = strip_slots(orig_s)
+    items = []
+    for k, rec in sorted(key_rec_map.items(), key=lambda x: x[0][2:]):
+        _, _, slot, ov, nv = k
+        neg_s = replace_slot(orig_s, slot, ov, nv)
+        if neg_s == orig_s or f"{rel}|{view}|{slot}|{ov}|{nv}" in done:
             continue
+        items.append(WorkItem("hard", frames,
+                              {"category_3_slotted_description": neg_s, "source": rec["source"],
+                               "replaced_slot": slot, "original_value": ov, "new_value": nv},
+                              orig, rel, view))
+    return items
 
-        negative      = strip_slots(neg["category_3_slotted_description"])
-        original_is_a = random.random() < 0.5
-        a, b          = (original, negative) if original_is_a else (negative, original)
-        correct       = "A" if original_is_a else "B"
-        prompt        = PROMPT_TMPL.format(a=a, b=b)
 
-        if dry_run:
-            print(f"\n{'─'*60}\n{prompt}\n{'─'*60}")
+# ── hard_all 批量写回（运行结束时一次调用）────────────────────────────────────
+
+def flush_hard_all(records: list[dict], model_name: str) -> None:
+    if not records:
+        return
+    hist = load_hard_all()
+    for r in records:
+        key = (r["video"], r["view"], r["replaced_slot"], r["original_value"], r["new_value"])
+        if key not in hist:
             continue
-
-        # 每条 VLM 调用独立轮转取 client
-        c, mid, eb = _next_client(vlm_clients)
-        if extra_body_override is not None:
-            eb = extra_body_override
-        answer = call_vlm(frames, prompt, c, mid, eb)
-        letter = answer[0] if answer and answer[0] in "AB" else ""
-        if not letter:
-            print(f"    [skip] {neg['replaced_slot']}: invalid={repr(answer)}")
-            continue
-
-        ok = letter == correct
-        results.append({
-            "video": rel, "view": view,
-            "source":         neg["source"],
-            "replaced_slot":  neg["replaced_slot"],
-            "original_value": neg["original_value"],
-            "new_value":      neg["new_value"],
-            "original_is_A":  original_is_a,
-            "answer": letter, "is_correct": ok,
-        })
-        print(f"    [{neg['source'][:5]}] {neg['replaced_slot']}: "
-              f"{neg['original_value']}→{neg['new_value']}  ans={letter}  {'✓' if ok else '✗'}")
-
-    return results
+        hist[key]["pred_count"] = hist[key].get("pred_count", 0) + 1
+        hist[key].setdefault("pred_by_model", {})[model_name] = \
+            hist[key]["pred_by_model"].get(model_name, 0) + 1
+        if not r["is_correct"]:
+            hist[key]["error_count"] = hist[key].get("error_count", 0) + 1
+            hist[key].setdefault("error_by_model", {})[model_name] = \
+                hist[key]["error_by_model"].get(model_name, 0) + 1
+    save_hard_all(hist)
 
 
 def load_done(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
     done = set()
-    if path.exists():
-        for line in path.read_text("utf-8").splitlines():
-            try:
-                r = json.loads(line)
-                done.add(f"{r['video']}|{r['view']}|{r['replaced_slot']}"
-                         f"|{r['original_value']}|{r['new_value']}")
-            except Exception:
-                pass
+    for line in path.read_text("utf-8").splitlines():
+        try:
+            r = json.loads(line)
+            done.add(f"{r['video']}|{r['view']}|{r['replaced_slot']}"
+                     f"|{r['original_value']}|{r['new_value']}")
+        except Exception:
+            pass
     return done
-
-
-def _increment_hard_all(records: list[dict], model_name: str) -> None:
-    """批量更新 hard_all.jsonl 中的 pred_count/pred_by_model/error_count/error_by_model。
-
-    整批 records 在同一把锁内完成，避免每条触发一次全量文件重写。
-    """
-    if not records:
-        return
-    with _hard_all_lock:
-        hist = load_hard_all()
-        for r in records:
-            key = (r["video"], r["view"],
-                   r["replaced_slot"], r["original_value"], r["new_value"])
-            if key not in hist:
-                continue
-            hist[key]["pred_count"] = hist[key].get("pred_count", 0) + 1
-            pb = hist[key].setdefault("pred_by_model", {})
-            pb[model_name] = pb.get(model_name, 0) + 1
-            if not r["is_correct"]:
-                hist[key]["error_count"] = hist[key].get("error_count", 0) + 1
-                by = hist[key].setdefault("error_by_model", {})
-                by[model_name] = by.get(model_name, 0) + 1
-        save_hard_all(hist)
 
 
 # ── 主流程 ────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Script 8: VLM 混淆句评测")
-    parser.add_argument("--mode", choices=["confusable", "hard", "all"], default="all",
-                        help="confusable=在线采样评测；hard=重刷累计分数；all=全部（默认）")
-    parser.add_argument("--host",     default="127.0.0.1")
-    parser.add_argument("--port",     default="8000", help="逗号分隔多端口")
-    parser.add_argument("--fps",      type=float, default=FPS_DEFAULT)
-    parser.add_argument("--max-side", type=int,   default=768, dest="max_side")
-    parser.add_argument("--out",      default="eval_results.jsonl",
-                        help="confusable 结果输出")
-    parser.add_argument("--out-hard", default="eval_results_hard.jsonl", dest="out_hard",
-                        help="hard 模式结果输出（供 8_1_analyze 分析）")
-    parser.add_argument("--limit",    type=int, default=0, help="调试：限制目录数（0=不限）")
-    parser.add_argument("--dry-run",  action="store_true", dest="dry_run",
-                        help="打印 prompt，跳过 VLM 调用")
-    parser.add_argument("--seed",     type=int, default=42)
-    parser.add_argument("--workers",  "-w", type=int, default=1,
-                        help="并发 worker 数，建议与端口数一致")
-    args = parser.parse_args()
+    pa = argparse.ArgumentParser(description="Script 8: VLM 混淆句评测（两阶段流水线）")
+    pa.add_argument("--mode",     choices=["confusable", "hard", "all"], default="all")
+    pa.add_argument("--host",     default="127.0.0.1")
+    pa.add_argument("--port",     default="8000", help="逗号分隔多端口")
+    pa.add_argument("--fps",      type=float, default=FPS_DEFAULT)
+    pa.add_argument("--max-side", type=int,   default=768, dest="max_side")
+    pa.add_argument("--out",      default="eval_results.jsonl")
+    pa.add_argument("--out-hard", default="eval_results_hard.jsonl", dest="out_hard")
+    pa.add_argument("--limit",    type=int, default=0, help="调试：限制目录数")
+    pa.add_argument("--dry-run",  action="store_true", dest="dry_run")
+    pa.add_argument("--seed",     type=int, default=42)
+    pa.add_argument("-w", "--workers", type=int, default=1)
+    args = pa.parse_args()
 
     random.seed(args.seed)
 
-    vlm_clients = []
+    clients = []
     if not args.dry_run:
-        vlm_clients = build_vlm_clients(args.host, parse_ports(args.port))
-        if not vlm_clients:
+        clients = build_vlm_clients(args.host, parse_ports(args.port))
+        if not clients:
             print(f"✗ 无法连接 {args.host}:{args.port}", file=sys.stderr)
             sys.exit(1)
-        print(f"模型: {vlm_clients[0][1]}")
+        print(f"模型: {clients[0][1]}  workers={args.workers}")
 
-    # ── 加载 ontology（confusable 模式在线采样所需）────────────────────────────
     lookup = conf_w = inco_w = None
     if args.mode in ("confusable", "all"):
         ontology       = json.loads(ONTOLOGY_PATH.read_text("utf-8"))
         lookup         = build_lookup(ontology)
         conf_w, inco_w = load_weights()
 
-    out_path      = Path(args.out)
-    out_hard_path = Path(args.out_hard)
+    # ── 文件收集 ──────────────────────────────────────────────────────────────
+    aug_files:  list[Path]  = []
+    hard_tasks: list[tuple] = []   # ((dir_path, view), key_rec_map)
 
-    # ── 收集文件，按目录索引 ──────────────────────────────────────────────────
-    # confusable: 按目录 → augment 文件列表
-    aug_by_dir: dict[Path, list[Path]] = defaultdict(list)
     if args.mode in ("confusable", "all"):
-        for view in VIEWS:
-            for p in DATA_ROOT.rglob(f"augment_{view}.json"):
-                aug_by_dir[p.parent].append(p)
+        for v in VIEWS:
+            aug_files += list(DATA_ROOT.rglob(f"augment_{v}.json"))
 
-    # hard: 直接从 hard_all.jsonl 读取，按 (video_dir, view) 分组
-    # 不再依赖 hard_{view}.json 中间文件
-    hard_by_dir: dict[Path, dict[str, dict]] = defaultdict(lambda: defaultdict(dict))
     if args.mode in ("hard", "all"):
-        hard_hist = load_hard_all()
-        for key, rec in hard_hist.items():
-            video, view = key[0], key[1]
-            video_dir   = DATA_ROOT / video
-            hard_by_dir[video_dir][view][key] = rec
+        by_vv: dict[tuple, dict] = defaultdict(dict)
+        for k, rec in load_hard_all().items():
+            by_vv[(DATA_ROOT / k[0], k[1])][k] = rec
+        hard_tasks = list(by_vv.items())
 
-    all_dirs = sorted(aug_by_dir.keys() | hard_by_dir.keys())
     if args.limit:
-        all_dirs = all_dirs[:args.limit]
-    if not all_dirs:
-        print("未找到评测文件，退出")
-        sys.exit(0)
+        dirs = sorted({f.parent for f in aug_files} |
+                      {d for (d, _), _ in hard_tasks})[:args.limit]
+        aug_files  = [f for f in aug_files  if f.parent in dirs]
+        hard_tasks = [t for t in hard_tasks if t[0][0] in dirs]
 
-    n_hard_pairs = sum(len(vd) for vd_dict in hard_by_dir.values() for vd in vd_dict.values())
-    print(f"\n目录: {len(all_dirs)}  "
-          f"confusable: {sum(len(v) for v in aug_by_dir.values())} 文件  "
-          f"hard: {n_hard_pairs} 对  "
-          f"out: {out_path}  out_hard: {out_hard_path}")
+    n_dirs = len({f.parent for f in aug_files} | {d for (d, _), _ in hard_tasks})
+    print(f"\n目录={n_dirs}  augment={len(aug_files)}  hard_groups={len(hard_tasks)}"
+          f"  out={args.out}  out_hard={args.out_hard}")
 
-    done_keys      = load_done(out_path)
-    hard_done_keys = load_done(out_hard_path) if args.mode in ("hard", "all") else set()
-    if done_keys:
-        print(f"[resume] confusable 已完成 {len(done_keys)} 条，跳过")
-    if hard_done_keys:
-        print(f"[resume] hard 已完成 {len(hard_done_keys)} 条，跳过")
-    if done_keys or hard_done_keys:
-        print()
+    done_conf = load_done(Path(args.out))
+    done_hard = load_done(Path(args.out_hard)) if args.mode in ("hard", "all") else set()
+    if done_conf: print(f"[resume] confusable 已完成 {len(done_conf)} 条")
+    if done_hard: print(f"[resume] hard       已完成 {len(done_hard)} 条")
 
-    fout_lock  = Lock()
-    print_lock = Lock()
-    workers    = min(args.workers, len(all_dirs))
+    # ── Phase 1: 并行帧加载 + 采样（IO/CPU 密集，与 VLM 解耦）─────────────────
+    print(f"\n[Phase 1] 帧加载 + 采样  workers={args.workers}")
+    items: list[WorkItem] = []
 
-    def _process_dir(idx_dir: tuple) -> tuple:
-        """返回 (c_total, c_correct, c_skipped, h_total, h_correct, h_skipped)"""
-        i, dir_path = idx_dir
-        rel         = str(dir_path.relative_to(DATA_ROOT))
-        ct = cc = cs = ht = hc = hs = 0
+    def _gc(src):
+        return collect_conf(src, lookup, conf_w, inco_w, done_conf,
+                            args.fps, args.max_side, args.seed)
 
-        with print_lock:
-            print(f"\n[{i}/{len(all_dirs)}] {rel}")
+    def _gh(task):
+        (dir_path, view), krm = task
+        return collect_hard(dir_path, view, krm, done_hard, args.fps, args.max_side)
 
-        # ── confusable（在线采样）─────────────────────────────────────────────
-        for src in sorted(aug_by_dir.get(dir_path, [])):
-            view = src.stem.split("_")[-1]
-            with print_lock:
-                print(f"  ── [confusable] {view}")
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futs = [pool.submit(_gc, s) for s in aug_files] + \
+               [pool.submit(_gh, t) for t in hard_tasks]
+        for f in as_completed(futs):
+            items += f.result()   # list.extend in main thread，GIL 保证安全
 
-            frames = ensure_frames(dir_path / f"{view}.mp4", args.fps, args.max_side)
-            if not frames:
-                with print_lock: print("  ✗ 帧为空，跳过")
-                cs += 1; continue
+    n_conf = sum(1 for it in items if it.mode == "conf")
+    n_hard = sum(1 for it in items if it.mode == "hard")
+    print(f"[Phase 1] 完成: conf={n_conf}  hard={n_hard}  total={len(items)}\n")
 
-            aug      = json.loads(src.read_text("utf-8"))
-            original = aug.get("category_3_slotted_description", "")
-            if not original:
-                cs += 1; continue
+    if args.dry_run:
+        for it in items[:4]:
+            print(f"{'─'*60}\n{PROMPT.format(a=it.original, b=strip_slots(it.neg['category_3_slotted_description']))}\n")
+        return
 
-            negs = sample_negatives(original, lookup, conf_w, inco_w, rng=_rng(args.seed))
-            if not negs:
-                cs += 1; continue
+    if not items:
+        print("无待评测项，退出")
+        return
 
-            t0      = time.time()
-            records = eval_pairs(negs, original, frames, vlm_clients,
-                                 done_keys, None, args.dry_run, rel, view)
-            elapsed = time.time() - t0
+    # ── Phase 2: 并发 VLM 评测（GPU 密集，workers 始终满载）─────────────────────
+    print(f"[Phase 2] VLM 评测  {len(items)} 条  workers={args.workers}")
+    write_lock   = Lock()
+    hard_records: list[dict] = []
+    c_total = c_ok = h_total = h_ok = done_cnt = 0
 
-            with fout_lock:
-                for record in records:
+    with (Path(args.out).open("a", encoding="utf-8") as fout,
+          Path(args.out_hard).open("a", encoding="utf-8") as fout_hard,
+          ThreadPoolExecutor(max_workers=args.workers) as pool):
+
+        futs = {pool.submit(eval_one, it, clients, args.seed): it for it in items}
+        for fut in as_completed(futs):
+            record   = fut.result()
+            it       = futs[fut]
+            done_cnt += 1
+            if done_cnt % 200 == 0:
+                _log(f"  进度 {done_cnt}/{len(items)}  conf={c_total} hard={h_total}")
+            if record is None:
+                continue
+            with write_lock:
+                if it.mode == "conf":
                     fout.write(json.dumps(record, ensure_ascii=False) + "\n")
-                fout.flush()   # 每视角一次，非每条
-            n, ok_n = len(records), sum(1 for r in records if r["is_correct"])
-            ct += n; cc += ok_n
-            per = f"{elapsed/n:.1f}s/条" if n else "-"
-            with print_lock:
-                print(f"  ── [confusable] {view} 完成: {n}条  ✓{ok_n} ✗{n-ok_n}  {elapsed:.1f}s  {per}")
-
-        # ── hard（直接从 hard_all 分组数据中读取）────────────────────────────
-        for view, key_rec_map in sorted(hard_by_dir.get(dir_path, {}).items()):
-            with print_lock:
-                print(f"  ── [hard] {view}")
-
-            frames = ensure_frames(dir_path / f"{view}.mp4", args.fps, args.max_side)
-            if not frames:
-                with print_lock: print("  ✗ 帧为空，跳过")
-                hs += 1; continue
-
-            # 从 hard_all 数据重建 negatives 列表（与原 hard_{view}.json 格式相同）
-            from hard_utils import slotted_desc
-            from ontology_utils import replace_slot as _replace_slot
-            original_text = slotted_desc(rel, view)
-            if not original_text:
-                with print_lock: print("  ✗ augment 不存在，跳过")
-                hs += 1; continue
-
-            negatives = []
-            for key, rec in sorted(key_rec_map.items(), key=lambda x: x[0][2:]):
-                _, _, slot, orig, new = key
-                neg_text = _replace_slot(original_text, slot, orig, new)
-                if neg_text == original_text:
-                    continue
-                negatives.append({
-                    "category_3_slotted_description": neg_text,
-                    "source":         rec["source"],
-                    "replaced_slot":  slot,
-                    "original_value": orig,
-                    "new_value":      new,
-                })
-
-            if not negatives:
-                hs += 1; continue
-
-            t0      = time.time()
-            records = eval_pairs(negatives, original_text, frames, vlm_clients,
-                                 hard_done_keys, None, args.dry_run, rel, view)
-            elapsed = time.time() - t0
-
-            with fout_lock:
-                for record in records:
+                    c_total += 1; c_ok += record["is_correct"]
+                else:
                     fout_hard.write(json.dumps(record, ensure_ascii=False) + "\n")
-                fout_hard.flush()   # 每视角一次
+                    hard_records.append(record)
+                    h_total += 1; h_ok += record["is_correct"]
+                if done_cnt % 200 == 0:
+                    fout.flush(); fout_hard.flush()
+        fout.flush(); fout_hard.flush()
 
-            # 整个视角的 records 批量写回 hard_all，避免每条触发全量文件重写
-            model_name = vlm_clients[0][1].split("/")[-1] if vlm_clients else "unknown"
-            if records and not args.dry_run:
-                _increment_hard_all(records, model_name)
+    # hard_all 全程只写一次，消除多次全量重写的 IO 放大
+    if hard_records:
+        model_name = clients[0][1].split("/")[-1] if clients else "unknown"
+        flush_hard_all(hard_records, model_name)
+        print(f"\n[hard_all] 已更新 {len(hard_records)} 条  model={model_name}")
 
-            n, ok_n = len(records), sum(1 for r in records if r["is_correct"])
-            ht += n; hc += ok_n
-            per = f"{elapsed/n:.1f}s/条" if n else "-"
-            with print_lock:
-                print(f"  ── [hard] {view} 完成: {n}条  ✓{ok_n} ✗{n-ok_n}  {elapsed:.1f}s  {per}"
-                      f"  model={model_name}")
-
-        return ct, cc, cs, ht, hc, hs
-
-    c_total = c_correct = c_skipped = 0
-    h_total = h_correct = h_skipped = 0
-
-    with out_path.open("a", encoding="utf-8") as fout, \
-         out_hard_path.open("a", encoding="utf-8") as fout_hard:
-        if workers == 1:
-            for i, d in enumerate(all_dirs, 1):
-                ct, cc, cs, ht, hc, hs = _process_dir((i, d))
-                c_total += ct; c_correct += cc; c_skipped += cs
-                h_total += ht; h_correct += hc; h_skipped += hs
-        else:
-            print(f"并发 workers={workers}")
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                futures = [pool.submit(_process_dir, (i, d))
-                           for i, d in enumerate(all_dirs, 1)]
-                for fut in as_completed(futures):
-                    ct, cc, cs, ht, hc, hs = fut.result()
-                    c_total += ct; c_correct += cc; c_skipped += cs
-                    h_total += ht; h_correct += hc; h_skipped += hs
-
-    print()
+    print("\n[DONE]")
     if c_total:
-        print(f"[confusable] 总={c_total} 正确={c_correct} "
-              f"准确率={c_correct/c_total*100:.1f}%  跳过={c_skipped}  结果: {out_path}")
+        print(f"  confusable {c_total}条  准确率 {c_ok/c_total*100:.1f}%  → {args.out}")
     if h_total:
-        print(f"[hard]       总={h_total} 正确={h_correct} "
-              f"准确率={h_correct/h_total*100:.1f}%  跳过={h_skipped}  "
-              f"结果: {out_hard_path}  (pred/error_count 已更新至 hard_all.jsonl)")
+        print(f"  hard       {h_total}条  准确率 {h_ok/h_total*100:.1f}%  → {args.out_hard}")
 
 
 if __name__ == "__main__":
