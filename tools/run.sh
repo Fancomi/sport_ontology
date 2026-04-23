@@ -4,13 +4,8 @@
 # ── 统一配置 ──────────────────────────────────────────────────────────────────
 HOST="127.0.0.1"
 
-# Gemma
 PORT="8001,8002,8003,8004,8005,8006,8007,8008"
 WORKERS=8
-
-# Qwen3.6
-PORT="8001,8002,8003,8004"
-WORKERS=4
 
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -59,11 +54,11 @@ WORKERS=4
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode hard
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS            
 
-# # 测试
-# python3 8_eval_confusable.py \
-# --host $HOST --port $PORT -w $WORKERS \
-# --mode confusable --limit 40 \
-# --out /tmp/timing_test.jsonl
+# 测试
+python3 8_eval_confusable.py \
+--host $HOST --port $PORT -w $WORKERS \
+--mode confusable --limit 40 \
+--out /tmp/timing_test.jsonl
 
 # # 8.3 完形填空评测（在线抽样）
 # #     --limit N  限制文件数（调试）；--dry-run 只看 prompt 不调 VLM
