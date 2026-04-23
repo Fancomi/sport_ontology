@@ -2,9 +2,15 @@
 # source /home/baidu/envs/swift/bin/activate
 
 # ── 统一配置 ──────────────────────────────────────────────────────────────────
+# Gemma
 HOST="127.0.0.1"
 PORT="8001,8002,8003,8004,8005,8006,8007,8008"
 WORKERS=8
+
+# Qwen3.6
+HOST="127.0.0.1"
+PORT="8001,8002,8003,8004"
+WORKERS=4
 # ─────────────────────────────────────────────────────────────────────────────
 
 # 视频描述 / 处理预热
@@ -58,10 +64,13 @@ WORKERS=8
 # # 8.3 完形填空评测（在线抽样，不依赖 step7 产物）
 # #     --limit N  限制文件数（调试）；--dry-run 只看 prompt 不调 VLM
 # python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --dry-run --limit 4
-# python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS
-# python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS
+python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --limit 4
 
 # # 8.1 分析混淆判断结果
+# python3 8_1_analyze.py \
+#     --input eval_results_hard.jsonl \
+#     --out   eval_accuracy_hard.png \
+#     --stats eval_stats_hard.json
 # python3 8_1_analyze.py --compare \
 # BAKUP/eval_results_v2_gemma.jsonl \
 # BAKUP/eval_results_v2_qwen3.6.jsonl \
@@ -70,7 +79,8 @@ WORKERS=8
 # # 9 从eval_results.jsonl提取hard并沉淀
 # #   --input 可指定多个文件取并集；--clean 清理 augment 更新后失效的历史条目并重建 hard_{view}.json
 # #   --reset-counts 清零所有 error_count（在重新跑 step 8 前执行）
-# # python3 9_extract_errors.py --input eval_results.jsonl
+# python3 9_extract_errors.py --input eval_results.jsonl
+# python3 9_extract_errors.py --reset-counts 
 # python3 9_extract_errors.py \
 # --input \
 # /root/paddlejob/workspace/env_run/penghaotian/llm_infer/sport_ontology/tools/BAKUP/eval_results_v2_gemma.jsonl \

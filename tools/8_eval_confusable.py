@@ -115,18 +115,24 @@ def load_done(out_path: Path) -> set[str]:
     return done
 
 
-def _increment_hard_all(wrong_keys: set[tuple], model_name: str) -> None:
-    """hard_all.jsonl 中对应条目的 error_count +1，error_by_model[model_name] +1。
-    step 8 是 error_count 的唯一来源，step 9 不干预计数。
+def _increment_hard_all(records: list[dict], model_name: str) -> None:
+    """hard_all.jsonl 中对应条目更新 pred_count/pred_by_model/error_count/error_by_model。
+    step 8 是这四个字段的唯一来源，step 9 不干预计数。
     """
     with _hard_all_lock:
         hist = load_hard_all()
-        for key in wrong_keys:
+        for r in records:
+            key = (r["video"], r["view"],
+                   r["replaced_slot"], r["original_value"], r["new_value"])
             if key not in hist:
                 continue
-            hist[key]["error_count"] = hist[key].get("error_count", 0) + 1
-            by = hist[key].setdefault("error_by_model", {})
-            by[model_name] = by.get(model_name, 0) + 1
+            hist[key]["pred_count"] = hist[key].get("pred_count", 0) + 1
+            pb = hist[key].setdefault("pred_by_model", {})
+            pb[model_name] = pb.get(model_name, 0) + 1
+            if not r["is_correct"]:
+                hist[key]["error_count"] = hist[key].get("error_count", 0) + 1
+                by = hist[key].setdefault("error_by_model", {})
+                by[model_name] = by.get(model_name, 0) + 1
         save_hard_all(hist)
 
 
@@ -141,6 +147,8 @@ def main() -> None:
     parser.add_argument("--fps",      type=float, default=FPS_DEFAULT)
     parser.add_argument("--max-side", type=int,   default=768, dest="max_side")
     parser.add_argument("--out",      default="eval_results.jsonl")
+    parser.add_argument("--out-hard", default="eval_results_hard.jsonl", dest="out_hard",
+                        help="hard 模式结果输出（供 8_1_analyze 分析）")
     parser.add_argument("--limit",    type=int,   default=0,
                         help="调试：限制动作数（0=不限）")
     parser.add_argument("--dry-run",  action="store_true", dest="dry_run",
@@ -161,7 +169,8 @@ def main() -> None:
             sys.exit(1)
         print(f"模型: {vlm_clients[0][1]}")
 
-    out_path = Path(args.out)
+    out_path      = Path(args.out)
+    out_hard_path = Path(args.out_hard)
 
     # ── 收集各 pattern 文件，按目录索引 ────────────────────────────────────────
     conf_by_dir: dict[Path, list[Path]] = defaultdict(list)
@@ -185,11 +194,16 @@ def main() -> None:
     conf_files = sum(len(v) for v in conf_by_dir.values())
     hard_files = sum(len(v) for v in hard_by_dir.values())
     print(f"\n动作目录: {len(all_dirs)}  "
-          f"confusable: {conf_files}  hard: {hard_files}  输出: {out_path}")
+          f"confusable: {conf_files}  hard: {hard_files}  输出: {out_path}  hard输出: {out_hard_path}")
 
     done_keys = load_done(out_path)
     if done_keys:
-        print(f"[resume] confusable 已完成 {len(done_keys)} 条，跳过\n")
+        print(f"[resume] confusable 已完成 {len(done_keys)} 条，跳过")
+    hard_done_keys = load_done(out_hard_path) if args.mode in ("hard", "all") else set()
+    if hard_done_keys:
+        print(f"[resume] hard 已完成 {len(hard_done_keys)} 条，跳过")
+    if done_keys or hard_done_keys:
+        print()
 
     fout_lock  = Lock()
     print_lock = Lock()
@@ -247,18 +261,17 @@ def main() -> None:
                 hs += 1; continue
 
             t0      = time.time()
-            records = eval_file(src, frames, c, mid, set(), eb, args.dry_run)
+            records = eval_file(src, frames, c, mid, hard_done_keys, eb, args.dry_run)
             elapsed = time.time() - t0
 
-            # step 8 是 error_count 的唯一来源：将答错对写入 hard_all.jsonl
-            wrong_full_keys = {
-                (str(dir_path.relative_to(DATA_ROOT)), view,
-                 r["replaced_slot"], r["original_value"], r["new_value"])
-                for r in records if not r["is_correct"]
-            }
+            # step 8 是 pred_count/error_count 的唯一来源：写出 jsonl 并更新 hard_all.jsonl
+            with fout_lock:
+                for record in records:
+                    fout_hard.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    fout_hard.flush()
             model_name = (mid or "unknown").split("/")[-1]
-            if wrong_full_keys and not args.dry_run:
-                _increment_hard_all(wrong_full_keys, model_name)
+            if records and not args.dry_run:
+                _increment_hard_all(records, model_name)
 
             n, ok_n = len(records), sum(1 for r in records if r["is_correct"])
             ht += n; hc += ok_n
@@ -273,7 +286,8 @@ def main() -> None:
     c_total = c_correct = c_skipped = 0
     h_total = h_correct = h_skipped = 0
 
-    with out_path.open("a", encoding="utf-8") as fout:
+    with out_path.open("a", encoding="utf-8") as fout, \
+         out_hard_path.open("a", encoding="utf-8") as fout_hard:
         if workers == 1:
             for i, dir_path in enumerate(all_dirs, 1):
                 ct, cc, cs, ht, hc, hs = _process_dir((i, dir_path))
@@ -295,7 +309,8 @@ def main() -> None:
               f"准确率={c_correct/c_total*100:.1f}%  跳过={c_skipped}  结果: {out_path}")
     if h_total:
         print(f"[hard]       总={h_total} 正确={h_correct} "
-              f"准确率={h_correct/h_total*100:.1f}%  跳过={h_skipped}  (error_count 已更新至 hard_all.jsonl)")
+              f"准确率={h_correct/h_total*100:.1f}%  跳过={h_skipped}  "
+              f"结果: {out_hard_path}  (pred_count/error_count 已更新至 hard_all.jsonl)")
 
 
 if __name__ == "__main__":

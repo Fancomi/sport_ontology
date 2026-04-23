@@ -20,7 +20,7 @@ Cohen's Kappa (κ) — 二选一强迫选择场景
 优势：直接扣除随机基线，60% 准确率 → κ = 0.2，而非看似还行的 60%。
 """
 
-import argparse, json
+import argparse, json, math
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -81,6 +81,12 @@ def top3_cov(records: list[dict]) -> dict[str, float]:
     }
 
 
+def _y_floor(a_vals: list[float]) -> int:
+    """Y 轴下界：若最小值 >= 50 则用 50；否则取 floor(min) - 2。"""
+    min_acc = min(a_vals) if a_vals else 50.0
+    return 50 if min_acc >= 50 else math.floor(min_acc) - 2
+
+
 def plot_compare(stats_a: dict, stats_b: dict,
                  label_a: str, label_b: str,
                  cov_a: dict, cov_b: dict,
@@ -90,9 +96,14 @@ def plot_compare(stats_a: dict, stats_b: dict,
         set(stats_a) | set(stats_b),
         key=lambda s: (acc(_all_recs(stats_a, s))[0] + acc(_all_recs(stats_b, s))[0]) / 2,
     )
-    x         = np.arange(len(all_slots))
-    width     = 0.35
-    y_floor, y_top = 48, 102
+    x     = np.arange(len(all_slots))
+    width = 0.35
+    y_top = 102
+    all_a_vals = (
+        [acc(_all_recs(stats_a, s))[0] if s in stats_a else 50.0 for s in all_slots] +
+        [acc(_all_recs(stats_b, s))[0] if s in stats_b else 50.0 for s in all_slots]
+    )
+    y_floor   = _y_floor(all_a_vals)
     label_off = (y_top - y_floor) * 0.012
     colors    = ["#4C72B0", "#DD8452"]
 
@@ -144,13 +155,14 @@ def plot(stats: dict, out: Path, cov: dict | None = None) -> None:
     slots     = sorted(stats, key=lambda s: acc(_all_recs(stats, s))[0], reverse=False)
     x         = np.arange(len(slots))
     width     = 0.5
-    y_floor, y_top = 48, 102
+    y_top     = 102
+    a_vals    = [acc(_all_recs(stats, s))[0] for s in slots]
+    y_floor   = _y_floor(a_vals)
     label_off = (y_top - y_floor) * 0.012
 
     fig, ax = plt.subplots(figsize=(max(10, len(slots) * 0.9), 6))
 
-    a_vals = [acc(_all_recs(stats, s))[0] for s in slots]
-    ns     = [acc(_all_recs(stats, s))[1] for s in slots]
+    ns = [acc(_all_recs(stats, s))[1] for s in slots]
 
     ax.bar(x, [a - 50 for a in a_vals], width, bottom=50,
            color="#4C72B0", label="Overall")
