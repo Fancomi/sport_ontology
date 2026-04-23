@@ -7,7 +7,7 @@
            两阶段完全解耦，GPU 不再等待帧加载/采样
 """
 
-import argparse, json, random, sys, threading
+import argparse, json, random, sys, threading, time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -35,6 +35,9 @@ _prt_lock = Lock()
 # least-inflight 客户端调度（替代简单轮询，避免突发时多卡拥塞/空闲不均）
 _inflight:  list[int] = []
 _inf_lock = Lock()
+
+# ── 计时开关（--timing 启用，每条调用打印详细耗时）──────────────────────────────
+_TIMING = False
 
 
 def _rng(seed: int) -> random.Random:
@@ -64,48 +67,81 @@ class WorkItem:
 # ── VLM 调用 ──────────────────────────────────────────────────────────────────
 
 def call_vlm(frames: list, prompt: str, client, model: str,
-             extra_body: dict | None = None) -> str:
+             extra_body: dict | None = None) -> tuple[str, float, float]:
+    """返回 (answer, content_ms, http_ms)；_TIMING=False 时 content_ms/http_ms 均为 0。"""
+    t0 = time.perf_counter() if _TIMING else 0.0
     content = ([{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{f}"}}
                 for f in frames] + [{"type": "text", "text": prompt}])
+    t1 = time.perf_counter() if _TIMING else 0.0
     try:
         kw = dict(model=model, messages=[{"role": "user", "content": content}],
                   max_tokens=MAX_TOKENS, temperature=0.0)
         if extra_body:
             kw["extra_body"] = extra_body
-        return client.chat.completions.create(**kw).choices[0].message.content.strip().upper()
+        ans = client.chat.completions.create(**kw).choices[0].message.content.strip().upper()
+        t2 = time.perf_counter() if _TIMING else 0.0
+        return ans, (t1 - t0) * 1000, (t2 - t1) * 1000
     except Exception as e:
         _log(f"  ✗ VLM: {e}")
-        return ""
+        return "", 0.0, 0.0
 
 
 def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
     """单条 neg 二选一评测，返回 record 或 None（无效响应）。
     注意：不在此处调用 _log，避免 _prt_lock 阻塞工作线程拾取下一条任务。
     日志行打包在返回值的 _log_line 字段，由主线程在 write_lock 段内统一打印。
+    计时字段 _timing 仅在 --timing 时存在。
     """
+    t_enter = time.perf_counter() if _TIMING else 0.0
+    # ① 获取 least-inflight 客户端
     with _inf_lock:
         idx = _inflight.index(min(_inflight))
         _inflight[idx] += 1
+    t_lock = time.perf_counter() if _TIMING else 0.0
+
+    # 上次该线程调用结束的时间（idle gap = 上次结束 → 本次 enter）
+    idle_ms = (t_enter - _tls.last_end) * 1000 if (_TIMING and hasattr(_tls, "last_end")) else 0.0
+
     c, mid, eb = clients[idx]
     try:
-        a_is_orig  = _rng(seed).random() < 0.5
-        neg_text   = strip_slots(item.neg["category_3_slotted_description"])
-        a, b       = (item.original, neg_text) if a_is_orig else (neg_text, item.original)
-        answer     = call_vlm(item.frames, PROMPT.format(a=a, b=b), c, mid, eb)
-        letter     = answer[0] if answer and answer[0] in "AB" else ""
+        # ② 准备文本（strip_slots / 随机 A/B）
+        a_is_orig = _rng(seed).random() < 0.5
+        neg_text  = strip_slots(item.neg["category_3_slotted_description"])
+        a, b      = (item.original, neg_text) if a_is_orig else (neg_text, item.original)
+        t_prep = time.perf_counter() if _TIMING else 0.0
+
+        # ③ VLM 调用（内部拆分 content 构建 vs HTTP）
+        answer, content_ms, http_ms = call_vlm(
+            item.frames, PROMPT.format(a=a, b=b), c, mid, eb)
+        t_done = time.perf_counter() if _TIMING else 0.0
+
+        letter = answer[0] if answer and answer[0] in "AB" else ""
         if not letter:
             return None
         ok = letter == ("A" if a_is_orig else "B")
-        return {
+
+        log_line = (f"  [{item.mode}|{item.view}|{item.neg['replaced_slot']}] "
+                    f"{item.neg['original_value']}→{item.neg['new_value']}"
+                    f"  {letter} {'✓' if ok else '✗'}")
+        timing_str = ""
+        if _TIMING:
+            lock_ms = (t_lock - t_enter) * 1000
+            prep_ms = (t_prep - t_lock)  * 1000
+            total_ms= (t_done - t_enter) * 1000
+            timing_str = (f"  [p{8000+idx+1}|idle={idle_ms:.0f}ms lock={lock_ms:.1f}ms"
+                          f" prep={prep_ms:.1f}ms content={content_ms:.1f}ms"
+                          f" http={http_ms:.0f}ms total={total_ms:.0f}ms]")
+        rec = {
             "video": item.rel, "view": item.view,
             "source": item.neg["source"], "replaced_slot": item.neg["replaced_slot"],
             "original_value": item.neg["original_value"], "new_value": item.neg["new_value"],
             "original_is_A": a_is_orig, "answer": letter, "is_correct": ok,
-            "_log_line": (f"  [{item.mode}|{item.view}|{item.neg['replaced_slot']}] "
-                          f"{item.neg['original_value']}→{item.neg['new_value']}"
-                          f"  {letter} {'✓' if ok else '✗'}"),
+            "_log_line": log_line + timing_str,
         }
+        return rec
     finally:
+        if _TIMING:
+            _tls.last_end = time.perf_counter()
         with _inf_lock:
             _inflight[idx] = max(0, _inflight[idx] - 1)
 
@@ -201,7 +237,12 @@ def main() -> None:
     pa.add_argument("--dry-run",  action="store_true", dest="dry_run")
     pa.add_argument("--seed",     type=int, default=42)
     pa.add_argument("-w", "--workers", type=int, default=1)
+    pa.add_argument("--timing",   action="store_true",
+                    help="打印每条调用的详细耗时（idle/lock/prep/content/http）用于定位瓶颈")
     args = pa.parse_args()
+
+    global _TIMING
+    _TIMING = args.timing
 
     random.seed(args.seed)
 
