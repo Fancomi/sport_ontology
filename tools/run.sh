@@ -61,7 +61,7 @@ WORKERS=4
 # # 8.3 完形填空评测（在线抽样，不依赖 step7 产物）
 # #     --limit N  限制文件数（调试）；--dry-run 只看 prompt 不调 VLM
 # python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --dry-run --limit 4
-python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --limit 4
+# python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --limit 4
 
 # # 8.1 分析混淆判断结果
 # python3 8_1_analyze.py \
@@ -73,17 +73,33 @@ python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --limit 4
 # BAKUP/eval_results_v2_qwen3.6.jsonl \
 # --labels Gemma Qwen3.6
 
-# # 9 从eval_results.jsonl提取hard并沉淀
-# #   --input 可指定多个文件取并集；--clean 清理 augment 更新后失效的历史条目并重建 hard_{view}.json
-# #   --reset-counts 清零所有 error_count（在重新跑 step 8 前执行）
+# # 9. 从 eval_results.jsonl 提取答错对，幂等合入 hard_all.jsonl
+# #    --input  可指定多个文件取并集
+# #    --clean  清理 augment 更新后 [slot:orig] 已失效的历史条目
+# #    --reset-counts  清零所有 error_count（在重新跑 step 8 --mode hard 前执行）
 # python3 9_extract_errors.py --input eval_results.jsonl
-# python3 9_extract_errors.py --reset-counts 
+# python3 9_extract_errors.py --reset-counts
 # python3 9_extract_errors.py \
-# --input \
-# /root/paddlejob/workspace/env_run/penghaotian/llm_infer/sport_ontology/tools/BAKUP/eval_results_v2_gemma.jsonl \
-# /root/paddlejob/workspace/env_run/penghaotian/llm_infer/sport_ontology/tools/BAKUP/eval_results_v2_qwen3.6.jsonl \
-# --clean --reset-counts 
+#     --input \
+#     BAKUP/eval_results_v2_gemma.jsonl \
+#     BAKUP/eval_results_v2_qwen3.6.jsonl \
+#     --clean --reset-counts
 
-# 9.1 LLM 审核 Hard Negative 句子级有效性（--dry-run 只看不删）
+# # 9.1 LLM 审核 hard_all.jsonl 句子级有效性（删除上下文等价 / 视觉不可辨条目）
+# #     --dry-run 只看判断结果，不写文件；--verbose 打印完整 prompt（配合 --limit）
 # python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS --dry-run --verbose --limit 4
 # python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS
+
+# # 9.2 渲染 hard_all.jsonl → hn_render_{view}.json（单向，供人工标注）
+# #     输出到每个视频叶目录；hn_render 前缀表示渲染产物，区别于 hard_all 数据源
+# #     兼容单槽替换型（confusable/incompatibility）和完形填空型（__cloze__）
+# #     每条 pair 含 hard_key，标注完成后可按 key 写回 hard_all.jsonl
+# #
+# #     渲染全量（覆盖已有文件）
+# python3 9_2_render_hard.py
+# #     指定不同来源版本
+# python3 9_2_render_hard.py --input BAKUP/hard_all_v2.jsonl
+# #     只渲染正面视角
+# python3 9_2_render_hard.py --views front
+# #     删除所有渲染文件
+# python3 9_2_render_hard.py --clean
