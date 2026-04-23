@@ -1,6 +1,11 @@
 """hard_utils.py — hard_all.jsonl / hard_{view}.json 共享工具。
 
 被 9_extract_errors.py 和 9_1_clean_hard.py 共同引用，不含业务逻辑。
+
+数据层次说明：
+  hard_all.jsonl   — 唯一权威源，step 8/9 读写；step 8 hard 模式直接从此分组加载
+  hard_{view}.json — 从 hard_all 派生的视角视图，仅供 9_1_clean_hard 使用；
+                     step 8 hard 模式已改为直接读 hard_all，不再依赖此文件
 """
 
 import json

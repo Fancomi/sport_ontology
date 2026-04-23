@@ -2,8 +2,13 @@
 """Script 8: VLM 评测 — confusable（在线采样）与 hard 两种模式。
 
   confusable: 读 augment_{view}.json，在线生成混淆负样本 → eval_results.jsonl
-  hard:       读 hard_{view}.json                      → eval_results_hard.jsonl
+  hard:       读 hard_all.jsonl，按 (video,view) 分组   → eval_results_hard.jsonl
                                                           + hard_all.jsonl (pred/error_count)
+
+性能设计：
+  - client 按「每次 VLM 调用」轮转（而非按目录），所有 GPU 均衡负载
+  - fout.flush() 批量化（每目录一次），消除每条 flush 的 IO 串行
+  - hard 模式 _increment_hard_all 批量写回（每目录一次），避免每条重写全量文件
 """
 
 import argparse, json, random, sys, threading, time
@@ -30,6 +35,19 @@ PROMPT_TMPL = (
 )
 
 _hard_all_lock = Lock()
+
+# ── client 轮转计数（按 VLM 调用次数均匀分配，非按目录）──────────────────────────
+_client_counter      = 0
+_client_counter_lock = Lock()
+
+def _next_client(vlm_clients: list) -> tuple:
+    """每次调用取下一个 client，循环轮转，保证所有 GPU 均匀负载。"""
+    global _client_counter
+    with _client_counter_lock:
+        idx             = _client_counter % len(vlm_clients)
+        _client_counter += 1
+    return vlm_clients[idx]
+
 
 # ── 多线程安全 RNG（采样用，与全局 random 独立）────────────────────────────────
 _thread_local = threading.local()
@@ -63,19 +81,18 @@ def call_vlm(frames: list[str], prompt: str, client: OpenAI,
 
 # ── 评测核心 ──────────────────────────────────────────────────────────────────
 
-def eval_file(data: dict, frames: list[str], client: OpenAI, model: str,
-              done_keys: set[str], extra_body: dict | None,
-              dry_run: bool, rel: str, view: str) -> list[dict]:
-    """对 data['negatives'] 逐条进行二选一评测。
+def eval_pairs(negatives: list[dict], original_text: str,
+               frames: list[str], vlm_clients: list,
+               done_keys: set[str], extra_body_override: dict | None,
+               dry_run: bool, rel: str, view: str) -> list[dict]:
+    """对 negatives 列表逐条进行二选一评测。
 
-    data 格式与 hard_{view}.json 相同：
-      {"original": {"category_3_slotted_description": "..."},
-       "negatives": [{..., "source", "replaced_slot", "original_value", "new_value"}]}
+    client 在此函数内按条目轮转，保证跨线程均匀分配 GPU。
     """
-    original = strip_slots(data["original"]["category_3_slotted_description"])
+    original = strip_slots(original_text)
     results  = []
 
-    for neg in data.get("negatives", []):
+    for neg in negatives:
         key = f"{rel}|{view}|{neg['replaced_slot']}|{neg['original_value']}|{neg['new_value']}"
         if key in done_keys:
             continue
@@ -90,7 +107,11 @@ def eval_file(data: dict, frames: list[str], client: OpenAI, model: str,
             print(f"\n{'─'*60}\n{prompt}\n{'─'*60}")
             continue
 
-        answer = call_vlm(frames, prompt, client, model, extra_body)
+        # 每条 VLM 调用独立轮转取 client
+        c, mid, eb = _next_client(vlm_clients)
+        if extra_body_override is not None:
+            eb = extra_body_override
+        answer = call_vlm(frames, prompt, c, mid, eb)
         letter = answer[0] if answer and answer[0] in "AB" else ""
         if not letter:
             print(f"    [skip] {neg['replaced_slot']}: invalid={repr(answer)}")
@@ -126,7 +147,12 @@ def load_done(path: Path) -> set[str]:
 
 
 def _increment_hard_all(records: list[dict], model_name: str) -> None:
-    """更新 hard_all.jsonl 中的 pred_count/pred_by_model/error_count/error_by_model。"""
+    """批量更新 hard_all.jsonl 中的 pred_count/pred_by_model/error_count/error_by_model。
+
+    整批 records 在同一把锁内完成，避免每条触发一次全量文件重写。
+    """
+    if not records:
+        return
     with _hard_all_lock:
         hist = load_hard_all()
         for r in records:
@@ -187,15 +213,22 @@ def main() -> None:
     out_hard_path = Path(args.out_hard)
 
     # ── 收集文件，按目录索引 ──────────────────────────────────────────────────
-    aug_by_dir:  dict[Path, list[Path]] = defaultdict(list)
-    hard_by_dir: dict[Path, list[Path]] = defaultdict(list)
-    for view in VIEWS:
-        if args.mode in ("confusable", "all"):
+    # confusable: 按目录 → augment 文件列表
+    aug_by_dir: dict[Path, list[Path]] = defaultdict(list)
+    if args.mode in ("confusable", "all"):
+        for view in VIEWS:
             for p in DATA_ROOT.rglob(f"augment_{view}.json"):
                 aug_by_dir[p.parent].append(p)
-        if args.mode in ("hard", "all"):
-            for p in DATA_ROOT.rglob(f"hard_{view}.json"):
-                hard_by_dir[p.parent].append(p)
+
+    # hard: 直接从 hard_all.jsonl 读取，按 (video_dir, view) 分组
+    # 不再依赖 hard_{view}.json 中间文件
+    hard_by_dir: dict[Path, dict[str, dict]] = defaultdict(lambda: defaultdict(dict))
+    if args.mode in ("hard", "all"):
+        hard_hist = load_hard_all()
+        for key, rec in hard_hist.items():
+            video, view = key[0], key[1]
+            video_dir   = DATA_ROOT / video
+            hard_by_dir[video_dir][view][key] = rec
 
     all_dirs = sorted(aug_by_dir.keys() | hard_by_dir.keys())
     if args.limit:
@@ -204,9 +237,10 @@ def main() -> None:
         print("未找到评测文件，退出")
         sys.exit(0)
 
+    n_hard_pairs = sum(len(vd) for vd_dict in hard_by_dir.values() for vd in vd_dict.values())
     print(f"\n目录: {len(all_dirs)}  "
-          f"confusable: {sum(len(v) for v in aug_by_dir.values())}  "
-          f"hard: {sum(len(v) for v in hard_by_dir.values())}  "
+          f"confusable: {sum(len(v) for v in aug_by_dir.values())} 文件  "
+          f"hard: {n_hard_pairs} 对  "
           f"out: {out_path}  out_hard: {out_hard_path}")
 
     done_keys      = load_done(out_path)
@@ -226,7 +260,6 @@ def main() -> None:
         """返回 (c_total, c_correct, c_skipped, h_total, h_correct, h_skipped)"""
         i, dir_path = idx_dir
         rel         = str(dir_path.relative_to(DATA_ROOT))
-        c, mid, eb  = vlm_clients[(i - 1) % len(vlm_clients)] if vlm_clients else (None, None, None)
         ct = cc = cs = ht = hc = hs = 0
 
         with print_lock:
@@ -252,24 +285,23 @@ def main() -> None:
             if not negs:
                 cs += 1; continue
 
-            data    = {"original": {"category_3_slotted_description": original}, "negatives": negs}
             t0      = time.time()
-            records = eval_file(data, frames, c, mid, done_keys, eb, args.dry_run, rel, view)
+            records = eval_pairs(negs, original, frames, vlm_clients,
+                                 done_keys, None, args.dry_run, rel, view)
             elapsed = time.time() - t0
 
             with fout_lock:
                 for record in records:
                     fout.write(json.dumps(record, ensure_ascii=False) + "\n")
-                    fout.flush()
+                fout.flush()   # 每视角一次，非每条
             n, ok_n = len(records), sum(1 for r in records if r["is_correct"])
             ct += n; cc += ok_n
             per = f"{elapsed/n:.1f}s/条" if n else "-"
             with print_lock:
                 print(f"  ── [confusable] {view} 完成: {n}条  ✓{ok_n} ✗{n-ok_n}  {elapsed:.1f}s  {per}")
 
-        # ── hard ──────────────────────────────────────────────────────────────
-        for src in sorted(hard_by_dir.get(dir_path, [])):
-            view = src.stem.split("_")[-1]
+        # ── hard（直接从 hard_all 分组数据中读取）────────────────────────────
+        for view, key_rec_map in sorted(hard_by_dir.get(dir_path, {}).items()):
             with print_lock:
                 print(f"  ── [hard] {view}")
 
@@ -278,16 +310,43 @@ def main() -> None:
                 with print_lock: print("  ✗ 帧为空，跳过")
                 hs += 1; continue
 
-            data    = json.loads(src.read_text("utf-8"))
+            # 从 hard_all 数据重建 negatives 列表（与原 hard_{view}.json 格式相同）
+            from hard_utils import slotted_desc
+            from ontology_utils import replace_slot as _replace_slot
+            original_text = slotted_desc(rel, view)
+            if not original_text:
+                with print_lock: print("  ✗ augment 不存在，跳过")
+                hs += 1; continue
+
+            negatives = []
+            for key, rec in sorted(key_rec_map.items(), key=lambda x: x[0][2:]):
+                _, _, slot, orig, new = key
+                neg_text = _replace_slot(original_text, slot, orig, new)
+                if neg_text == original_text:
+                    continue
+                negatives.append({
+                    "category_3_slotted_description": neg_text,
+                    "source":         rec["source"],
+                    "replaced_slot":  slot,
+                    "original_value": orig,
+                    "new_value":      new,
+                })
+
+            if not negatives:
+                hs += 1; continue
+
             t0      = time.time()
-            records = eval_file(data, frames, c, mid, hard_done_keys, eb, args.dry_run, rel, view)
+            records = eval_pairs(negatives, original_text, frames, vlm_clients,
+                                 hard_done_keys, None, args.dry_run, rel, view)
             elapsed = time.time() - t0
 
             with fout_lock:
                 for record in records:
                     fout_hard.write(json.dumps(record, ensure_ascii=False) + "\n")
-                    fout_hard.flush()
-            model_name = (mid or "unknown").split("/")[-1]
+                fout_hard.flush()   # 每视角一次
+
+            # 整个视角的 records 批量写回 hard_all，避免每条触发全量文件重写
+            model_name = vlm_clients[0][1].split("/")[-1] if vlm_clients else "unknown"
             if records and not args.dry_run:
                 _increment_hard_all(records, model_name)
 
