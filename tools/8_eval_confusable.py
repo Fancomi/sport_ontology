@@ -29,17 +29,12 @@ PROMPT = (
 )
 
 # ── 全局线程安全工具 ──────────────────────────────────────────────────────────
-_cli_idx, _cli_lock = 0, Lock()
 _tls      = threading.local()
 _prt_lock = Lock()
 
-
-def _next_client(clients: list) -> tuple:
-    global _cli_idx
-    with _cli_lock:
-        c = clients[_cli_idx % len(clients)]
-        _cli_idx += 1
-    return c
+# least-inflight 客户端调度（替代简单轮询，避免突发时多卡拥塞/空闲不均）
+_inflight:  list[int] = []
+_inf_lock = Lock()
 
 
 def _rng(seed: int) -> random.Random:
@@ -84,24 +79,35 @@ def call_vlm(frames: list, prompt: str, client, model: str,
 
 
 def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
-    """单条 neg 二选一评测，返回 record 或 None（无效响应）。"""
-    c, mid, eb = _next_client(clients)
-    a_is_orig  = _rng(seed).random() < 0.5
-    neg_text   = strip_slots(item.neg["category_3_slotted_description"])
-    a, b       = (item.original, neg_text) if a_is_orig else (neg_text, item.original)
-    answer     = call_vlm(item.frames, PROMPT.format(a=a, b=b), c, mid, eb)
-    letter     = answer[0] if answer and answer[0] in "AB" else ""
-    if not letter:
-        return None
-    ok = letter == ("A" if a_is_orig else "B")
-    _log(f"  [{item.mode}|{item.view}|{item.neg['replaced_slot']}] "
-         f"{item.neg['original_value']}→{item.neg['new_value']}  {letter} {'✓' if ok else '✗'}")
-    return {
-        "video": item.rel, "view": item.view,
-        "source": item.neg["source"], "replaced_slot": item.neg["replaced_slot"],
-        "original_value": item.neg["original_value"], "new_value": item.neg["new_value"],
-        "original_is_A": a_is_orig, "answer": letter, "is_correct": ok,
-    }
+    """单条 neg 二选一评测，返回 record 或 None（无效响应）。
+    注意：不在此处调用 _log，避免 _prt_lock 阻塞工作线程拾取下一条任务。
+    日志行打包在返回值的 _log_line 字段，由主线程在 write_lock 段内统一打印。
+    """
+    with _inf_lock:
+        idx = _inflight.index(min(_inflight))
+        _inflight[idx] += 1
+    c, mid, eb = clients[idx]
+    try:
+        a_is_orig  = _rng(seed).random() < 0.5
+        neg_text   = strip_slots(item.neg["category_3_slotted_description"])
+        a, b       = (item.original, neg_text) if a_is_orig else (neg_text, item.original)
+        answer     = call_vlm(item.frames, PROMPT.format(a=a, b=b), c, mid, eb)
+        letter     = answer[0] if answer and answer[0] in "AB" else ""
+        if not letter:
+            return None
+        ok = letter == ("A" if a_is_orig else "B")
+        return {
+            "video": item.rel, "view": item.view,
+            "source": item.neg["source"], "replaced_slot": item.neg["replaced_slot"],
+            "original_value": item.neg["original_value"], "new_value": item.neg["new_value"],
+            "original_is_A": a_is_orig, "answer": letter, "is_correct": ok,
+            "_log_line": (f"  [{item.mode}|{item.view}|{item.neg['replaced_slot']}] "
+                          f"{item.neg['original_value']}→{item.neg['new_value']}"
+                          f"  {letter} {'✓' if ok else '✗'}"),
+        }
+    finally:
+        with _inf_lock:
+            _inflight[idx] = max(0, _inflight[idx] - 1)
 
 
 # ── Phase 1: 采集 WorkItem（并行，IO/CPU 密集）───────────────────────────────
@@ -205,6 +211,7 @@ def main() -> None:
         if not clients:
             print(f"✗ 无法连接 {args.host}:{args.port}", file=sys.stderr)
             sys.exit(1)
+        _inflight[:] = [0] * len(clients)   # 初始化 least-inflight 计数器
         print(f"模型: {clients[0][1]}  workers={args.workers}")
 
     lookup = conf_w = inco_w = None
@@ -288,11 +295,13 @@ def main() -> None:
             record   = fut.result()
             it       = futs[fut]
             done_cnt += 1
-            if done_cnt % 200 == 0:
-                _log(f"  进度 {done_cnt}/{len(items)}  conf={c_total} hard={h_total}")
             if record is None:
+                if done_cnt % 200 == 0:
+                    _log(f"  进度 {done_cnt}/{len(items)}  conf={c_total} hard={h_total}")
                 continue
+            log_line = record.pop("_log_line", None)
             with write_lock:
+                print(log_line)
                 if it.mode == "conf":
                     fout.write(json.dumps(record, ensure_ascii=False) + "\n")
                     c_total += 1; c_ok += record["is_correct"]
@@ -301,6 +310,7 @@ def main() -> None:
                     hard_records.append(record)
                     h_total += 1; h_ok += record["is_correct"]
                 if done_cnt % 200 == 0:
+                    print(f"  进度 {done_cnt}/{len(items)}  conf={c_total} hard={h_total}")
                     fout.flush(); fout_hard.flush()
         fout.flush(); fout_hard.flush()
 
