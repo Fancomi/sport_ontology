@@ -32,12 +32,14 @@ WORKERS=8
 # # 5.1 基于 LLM 清理 slot_ontology.json 中不恰当的混淆关系。
 # python3 5_1_clean_ontology.py --host $HOST --port $PORT -w $WORKERS
 
-# # 5.2 关系对称传播增强（无 LLM，纯集合运算，可反复运行直到 5_1 收敛）
-# #    默认输出到临时文件 /tmp/slot_ontology_infer.json，确认后加 --output slot_ontology.json 覆盖
-# python3 5_2_infer_relations.py --output /tmp/slot_ontology_infer.json
-# python3 5_2_infer_relations.py --output slot_ontology.json
-# # 5.2 完成后建议重跑 5.1 清理传播引入的噪声（循环直到两脚本均无变化）
-# python3 5_1_clean_ontology.py --host $HOST --port $PORT -w $WORKERS
+# # # 5.2 关系对称传播增强（无 LLM，纯集合运算，可反复运行直到 5_1 收敛）
+# # #    默认输出到临时文件 slot_ontology_infer.json，确认后加 --output slot_ontology.json 覆盖
+# # python3 5_2_infer_relations.py --output slot_ontology_temp.json
+# # python3 5_2_infer_relations.py --output slot_ontology.json
+# # # 5.2 完成后建议重跑 5.1 清理传播引入的噪声（循环直到两脚本均无变化）
+# for i in $(seq 1 5); do
+#     python3 5_1_clean_ontology.py --host $HOST --port $PORT -w $WORKERS
+# done
 
 # # 6. 图谱构建[可视化]
 # python3 6_build_wiki.py
@@ -51,6 +53,12 @@ WORKERS=8
 # #    --mode all         全部（默认）
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode confusable
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode hard
+# python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS
+
+# # 8.3 完形填空评测（在线抽样，不依赖 step7 产物）
+# #     --limit N  限制文件数（调试）；--dry-run 只看 prompt 不调 VLM
+# python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --dry-run --limit 4
+# python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS
 
 # # 8.1 分析混淆判断结果
@@ -71,4 +79,4 @@ WORKERS=8
 
 # 9.1 LLM 审核 Hard Negative 句子级有效性（--dry-run 只看不删）
 # python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS --dry-run --verbose --limit 4
-python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS
+# python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS
