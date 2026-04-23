@@ -15,7 +15,7 @@ from threading import Lock
 
 from hard_utils import (slotted_desc, replace_slot, strip_slots,
                         key_to_str, str_to_key,
-                        load_hard_all, save_hard_all, rebuild_hard_files)
+                        load_hard_all, save_hard_all)
 from llm_client import LLMClient, parse_ports, parse_json_response
 
 PROGRESS_PATH = Path(__file__).parent / "9_1_progress.json"
@@ -222,8 +222,7 @@ def main() -> None:
         hist.pop(k, None)
 
     save_hard_all(hist)
-    n_files, n_negs = rebuild_hard_files(hist)
-    print(f"[DONE]  hard_all条目={len(hist)}  hard文件={n_files}  hard条目={n_negs}")
+    print(f"[DONE]  hard_all条目={len(hist)}")
 
     if PROGRESS_PATH.exists():
         PROGRESS_PATH.unlink()

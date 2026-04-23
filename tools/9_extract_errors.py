@@ -22,8 +22,7 @@ import argparse, json
 from collections import defaultdict
 from pathlib import Path
 
-from hard_utils import (key_valid, load_hard_all, save_hard_all,
-                        clean_stale, rebuild_hard_files)
+from hard_utils import (key_valid, load_hard_all, save_hard_all, clean_stale)
 
 
 def main() -> None:
@@ -92,7 +91,7 @@ def main() -> None:
             v.pop("error_by_model", None)
 
     save_hard_all(hist)
-    n_files, n_negs = rebuild_hard_files(hist)
+    n_negs = len(hist)
 
     # ── 统计 error_count 分布 ─────────────────────────────────────────────────
     n_evaluated   = sum(1 for v in hist.values() if v.get("error_count", 0) > 0)
@@ -123,7 +122,6 @@ def main() -> None:
         row("error_count清零", len(hist), "所有条目 error_count=0，error_by_model 已删除")
     print("\n[DONE]")
     row("hard条目",  n_negs,  "累计有效 hard pair 总数（= hard_all 条目数）")
-    row("hard文件",  n_files, "hard_{view}.json 文件数（每视频/视角至多 1 个）")
     print("\n[error_count]  由 step 8 维护，step 9 只读")
     row("已评测",    n_evaluated,   "error_count > 0 的 pair 数")
     row("未评测",    n_unevaluated, "error_count = 0（新入库或已 reset）")
