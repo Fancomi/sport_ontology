@@ -195,19 +195,23 @@ class LLMClient:
             self.client = self._endpoints[0][0]   # 兼容旧代码
             self.extra_body = self._endpoints[0][1]
 
-            # 轮询状态
-            self._rr_idx  = 0
-            self._rr_lock = threading.Lock()
+            # least-inflight 调度：记录每个 endpoint 当前在途请求数
+            self._inflight = [0] * len(self._endpoints)
+            self._ep_lock  = threading.Lock()
 
     def _detect_model(self, client: OpenAI) -> str:
         return client.models.list().data[0].id
 
-    def _next_ep(self) -> tuple[OpenAI, dict]:
-        """线程安全的轮询，返回下一个 (client, extra_body)。"""
-        with self._rr_lock:
-            ep = self._endpoints[self._rr_idx % len(self._endpoints)]
-            self._rr_idx += 1
-        return ep
+    def _next_ep(self) -> tuple[int, OpenAI, dict]:
+        """选在途请求最少的 endpoint，返回 (idx, client, extra_body)。"""
+        with self._ep_lock:
+            idx = self._inflight.index(min(self._inflight))
+            self._inflight[idx] += 1
+        return idx, *self._endpoints[idx]
+
+    def _release_ep(self, idx: int) -> None:
+        with self._ep_lock:
+            self._inflight[idx] = max(0, self._inflight[idx] - 1)
 
     # ── 核心调用 ──────────────────────────────────────────────────────────────
 
@@ -244,14 +248,13 @@ class LLMClient:
         """非流式同步调用（local 后端主用，poe 也可用）"""
         kwargs = dict(model=self.model, messages=messages, stream=False)
         if self.backend == "local":
-            c, eb = self._next_ep()
+            idx, c, eb = self._next_ep()
             kwargs["max_tokens"]  = max_tokens  or self.max_tokens
             kwargs["temperature"] = temperature or self.temperature
             if eb:
                 kwargs["extra_body"] = eb
         else:
-            c  = self.client
-            eb = self.extra_body
+            idx, c, eb = None, self.client, self.extra_body
             kwargs["extra_body"] = eb
         try:
             resp = c.chat.completions.create(**kwargs)
@@ -259,6 +262,9 @@ class LLMClient:
         except Exception as e:
             print(f"\n✗ chat失败: {e}")
             return None
+        finally:
+            if idx is not None:
+                self._release_ep(idx)
 
 
 # ── 模块级兼容：保留旧接口（poe 默认客户端）────────────────────────────────────

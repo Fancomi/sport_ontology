@@ -328,45 +328,36 @@ def main() -> None:
         for word, node in pending.items():
             items.append((slot, word, node))
 
-    total      = len(items)
-    file_lock  = Lock()
-    print_lock = Lock()
-    workers    = min(args.workers, total) if total else 1
+    total         = len(items)
+    progress_lock = Lock()                      # 只保护 progress dict + 小文件写
+    print_lock    = Lock()
+    workers       = min(args.workers, total) if total else 1
+    prog_cnt      = [0]                         # progress 落盘计数器，在 progress_lock 内累加
 
     def _worker(idx_item):
         i, (slot, word, node) = idx_item
         conf_before = node.get("confusable_siblings", [])
         inco_before = node.get("incompatibility", [])
-
-        if not conf_before and not inco_before:
-            with file_lock:
-                progress.setdefault(slot, [])
-                if word not in progress[slot]:
-                    progress[slot].append(word)
-                PROGRESS_PATH.write_text(json.dumps(progress, ensure_ascii=False, indent=2), "utf-8")
-            with print_lock:
-                print(f"  [{slot}] {i}/{total} {word}: 空列表，跳过")
-            return
-
-        with print_lock:
-            print(f"  [{slot}] {i}/{total} {word} ...", end=" ", flush=True)
+        prefix      = f"  [{slot}] {i}/{total} {word}"
         try:
             cleaned = clean_node(slot, word, node, client)
             d_conf  = set(conf_before) - set(cleaned["confusable_siblings"])
             d_inco  = set(inco_before) - set(cleaned["incompatibility"])
-            with file_lock:
-                ontology[slot][word]["confusable_siblings"] = cleaned["confusable_siblings"]
-                ontology[slot][word]["incompatibility"]     = cleaned["incompatibility"]
-                ONTO_PATH.write_text(json.dumps(ontology, ensure_ascii=False, indent=2), "utf-8")
+            # ontology dict：每个 (slot, word) 唯一，无竞争，直接写内存
+            ontology[slot][word]["confusable_siblings"] = cleaned["confusable_siblings"]
+            ontology[slot][word]["incompatibility"]     = cleaned["incompatibility"]
+            with progress_lock:
                 progress.setdefault(slot, [])
                 if word not in progress[slot]:
                     progress[slot].append(word)
-                PROGRESS_PATH.write_text(json.dumps(progress, ensure_ascii=False, indent=2), "utf-8")
+                prog_cnt[0] += 1
+                if prog_cnt[0] % 256 == 0:
+                    PROGRESS_PATH.write_text(json.dumps(progress, ensure_ascii=False, indent=2), "utf-8")
             with print_lock:
-                print(f"✓  -conf:{sorted(d_conf) or '∅'}  -inco:{sorted(d_inco) or '∅'}")
+                print(f"{prefix} ... ✓  -conf:{sorted(d_conf) or '∅'}  -inco:{sorted(d_inco) or '∅'}")
         except Exception as e:
             with print_lock:
-                print(f"✗ {e}，保留原值")
+                print(f"{prefix} ... ✗ {e}，保留原值")
 
     if workers == 1:
         for i, item in enumerate(items, 1):
@@ -378,6 +369,9 @@ def main() -> None:
             for fut in as_completed(futures):
                 pass
 
+    # 所有 worker 完成后一次性落盘
+    ONTO_PATH.write_text(json.dumps(ontology, ensure_ascii=False, indent=2), "utf-8")
+    PROGRESS_PATH.write_text(json.dumps(progress, ensure_ascii=False, indent=2), "utf-8")
     total_done = sum(len(v) for v in progress.values())
     print(f"\n✓ 完成，累计 {total_done} 节点 → {ONTO_PATH}")
 
