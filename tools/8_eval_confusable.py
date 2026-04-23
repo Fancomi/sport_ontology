@@ -39,6 +39,10 @@ _inf_lock = Lock()
 # ── 计时开关（--timing 启用，每条调用打印详细耗时）──────────────────────────────
 _TIMING = False
 
+# 当前真正在 create() 里的并发数（--timing 时使用，测量 HTTP 层真实并发）
+_active_vlm = 0
+_active_lock = Lock()
+
 
 def _rng(seed: int) -> random.Random:
     """每线程独立 RNG，seed ^ thread_id 初始化，保证线程安全且各线程序列不同。"""
@@ -67,12 +71,22 @@ class WorkItem:
 # ── VLM 调用 ──────────────────────────────────────────────────────────────────
 
 def call_vlm(frames: list, prompt: str, client, model: str,
-             extra_body: dict | None = None) -> tuple[str, float, float]:
-    """返回 (answer, content_ms, http_ms)；_TIMING=False 时 content_ms/http_ms 均为 0。"""
+             extra_body: dict | None = None) -> tuple[str, float, float, int]:
+    """返回 (answer, content_ms, http_ms, peak_active)。
+    peak_active = 本次 create() 期间同时在途的最大并发请求数（_TIMING=False 时为 0）。
+    """
     t0 = time.perf_counter() if _TIMING else 0.0
     content = ([{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{f}"}}
                 for f in frames] + [{"type": "text", "text": prompt}])
     t1 = time.perf_counter() if _TIMING else 0.0
+
+    # ── 并发计数：进入 create() 前 +1，退出后 -1 ──────────────────────────────
+    if _TIMING:
+        with _active_lock:
+            global _active_vlm
+            _active_vlm += 1
+            peak = _active_vlm      # 本次请求发出时看到的并发数
+
     try:
         kw = dict(model=model, messages=[{"role": "user", "content": content}],
                   max_tokens=MAX_TOKENS, temperature=0.0)
@@ -80,10 +94,14 @@ def call_vlm(frames: list, prompt: str, client, model: str,
             kw["extra_body"] = extra_body
         ans = client.chat.completions.create(**kw).choices[0].message.content.strip().upper()
         t2 = time.perf_counter() if _TIMING else 0.0
-        return ans, (t1 - t0) * 1000, (t2 - t1) * 1000
+        return ans, (t1 - t0) * 1000, (t2 - t1) * 1000, (peak if _TIMING else 0)
     except Exception as e:
         _log(f"  ✗ VLM: {e}")
-        return "", 0.0, 0.0
+        return "", 0.0, 0.0, 0
+    finally:
+        if _TIMING:
+            with _active_lock:
+                _active_vlm -= 1
 
 
 def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
@@ -110,8 +128,8 @@ def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
         a, b      = (item.original, neg_text) if a_is_orig else (neg_text, item.original)
         t_prep = time.perf_counter() if _TIMING else 0.0
 
-        # ③ VLM 调用（内部拆分 content 构建 vs HTTP）
-        answer, content_ms, http_ms = call_vlm(
+        # ③ VLM 调用（内部拆分 content 构建 vs HTTP + 并发数）
+        answer, content_ms, http_ms, concur = call_vlm(
             item.frames, PROMPT.format(a=a, b=b), c, mid, eb)
         t_done = time.perf_counter() if _TIMING else 0.0
 
@@ -125,12 +143,14 @@ def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
                     f"  {letter} {'✓' if ok else '✗'}")
         timing_str = ""
         if _TIMING:
-            lock_ms = (t_lock - t_enter) * 1000
-            prep_ms = (t_prep - t_lock)  * 1000
-            total_ms= (t_done - t_enter) * 1000
-            timing_str = (f"  [p{8000+idx+1}|idle={idle_ms:.0f}ms lock={lock_ms:.1f}ms"
-                          f" prep={prep_ms:.1f}ms content={content_ms:.1f}ms"
-                          f" http={http_ms:.0f}ms total={total_ms:.0f}ms]")
+            lock_ms  = (t_lock - t_enter) * 1000
+            prep_ms  = (t_prep - t_lock)  * 1000
+            pre_ms   = (t_prep - t_enter) * 1000   # 入口→create() 总准备时间
+            total_ms = (t_done - t_enter) * 1000
+            timing_str = (f"  [p{8000+idx+1}|idle={idle_ms:.0f}ms"
+                          f" pre={pre_ms:.1f}ms(lock={lock_ms:.1f}+prep={prep_ms:.1f})"
+                          f" content={content_ms:.1f}ms http={http_ms:.0f}ms"
+                          f" concur={concur} total={total_ms:.0f}ms]")
         rec = {
             "video": item.rel, "view": item.view,
             "source": item.neg["source"], "replaced_slot": item.neg["replaced_slot"],
