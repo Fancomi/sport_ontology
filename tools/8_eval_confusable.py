@@ -43,6 +43,18 @@ _TIMING = False
 _active_vlm = 0
 _active_lock = Lock()
 
+# 全局到达时间戳：记录任意线程上次到达各关键位置的时刻，测量跨线程到达间隔
+_g_ts: dict[str, float] = {}   # key: 位置名称 → 上次到达时刻
+_g_ts_lock = Lock()
+
+
+def _arrival_gap(label: str, now: float) -> float:
+    """返回自上次任意线程到达 label 位置以来经过的毫秒数，并更新时间戳。"""
+    with _g_ts_lock:
+        gap = (now - _g_ts[label]) * 1000 if label in _g_ts else 0.0
+        _g_ts[label] = now
+    return gap
+
 
 def _rng(seed: int) -> random.Random:
     """每线程独立 RNG，seed ^ thread_id 初始化，保证线程安全且各线程序列不同。"""
@@ -71,21 +83,24 @@ class WorkItem:
 # ── VLM 调用 ──────────────────────────────────────────────────────────────────
 
 def call_vlm(frames: list, prompt: str, client, model: str,
-             extra_body: dict | None = None) -> tuple[str, float, float, int]:
-    """返回 (answer, content_ms, http_ms, peak_active)。
-    peak_active = 本次 create() 期间同时在途的最大并发请求数（_TIMING=False 时为 0）。
+             extra_body: dict | None = None) -> tuple[str, float, float, int, float]:
+    """返回 (answer, content_ms, http_ms, peak_active, garr_http_ms)。
+    peak_active   = 本次 create() 发出时同时在途的请求数
+    garr_http_ms  = 上次任意线程发出 create() 距本次的间隔（跨线程到达间隔）
+    _TIMING=False 时后三项均为 0。
     """
     t0 = time.perf_counter() if _TIMING else 0.0
     content = ([{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{f}"}}
                 for f in frames] + [{"type": "text", "text": prompt}])
     t1 = time.perf_counter() if _TIMING else 0.0
 
-    # ── 并发计数：进入 create() 前 +1，退出后 -1 ──────────────────────────────
+    # ── 并发计数 + 跨线程到达间隔：进入 create() 前 +1，退出后 -1 ──────────────
     if _TIMING:
         with _active_lock:
             global _active_vlm
             _active_vlm += 1
             peak = _active_vlm      # 本次请求发出时看到的并发数
+        garr_http_ms = _arrival_gap("http", t1)   # 上次任意线程发出 create() 距今多久
 
     try:
         kw = dict(model=model, messages=[{"role": "user", "content": content}],
@@ -94,10 +109,10 @@ def call_vlm(frames: list, prompt: str, client, model: str,
             kw["extra_body"] = extra_body
         ans = client.chat.completions.create(**kw).choices[0].message.content.strip().upper()
         t2 = time.perf_counter() if _TIMING else 0.0
-        return ans, (t1 - t0) * 1000, (t2 - t1) * 1000, (peak if _TIMING else 0)
+        return ans, (t1 - t0) * 1000, (t2 - t1) * 1000, (peak if _TIMING else 0), (garr_http_ms if _TIMING else 0.0)
     except Exception as e:
         _log(f"  ✗ VLM: {e}")
-        return "", 0.0, 0.0, 0
+        return "", 0.0, 0.0, 0, 0.0
     finally:
         if _TIMING:
             with _active_lock:
@@ -121,6 +136,8 @@ def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
     interval_ms = (t_enter - _tls.last_enter) * 1000 if (_TIMING and hasattr(_tls, "last_enter")) else 0.0
     # 上次调用结束 → 本次进入的空闲时长
     idle_ms = (t_enter - _tls.last_end) * 1000 if (_TIMING and hasattr(_tls, "last_end")) else 0.0
+    # 跨线程：距上次任意线程进入 eval_one 的到达间隔
+    garr_enter_ms = _arrival_gap("enter", t_enter) if _TIMING else 0.0
     if _TIMING:
         _tls.last_enter = t_enter
 
@@ -132,8 +149,8 @@ def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
         a, b      = (item.original, neg_text) if a_is_orig else (neg_text, item.original)
         t_prep = time.perf_counter() if _TIMING else 0.0
 
-        # ③ VLM 调用（内部拆分 content 构建 vs HTTP + 并发数）
-        answer, content_ms, http_ms, concur = call_vlm(
+        # ③ VLM 调用（内部拆分 content 构建 vs HTTP + 并发数 + 到达间隔）
+        answer, content_ms, http_ms, concur, garr_http_ms = call_vlm(
             item.frames, PROMPT.format(a=a, b=b), c, mid, eb)
         t_done = time.perf_counter() if _TIMING else 0.0
 
@@ -151,11 +168,11 @@ def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
             prep_ms  = (t_prep - t_lock)  * 1000
             pre_ms   = (t_prep - t_enter) * 1000   # 入口→create() 总准备时间
             total_ms = (t_done - t_enter) * 1000
-            timing_str = (f"  [p{8000+idx+1}|interval={interval_ms:.0f}ms"
-                          f" idle={idle_ms:.0f}ms pre={pre_ms:.1f}ms"
-                          f"(lock={lock_ms:.1f}+prep={prep_ms:.1f})"
-                          f" content={content_ms:.1f}ms http={http_ms:.0f}ms"
-                          f" concur={concur} total={total_ms:.0f}ms]")
+            timing_str = (f"  [p{8000+idx+1}"
+                          f"|arr_enter={garr_enter_ms:.0f}ms arr_http={garr_http_ms:.0f}ms"
+                          f"|interval={interval_ms:.0f}ms idle={idle_ms:.0f}ms"
+                          f"|pre={pre_ms:.1f}ms content={content_ms:.1f}ms"
+                          f" http={http_ms:.0f}ms concur={concur} total={total_ms:.0f}ms]")
         rec = {
             "video": item.rel, "view": item.view,
             "source": item.neg["source"], "replaced_slot": item.neg["replaced_slot"],
