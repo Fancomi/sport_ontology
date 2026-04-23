@@ -24,6 +24,10 @@ ANS_RE         = re.compile(r"\((\d+)\)=([A-Da-d])")
 N_CHOICES_MAX  = 4
 MAX_TOKENS     = 256
 
+# least-inflight 客户端调度（与 8_eval_confusable 保持一致）
+_inflight: list[int] = []
+_inf_lock = Lock()
+
 PROMPT_TMPL = """\
 以上是一段健身动作视频。请根据视频内容完成以下完形填空，每空从给定选项中选出最符合视频的答案。
 
@@ -199,6 +203,7 @@ def main() -> None:
         vlm_clients = build_vlm_clients(args.host, parse_ports(args.port))
         if not vlm_clients:
             print(f"✗ 无法连接 {args.host}:{args.port}", file=sys.stderr); sys.exit(1)
+        _inflight[:] = [0] * len(vlm_clients)
         print(f"模型: {vlm_clients[0][1]}\n")
 
     files = [p for v in VIEWS for p in DATA_ROOT.rglob(f"augment_{v}.json")]
@@ -237,8 +242,15 @@ def main() -> None:
             with print_lock: print(f"{'─'*60}\n{format_prompt(cloze, si)}\n{'─'*60}")
             return
 
-        c, mid, eb = vlm_clients[(i - 1) % len(vlm_clients)]
-        records    = eval_file(src, frames, c, mid, lookup, ontology, eb, args.min_choices)
+        with _inf_lock:
+            idx = _inflight.index(min(_inflight))
+            _inflight[idx] += 1
+        c, mid, eb = vlm_clients[idx]
+        try:
+            records = eval_file(src, frames, c, mid, lookup, ontology, eb, args.min_choices)
+        finally:
+            with _inf_lock:
+                _inflight[idx] = max(0, _inflight[idx] - 1)
         if not records:
             return
 
