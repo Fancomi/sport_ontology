@@ -22,6 +22,11 @@ WORKERS=8
 # 2.1 批量校验 augment_xxx.json 合规性 [已合入2混合调用]
 # python3 2_1_check_augment.py --host $HOST --port $PORT -w $WORKERS
 
+# 2.2 将 augment_*.json 中文描述翻译为英文，输出 augment_{view}_en.json
+#     --check  翻译后启动 LLM 语义 QC 自校正循环（最多 12 轮）
+# python3 2_2_translate_augment.py --host $HOST --port $PORT -w $WORKERS
+python3 2_2_translate_augment.py --host $HOST --port $PORT -w $WORKERS --check
+
 # # 3. 槽位统计: 覆盖输出 slot_vocab.json / slot_abnormal.json / slot_vocab.png
 # python3 3_collect_slots.py [--top 20]
 
@@ -54,11 +59,11 @@ WORKERS=8
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode hard
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS            
 
-# 测试
-python3 8_eval_confusable.py \
---host $HOST --port $PORT -w $WORKERS \
---mode confusable --limit 40 \
---out /tmp/timing_test.jsonl
+# # 测试
+# python3 8_eval_confusable.py \
+# --host $HOST --port $PORT -w $WORKERS \
+# --mode confusable --limit 40 \
+# --out /tmp/timing_test.jsonl
 
 # # 8.3 完形填空评测（在线抽样）
 # #     --limit N  限制文件数（调试）；--dry-run 只看 prompt 不调 VLM
