@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Script 8: VLM 评测 — confusable（在线采样）与 hard 两种模式。
 
-两阶段流水线（解决 GPU 空闲问题）：
+两阶段流水线：
   Phase 1: 并行帧加载 + 负样本采样 → 全量 WorkItem 列表（IO/CPU 密集）
-  Phase 2: 每条 WorkItem = 独立 VLM 任务，workers 线程始终满载（GPU 密集）
-           两阶段完全解耦，GPU 不再等待帧加载/采样
+  Phase 2: 并发 VLM 评测，least-inflight 负载均衡（GPU 密集）
 """
 
-import argparse, json, random, sys, threading, time
+import argparse, json, random, sys, threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -28,36 +27,14 @@ PROMPT = (
     "请保持思考过程简短高效，不要过度发散，思考过程请控制在 1000 字以内。"
 )
 
-# ── 全局线程安全工具 ──────────────────────────────────────────────────────────
 _tls      = threading.local()
 _prt_lock = Lock()
-
-# least-inflight 客户端调度（替代简单轮询，避免突发时多卡拥塞/空闲不均）
-_inflight:  list[int] = []
+_inflight: list[int] = []
 _inf_lock = Lock()
-
-# ── 计时开关（--timing 启用，每条调用打印详细耗时）──────────────────────────────
-_TIMING = False
-
-# 当前真正在 create() 里的并发数（--timing 时使用，测量 HTTP 层真实并发）
-_active_vlm = 0
-_active_lock = Lock()
-
-# 全局到达时间戳：记录任意线程上次到达各关键位置的时刻，测量跨线程到达间隔
-_g_ts: dict[str, float] = {}   # key: 位置名称 → 上次到达时刻
-_g_ts_lock = Lock()
-
-
-def _arrival_gap(label: str, now: float) -> float:
-    """返回自上次任意线程到达 label 位置以来经过的毫秒数，并更新时间戳。"""
-    with _g_ts_lock:
-        gap = (now - _g_ts[label]) * 1000 if label in _g_ts else 0.0
-        _g_ts[label] = now
-    return gap
 
 
 def _rng(seed: int) -> random.Random:
-    """每线程独立 RNG，seed ^ thread_id 初始化，保证线程安全且各线程序列不同。"""
+    """线程独立 RNG（seed ^ thread_id）。"""
     if not hasattr(_tls, "rng"):
         _tls.rng = random.Random(seed ^ (threading.get_ident() & 0xFFFFFFFF))
     return _tls.rng
@@ -68,127 +45,61 @@ def _log(*a) -> None:
         print(*a)
 
 
-# ── 数据结构 ──────────────────────────────────────────────────────────────────
-
 @dataclass
 class WorkItem:
     mode:     str    # "conf" | "hard"
     frames:   list
     neg:      dict   # {category_3_slotted_description, source, replaced_slot, original_value, new_value}
-    original: str    # strip_slots 后的正描述，直接用于 prompt
+    original: str    # strip_slots 后的正描述
     rel:      str
     view:     str
 
 
-# ── VLM 调用 ──────────────────────────────────────────────────────────────────
-
 def call_vlm(frames: list, prompt: str, client, model: str,
-             extra_body: dict | None = None) -> tuple[str, float, float, int, float]:
-    """返回 (answer, content_ms, http_ms, peak_active, garr_http_ms)。
-    peak_active   = 本次 create() 发出时同时在途的请求数
-    garr_http_ms  = 上次任意线程发出 create() 距本次的间隔（跨线程到达间隔）
-    _TIMING=False 时后三项均为 0。
-    """
-    t0 = time.perf_counter() if _TIMING else 0.0
+             extra_body: dict | None = None) -> str:
     content = ([{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{f}"}}
                 for f in frames] + [{"type": "text", "text": prompt}])
-    t1 = time.perf_counter() if _TIMING else 0.0
-
-    # ── 并发计数 + 跨线程到达间隔：进入 create() 前 +1，退出后 -1 ──────────────
-    if _TIMING:
-        with _active_lock:
-            global _active_vlm
-            _active_vlm += 1
-            peak = _active_vlm      # 本次请求发出时看到的并发数
-        garr_http_ms = _arrival_gap("http", t1)   # 上次任意线程发出 create() 距今多久
-
     try:
         kw = dict(model=model, messages=[{"role": "user", "content": content}],
                   max_tokens=MAX_TOKENS, temperature=0.0)
         if extra_body:
             kw["extra_body"] = extra_body
-        ans = client.chat.completions.create(**kw).choices[0].message.content.strip().upper()
-        t2 = time.perf_counter() if _TIMING else 0.0
-        return ans, (t1 - t0) * 1000, (t2 - t1) * 1000, (peak if _TIMING else 0), (garr_http_ms if _TIMING else 0.0)
+        return client.chat.completions.create(**kw).choices[0].message.content.strip().upper()
     except Exception as e:
         _log(f"  ✗ VLM: {e}")
-        return "", 0.0, 0.0, 0, 0.0
-    finally:
-        if _TIMING:
-            with _active_lock:
-                _active_vlm -= 1
+        return ""
 
 
 def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
-    """单条 neg 二选一评测，返回 record 或 None（无效响应）。
-    注意：不在此处调用 _log，避免 _prt_lock 阻塞工作线程拾取下一条任务。
-    日志行打包在返回值的 _log_line 字段，由主线程在 write_lock 段内统一打印。
-    计时字段 _timing 仅在 --timing 时存在。
-    """
-    t_enter = time.perf_counter() if _TIMING else 0.0
-    # ① 获取 least-inflight 客户端
+    """单条 neg 二选一评测。_log_line 由主线程在 write_lock 内统一打印。"""
     with _inf_lock:
         idx = _inflight.index(min(_inflight))
         _inflight[idx] += 1
-    t_lock = time.perf_counter() if _TIMING else 0.0
-
-    # 同线程两次调用的间隔：上次 t_enter → 本次 t_enter（= 上次 total + idle）
-    interval_ms = (t_enter - _tls.last_enter) * 1000 if (_TIMING and hasattr(_tls, "last_enter")) else 0.0
-    # 上次调用结束 → 本次进入的空闲时长
-    idle_ms = (t_enter - _tls.last_end) * 1000 if (_TIMING and hasattr(_tls, "last_end")) else 0.0
-    # 跨线程：距上次任意线程进入 eval_one 的到达间隔
-    garr_enter_ms = _arrival_gap("enter", t_enter) if _TIMING else 0.0
-    if _TIMING:
-        _tls.last_enter = t_enter
-
     c, mid, eb = clients[idx]
     try:
-        # ② 准备文本（strip_slots / 随机 A/B）
         a_is_orig = _rng(seed).random() < 0.5
         neg_text  = strip_slots(item.neg["category_3_slotted_description"])
         a, b      = (item.original, neg_text) if a_is_orig else (neg_text, item.original)
-        t_prep = time.perf_counter() if _TIMING else 0.0
-
-        # ③ VLM 调用（内部拆分 content 构建 vs HTTP + 并发数 + 到达间隔）
-        answer, content_ms, http_ms, concur, garr_http_ms = call_vlm(
-            item.frames, PROMPT.format(a=a, b=b), c, mid, eb)
-        t_done = time.perf_counter() if _TIMING else 0.0
-
-        letter = answer[0] if answer and answer[0] in "AB" else ""
+        answer    = call_vlm(item.frames, PROMPT.format(a=a, b=b), c, mid, eb)
+        letter    = answer[0] if answer and answer[0] in "AB" else ""
         if not letter:
             return None
         ok = letter == ("A" if a_is_orig else "B")
-
-        log_line = (f"  [{item.mode}|{item.view}|{item.neg['replaced_slot']}] "
-                    f"{item.neg['original_value']}→{item.neg['new_value']}"
-                    f"  {letter} {'✓' if ok else '✗'}")
-        timing_str = ""
-        if _TIMING:
-            lock_ms  = (t_lock - t_enter) * 1000
-            prep_ms  = (t_prep - t_lock)  * 1000
-            pre_ms   = (t_prep - t_enter) * 1000   # 入口→create() 总准备时间
-            total_ms = (t_done - t_enter) * 1000
-            timing_str = (f"  [p{8000+idx+1}"
-                          f"|arr_enter={garr_enter_ms:.0f}ms arr_http={garr_http_ms:.0f}ms"
-                          f"|interval={interval_ms:.0f}ms idle={idle_ms:.0f}ms"
-                          f"|pre={pre_ms:.1f}ms content={content_ms:.1f}ms"
-                          f" http={http_ms:.0f}ms concur={concur} total={total_ms:.0f}ms]")
-        rec = {
+        return {
             "video": item.rel, "view": item.view,
             "source": item.neg["source"], "replaced_slot": item.neg["replaced_slot"],
             "original_value": item.neg["original_value"], "new_value": item.neg["new_value"],
             "original_is_A": a_is_orig, "answer": letter, "is_correct": ok,
-            "_log_line": log_line + timing_str,
+            "_log_line": (f"  [{item.mode}|{item.view}|{item.neg['replaced_slot']}] "
+                         f"{item.neg['original_value']}→{item.neg['new_value']}"
+                         f"  {letter} {'✓' if ok else '✗'}"),
         }
-        return rec
     finally:
-        if _TIMING:
-            _tls.last_end = time.perf_counter()
         with _inf_lock:
             _inflight[idx] = max(0, _inflight[idx] - 1)
 
 
-# ── Phase 1: 采集 WorkItem（并行，IO/CPU 密集）───────────────────────────────
+# ── Phase 1: 采集 WorkItem ────────────────────────────────────────────────────
 
 def collect_conf(src: Path, lookup, conf_w, inco_w, done: set,
                  fps: float, max_side: int, seed: int) -> list[WorkItem]:
@@ -230,7 +141,7 @@ def collect_hard(dir_path: Path, view: str, key_rec_map: dict,
     return items
 
 
-# ── hard_all 批量写回（运行结束时一次调用）────────────────────────────────────
+# ── hard_all 批量写回 ─────────────────────────────────────────────────────────
 
 def flush_hard_all(records: list[dict], model_name: str) -> None:
     if not records:
@@ -279,12 +190,7 @@ def main() -> None:
     pa.add_argument("--dry-run",  action="store_true", dest="dry_run")
     pa.add_argument("--seed",     type=int, default=42)
     pa.add_argument("-w", "--workers", type=int, default=1)
-    pa.add_argument("--timing",   action="store_true",
-                    help="打印每条调用的详细耗时（idle/lock/prep/content/http）用于定位瓶颈")
     args = pa.parse_args()
-
-    global _TIMING
-    _TIMING = args.timing
 
     random.seed(args.seed)
 
@@ -294,7 +200,7 @@ def main() -> None:
         if not clients:
             print(f"✗ 无法连接 {args.host}:{args.port}", file=sys.stderr)
             sys.exit(1)
-        _inflight[:] = [0] * len(clients)   # 初始化 least-inflight 计数器
+        _inflight[:] = [0] * len(clients)
         print(f"模型: {clients[0][1]}  workers={args.workers}")
 
     lookup = conf_w = inco_w = None
@@ -305,7 +211,7 @@ def main() -> None:
 
     # ── 文件收集 ──────────────────────────────────────────────────────────────
     aug_files:  list[Path]  = []
-    hard_tasks: list[tuple] = []   # ((dir_path, view), key_rec_map)
+    hard_tasks: list[tuple] = []
 
     if args.mode in ("confusable", "all"):
         for v in VIEWS:
@@ -332,7 +238,7 @@ def main() -> None:
     if done_conf: print(f"[resume] confusable 已完成 {len(done_conf)} 条")
     if done_hard: print(f"[resume] hard       已完成 {len(done_hard)} 条")
 
-    # ── Phase 1: 并行帧加载 + 采样（IO/CPU 密集，与 VLM 解耦）─────────────────
+    # ── Phase 1: 并行帧加载 + 采样 ────────────────────────────────────────────
     print(f"\n[Phase 1] 帧加载 + 采样  workers={args.workers}")
     items: list[WorkItem] = []
 
@@ -341,14 +247,14 @@ def main() -> None:
                             args.fps, args.max_side, args.seed)
 
     def _gh(task):
-        (dir_path, view), krm = task
-        return collect_hard(dir_path, view, krm, done_hard, args.fps, args.max_side)
+        (dp, v), krm = task
+        return collect_hard(dp, v, krm, done_hard, args.fps, args.max_side)
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futs = [pool.submit(_gc, s) for s in aug_files] + \
                [pool.submit(_gh, t) for t in hard_tasks]
         for f in as_completed(futs):
-            items += f.result()   # list.extend in main thread，GIL 保证安全
+            items += f.result()
 
     n_conf = sum(1 for it in items if it.mode == "conf")
     n_hard = sum(1 for it in items if it.mode == "hard")
@@ -363,7 +269,7 @@ def main() -> None:
         print("无待评测项，退出")
         return
 
-    # ── Phase 2: 并发 VLM 评测（GPU 密集，workers 始终满载）─────────────────────
+    # ── Phase 2: 并发 VLM 评测 ────────────────────────────────────────────────
     print(f"[Phase 2] VLM 评测  {len(items)} 条  workers={args.workers}")
     write_lock   = Lock()
     hard_records: list[dict] = []
@@ -380,7 +286,7 @@ def main() -> None:
             done_cnt += 1
             if record is None:
                 if done_cnt % 200 == 0:
-                    _log(f"  进度 {done_cnt}/{len(items)}  conf={c_total} hard={h_total}")
+                    print(f"  进度 {done_cnt}/{len(items)}  conf={c_total} hard={h_total}")
                 continue
             log_line = record.pop("_log_line", None)
             with write_lock:
@@ -397,7 +303,6 @@ def main() -> None:
                     fout.flush(); fout_hard.flush()
         fout.flush(); fout_hard.flush()
 
-    # hard_all 全程只写一次，消除多次全量重写的 IO 放大
     if hard_records:
         model_name = clients[0][1].split("/")[-1] if clients else "unknown"
         flush_hard_all(hard_records, model_name)

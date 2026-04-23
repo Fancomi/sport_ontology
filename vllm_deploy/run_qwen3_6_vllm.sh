@@ -29,6 +29,10 @@ else
 fi
 MODEL=$SHM_MODEL
 
+
+
+
+
 for i in $(seq 0 3); do
     PORT=$((8001 + i))
     GPUS="$((i * 2)),$((i * 2 + 1))"
@@ -39,15 +43,18 @@ for i in $(seq 0 3); do
         --gpu-memory-utilization 0.90 \
         --dtype bfloat16 \
         --kv-cache-dtype fp8 \
-        --max-model-len 65536 \
+        --async-scheduling \
+        --max-model-len 32768 \
         --max-num-seqs 1 \
         --enable-chunked-prefill \
         --enable-prefix-caching \
         --enable-auto-tool-choice \
-        --tool-call-parser qwen3_coder \
         --speculative-config '{"method":"qwen3_next_mtp","num_speculative_tokens":2}' \
+        --tool-call-parser qwen3_coder \
         --uvicorn-log-level warning \
         --port $PORT &
+        
+        # --reasoning-parser qwen3 \
     echo "  GPU $GPUS → port $PORT, VLLM_PORT=$((20000 + i * 20)) (pid $!)"
 done
 

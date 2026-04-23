@@ -3,6 +3,7 @@
 
 # ── 统一配置 ──────────────────────────────────────────────────────────────────
 HOST="127.0.0.1"
+
 # Gemma
 PORT="8001,8002,8003,8004,8005,8006,8007,8008"
 WORKERS=8
@@ -56,9 +57,15 @@ WORKERS=4
 # #    --mode all         全部（默认）
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode confusable
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode hard
-# python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS
+# python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS            
 
-# # 8.3 完形填空评测（在线抽样，不依赖 step7 产物）
+# # 测试
+# python3 8_eval_confusable.py \
+# --host $HOST --port $PORT -w $WORKERS \
+# --mode confusable --limit 40 \
+# --out /tmp/timing_test.jsonl
+
+# # 8.3 完形填空评测（在线抽样）
 # #     --limit N  限制文件数（调试）；--dry-run 只看 prompt 不调 VLM
 # python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --dry-run --limit 4
 # python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --limit 4

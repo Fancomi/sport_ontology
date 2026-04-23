@@ -1,0 +1,142 @@
+{
+  "exercise": {
+    "confusable_siblings": {
+      "acc": 0.9012,
+      "kappa": 0.8024,
+      "error_rate": 0.0988,
+      "n": 1346
+    },
+    "incompatibility": {
+      "acc": 0.9384,
+      "kappa": 0.8769,
+      "error_rate": 0.0616,
+      "n": 926
+    }
+  },
+  "laterality": {
+    "confusable_siblings": {
+      "acc": 0.8686,
+      "kappa": 0.7373,
+      "error_rate": 0.1314,
+      "n": 2786
+    },
+    "incompatibility": {
+      "acc": 0.9355,
+      "kappa": 0.871,
+      "error_rate": 0.0645,
+      "n": 2139
+    }
+  },
+  "equipment": {
+    "confusable_siblings": {
+      "acc": 0.9422,
+      "kappa": 0.8844,
+      "error_rate": 0.0578,
+      "n": 11211
+    },
+    "incompatibility": {
+      "acc": 0.993,
+      "kappa": 0.986,
+      "error_rate": 0.007,
+      "n": 5433
+    }
+  },
+  "camera_view": {
+    "confusable_siblings": {
+      "acc": 0.9806,
+      "kappa": 0.9612,
+      "error_rate": 0.0194,
+      "n": 773
+    },
+    "incompatibility": {
+      "acc": 0.9533,
+      "kappa": 0.9067,
+      "error_rate": 0.0467,
+      "n": 4673
+    }
+  },
+  "contact_type": {
+    "confusable_siblings": {
+      "acc": 0.7734,
+      "kappa": 0.5468,
+      "error_rate": 0.2266,
+      "n": 1293
+    },
+    "incompatibility": {
+      "acc": 0.7807,
+      "kappa": 0.5613,
+      "error_rate": 0.2193,
+      "n": 3050
+    }
+  },
+  "force_type": {
+    "confusable_siblings": {
+      "acc": 0.7735,
+      "kappa": 0.547,
+      "error_rate": 0.2265,
+      "n": 1479
+    },
+    "incompatibility": {
+      "acc": 0.8912,
+      "kappa": 0.7824,
+      "error_rate": 0.1088,
+      "n": 3410
+    }
+  },
+  "contact_part": {
+    "confusable_siblings": {
+      "acc": 0.7662,
+      "kappa": 0.5325,
+      "error_rate": 0.2338,
+      "n": 847
+    },
+    "incompatibility": {
+      "acc": 0.8737,
+      "kappa": 0.7474,
+      "error_rate": 0.1263,
+      "n": 2930
+    }
+  },
+  "posture_alignment": {
+    "confusable_siblings": {
+      "acc": 0.6816,
+      "kappa": 0.3632,
+      "error_rate": 0.3184,
+      "n": 7155
+    },
+    "incompatibility": {
+      "acc": 0.8724,
+      "kappa": 0.7448,
+      "error_rate": 0.1276,
+      "n": 4977
+    }
+  },
+  "trajectory": {
+    "confusable_siblings": {
+      "acc": 0.9081,
+      "kappa": 0.8162,
+      "error_rate": 0.0919,
+      "n": 1545
+    },
+    "incompatibility": {
+      "acc": 0.9636,
+      "kappa": 0.9272,
+      "error_rate": 0.0364,
+      "n": 3432
+    }
+  },
+  "force_part": {
+    "confusable_siblings": {
+      "acc": 0.8803,
+      "kappa": 0.7607,
+      "error_rate": 0.1197,
+      "n": 4020
+    },
+    "incompatibility": {
+      "acc": 0.9285,
+      "kappa": 0.857,
+      "error_rate": 0.0715,
+      "n": 1510
+    }
+  }
+}
