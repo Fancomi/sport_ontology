@@ -117,8 +117,12 @@ def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
         _inflight[idx] += 1
     t_lock = time.perf_counter() if _TIMING else 0.0
 
-    # 上次该线程调用结束的时间（idle gap = 上次结束 → 本次 enter）
+    # 同线程两次调用的间隔：上次 t_enter → 本次 t_enter（= 上次 total + idle）
+    interval_ms = (t_enter - _tls.last_enter) * 1000 if (_TIMING and hasattr(_tls, "last_enter")) else 0.0
+    # 上次调用结束 → 本次进入的空闲时长
     idle_ms = (t_enter - _tls.last_end) * 1000 if (_TIMING and hasattr(_tls, "last_end")) else 0.0
+    if _TIMING:
+        _tls.last_enter = t_enter
 
     c, mid, eb = clients[idx]
     try:
@@ -147,8 +151,9 @@ def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
             prep_ms  = (t_prep - t_lock)  * 1000
             pre_ms   = (t_prep - t_enter) * 1000   # 入口→create() 总准备时间
             total_ms = (t_done - t_enter) * 1000
-            timing_str = (f"  [p{8000+idx+1}|idle={idle_ms:.0f}ms"
-                          f" pre={pre_ms:.1f}ms(lock={lock_ms:.1f}+prep={prep_ms:.1f})"
+            timing_str = (f"  [p{8000+idx+1}|interval={interval_ms:.0f}ms"
+                          f" idle={idle_ms:.0f}ms pre={pre_ms:.1f}ms"
+                          f"(lock={lock_ms:.1f}+prep={prep_ms:.1f})"
                           f" content={content_ms:.1f}ms http={http_ms:.0f}ms"
                           f" concur={concur} total={total_ms:.0f}ms]")
         rec = {
