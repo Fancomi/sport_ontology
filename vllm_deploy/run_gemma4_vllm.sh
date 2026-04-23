@@ -33,7 +33,6 @@ for i in $(seq 0 7); do
     PORT=$((8001 + i))
     # VLLM_PORT 指定内部端口扫描起点，每实例间隔 20，避免 race condition
     VLLM_PORT=$((20000 + i * 20)) CUDA_VISIBLE_DEVICES=$i vllm serve $MODEL \
-        --enable-expert-parallel \
         --gpu-memory-utilization 0.90 \
         --dtype bfloat16 \
         --kv-cache-dtype fp8 \
@@ -43,6 +42,7 @@ for i in $(seq 0 7); do
         --enable-prefix-caching \
         --uvicorn-log-level warning \
         --port $PORT &
+        # --enable-expert-parallel \
     echo "  GPU $i → port $PORT, VLLM_PORT=$((20000 + i * 20)) (pid $!)"
 done
 
