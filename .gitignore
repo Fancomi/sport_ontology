@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+*eval_results*
+*eval_stats*
+*hard_all*
+*output.txt
 *BAKUP*
 *.DS_Store
 .claudian
