@@ -15,7 +15,7 @@ from pathlib import Path
 from threading import Lock
 
 from config import DATA_ROOT, LangPaths, augment_name
-from llm_client import build_vlm_clients, parse_ports
+from llm_client import build_vlm_endpoints, frames_to_img_bytes, parse_ports, VLMEndpoint
 from ontology_utils import SLOT_RE, build_lookup
 from video_frames import ensure_frames, FPS_DEFAULT
 
@@ -23,8 +23,9 @@ VIEWS          = ("front", "side")
 ANS_RE         = re.compile(r"\((\d+)\)=([A-Da-d])")
 N_CHOICES_MAX  = 4
 MAX_TOKENS     = 256
+_MAX_B         = str(MAX_TOKENS).encode()
 
-# least-inflight 客户端调度（与 8_eval_confusable 保持一致）
+# least-inflight 客户端调度
 _inflight: list[int] = []
 _inf_lock = Lock()
 
@@ -146,15 +147,17 @@ def format_prompt(cloze_text: str, slots_info: list[dict], lang: str = 'cn') -> 
 
 # ── VLM 调用 ─────────────────────────────────────────────────────────────────
 
-def call_vlm(frames: list[str], prompt: str, client, model: str, extra_body: dict) -> str:
-    content = [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{f}"}}
-               for f in frames] + [{"type": "text", "text": prompt}]
+def call_vlm(img_bytes: bytes, prompt: str, ep: VLMEndpoint) -> str:
+    text_b = b'{"type":"text","text":' + json.dumps(prompt).encode() + b'}'
+    content = img_bytes[:-1] + b',' + text_b + b']'
+    body = (b'{"model":' + ep.mod_b +
+            b',"messages":[{"role":"user","content":' + content + b'}]' +
+            b',"max_tokens":' + _MAX_B + b',"temperature":0.0' +
+            (b',' + ep.ext_b if ep.ext_b else b'') + b'}')
     try:
-        kw = dict(model=model, messages=[{"role": "user", "content": content}],
-                  max_tokens=MAX_TOKENS, temperature=0.0)
-        if extra_body:
-            kw["extra_body"] = extra_body
-        return client.chat.completions.create(**kw).choices[0].message.content.strip()
+        r = ep.session.post(ep.url, content=body,
+                            headers={"Content-Type": "application/json"})
+        return r.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
         print(f"  ✗ VLM: {e}")
         return ""
@@ -162,8 +165,8 @@ def call_vlm(frames: list[str], prompt: str, client, model: str, extra_body: dic
 
 # ── 单文件评测 ────────────────────────────────────────────────────────────────
 
-def eval_file(src: Path, frames: list[str], client, model: str,
-              lookup: dict, ontology: dict, extra_body: dict,
+def eval_file(src: Path, img_bytes: bytes, ep: VLMEndpoint,
+              lookup: dict, ontology: dict,
               min_choices: int = 2, lang: str = 'cn') -> list[dict]:
     data = json.loads(src.read_text("utf-8"))
     text = data.get("category_3_slotted_description", "")
@@ -175,7 +178,7 @@ def eval_file(src: Path, frames: list[str], client, model: str,
         return []
 
     prompt   = format_prompt(cloze_text, slots_info, lang)
-    response = call_vlm(frames, prompt, client, model, extra_body)
+    response = call_vlm(img_bytes, prompt, ep)
     answers  = {int(m.group(1)): m.group(2).upper() for m in ANS_RE.finditer(response)}
 
     results = []
@@ -211,13 +214,13 @@ def main() -> None:
     ontology = json.loads(LangPaths(args.lang).slot_ontology.read_text("utf-8"))
     lookup   = build_lookup(ontology)
 
-    vlm_clients = []
+    vlm_eps: list[VLMEndpoint] = []
     if not args.dry_run:
-        vlm_clients = build_vlm_clients(args.host, parse_ports(args.port))
-        if not vlm_clients:
+        vlm_eps = build_vlm_endpoints(args.host, parse_ports(args.port))
+        if not vlm_eps:
             print(f"✗ 无法连接 {args.host}:{args.port}", file=sys.stderr); sys.exit(1)
-        _inflight[:] = [0] * len(vlm_clients)
-        print(f"模型: {vlm_clients[0][1]}\n")
+        _inflight[:] = [0] * len(vlm_eps)
+        print(f"模型: {vlm_eps[0].mod_b.decode().strip(chr(34))}\n")
 
     files = [p for v in VIEWS for p in DATA_ROOT.rglob(augment_name(v, args.lang))]
     if args.limit:
@@ -237,7 +240,7 @@ def main() -> None:
     def _process(idx_f):
         nonlocal sent_total, sent_correct
         i, src     = idx_f
-        view       = src.stem.split("_")[-1]
+        view       = src.stem.split("_")[1]
         video_path = src.parent / f"{view}.mp4"
         rel        = src.parent.relative_to(DATA_ROOT)
 
@@ -255,12 +258,13 @@ def main() -> None:
             with print_lock: print(f"{'─'*60}\n{format_prompt(cloze, si, args.lang)}\n{'─'*60}")
             return
 
+        img_bytes = frames_to_img_bytes(frames)
         with _inf_lock:
             idx = _inflight.index(min(_inflight))
             _inflight[idx] += 1
-        c, mid, eb = vlm_clients[idx]
+        ep = vlm_eps[idx]
         try:
-            records = eval_file(src, frames, c, mid, lookup, ontology, eb, args.min_choices, args.lang)
+            records = eval_file(src, img_bytes, ep, lookup, ontology, args.min_choices, args.lang)
         finally:
             with _inf_lock:
                 _inflight[idx] = max(0, _inflight[idx] - 1)

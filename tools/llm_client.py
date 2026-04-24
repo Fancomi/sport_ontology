@@ -6,7 +6,9 @@ import threading
 import time
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from typing import Optional
+import httpx
 from openai import OpenAI
 
 # ── 后端检测工具 ──────────────────────────────────────────────────────────────
@@ -70,34 +72,31 @@ def parse_json_response(text: str) -> Optional[dict]:
         return None
 
 
-def build_vlm_clients(host: str, ports: list[int]) -> list[tuple]:
-    """构建 VLM (OpenAI) 客户端列表，每个元素为 (client, model_id, extra_body)。
-    并发探测各端口，不可达或返回错误的端口自动跳过。
-    """
-    from concurrent.futures import ThreadPoolExecutor, as_completed as _as_completed
-
+def _probe_vlm_ports(host: str, ports: list[int]) -> dict:
+    """并发探测各端口，返回 {port: (c, mid, eb) | Exception}。"""
     def _probe(port: int):
         c = OpenAI(api_key='EMPTY', base_url=f'http://{host}:{port}/v1')
         bk, mid = detect_server_info(c)
         if not mid:
             raise RuntimeError('no model')
-        eb = make_extra_body(bk, mid)
-        return port, c, mid, eb
+        return c, mid, make_extra_body(bk, mid)
 
-    results = {}  # port -> (c, mid, eb) | Exception
+    results = {}
     with ThreadPoolExecutor(max_workers=len(ports)) as pool:
         futures = {pool.submit(_probe, p): p for p in ports}
-        for fut in _as_completed(futures):
+        for fut in as_completed(futures):
             port = futures[fut]
             try:
-                _, c, mid, eb = fut.result()
-                results[port] = (c, mid, eb)
+                results[port] = fut.result()
             except Exception as e:
                 results[port] = e
+    return results
 
+
+def build_vlm_clients(host: str, ports: list[int]) -> list[tuple]:
+    """构建 VLM (OpenAI) 客户端列表，每个元素为 (client, model_id, extra_body)。"""
     clients = []
-    for port in ports:
-        r = results[port]
+    for port, r in sorted(_probe_vlm_ports(host, ports).items()):
         if isinstance(r, Exception):
             print(f'  VLM [{port}]: 连接失败 {r}')
         else:
@@ -105,6 +104,43 @@ def build_vlm_clients(host: str, ports: list[int]) -> list[tuple]:
             print(f'  VLM [{port}]: {mid.split("/")[-1]}' + (f'  {eb}' if eb else ''))
             clients.append((c, mid, eb))
     return clients
+
+
+# ── httpx 高性能 VLM 端点 ─────────────────────────────────────────────────────
+
+@dataclass
+class VLMEndpoint:
+    """预序列化的 httpx VLM 端点，消除 Phase 2 中的 GIL 热点。"""
+    session: httpx.Client
+    url:     str
+    mod_b:   bytes   # json.dumps(model_id).encode()
+    ext_b:   bytes   # extra_body JSON 片段，b'' 表示无
+
+
+def build_vlm_endpoints(host: str, ports: list[int]) -> list[VLMEndpoint]:
+    """构建 VLMEndpoint 列表（raw httpx，绕过 OpenAI 客户端的 json.dumps 开销）。"""
+    eps = []
+    for port, r in sorted(_probe_vlm_ports(host, ports).items()):
+        if isinstance(r, Exception):
+            print(f'  VLM [{port}]: 连接失败 {r}')
+        else:
+            _, mid, eb = r
+            print(f'  VLM [{port}]: {mid.split("/")[-1]}' + (f'  {eb}' if eb else ''))
+            ext_b = (json.dumps(eb, separators=(',', ':'))[1:-1].encode() if eb else b'')
+            eps.append(VLMEndpoint(
+                session=httpx.Client(timeout=120),
+                url=f'http://{host}:{port}/v1/chat/completions',
+                mod_b=json.dumps(mid).encode(),
+                ext_b=ext_b,
+            ))
+    return eps
+
+
+def frames_to_img_bytes(frames: list[str]) -> bytes:
+    """将 base64 帧列表预序列化为 JSON 数组字节（不含文本项），供 call_vlm_raw 复用。"""
+    parts = [b'{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,' +
+             f.encode() + b'"}}' for f in frames]
+    return b'[' + b','.join(parts) + b']'
 
 
 # ── POE 默认配置 ──────────────────────────────────────────────────────────────

@@ -4,6 +4,9 @@
 两阶段流水线：
   Phase 1: 并行帧加载 + 负样本采样 → 全量 WorkItem 列表（IO/CPU 密集）
   Phase 2: 并发 VLM 评测，least-inflight 负载均衡（GPU 密集）
+
+优化：帧在 Phase 1 预序列化为 img_bytes，Phase 2 用 raw httpx 直发，
+消除 8 线程同时 json.dumps 大 payload 的 GIL 热点。
 """
 
 import argparse, json, random, sys, threading
@@ -15,12 +18,14 @@ from threading import Lock
 
 from config import DATA_ROOT, LangPaths, augment_name
 from hard_utils import load_hard_all, save_hard_all, slotted_desc
-from llm_client import build_vlm_clients, parse_ports
+from llm_client import (build_vlm_endpoints, frames_to_img_bytes, parse_ports,
+                         VLMEndpoint)
 from ontology_utils import (build_lookup, load_weights,
                              replace_slot, sample_negatives, strip_slots)
 from video_frames import ensure_frames, FPS_DEFAULT
 
 VIEWS, MAX_TOKENS = ("front", "side"), 8
+_MAX_B = str(MAX_TOKENS).encode()
 _PROMPT = {
     'cn': (
         "以上是一段健身动作视频。以下有两句文字描述，哪一句更符合实际视频？\n"
@@ -41,7 +46,6 @@ _inf_lock = Lock()
 
 
 def _rng(seed: int) -> random.Random:
-    """线程独立 RNG（seed ^ thread_id）。"""
     if not hasattr(_tls, "rng"):
         _tls.rng = random.Random(seed ^ (threading.get_ident() & 0xFFFFFFFF))
     return _tls.rng
@@ -54,40 +58,41 @@ def _log(*a) -> None:
 
 @dataclass
 class WorkItem:
-    mode:     str    # "conf" | "hard"
-    frames:   list
-    neg:      dict   # {category_3_slotted_description, source, replaced_slot, original_value, new_value}
-    original: str    # strip_slots 后的正描述
-    rel:      str
-    view:     str
+    mode:      str    # "conf" | "hard"
+    img_bytes: bytes  # 预序列化的图像 JSON 数组字节
+    neg:       dict   # {category_3_slotted_description, source, replaced_slot, original_value, new_value}
+    original:  str    # strip_slots 后的正描述
+    rel:       str
+    view:      str
 
 
-def call_vlm(frames: list, prompt: str, client, model: str,
-             extra_body: dict | None = None) -> str:
-    content = ([{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{f}"}}
-                for f in frames] + [{"type": "text", "text": prompt}])
+def call_vlm(img_bytes: bytes, prompt: str, ep: VLMEndpoint) -> str:
+    """raw httpx 调用，img_bytes 已预序列化，仅追加小文本 payload。"""
+    text_b = b'{"type":"text","text":' + json.dumps(prompt).encode() + b'}'
+    content = img_bytes[:-1] + b',' + text_b + b']'
+    body = (b'{"model":' + ep.mod_b +
+            b',"messages":[{"role":"user","content":' + content + b'}]' +
+            b',"max_tokens":' + _MAX_B + b',"temperature":0.0' +
+            (b',' + ep.ext_b if ep.ext_b else b'') + b'}')
     try:
-        kw = dict(model=model, messages=[{"role": "user", "content": content}],
-                  max_tokens=MAX_TOKENS, temperature=0.0)
-        if extra_body:
-            kw["extra_body"] = extra_body
-        return client.chat.completions.create(**kw).choices[0].message.content.strip().upper()
+        r = ep.session.post(ep.url, content=body,
+                            headers={"Content-Type": "application/json"})
+        return r.json()["choices"][0]["message"]["content"].strip().upper()
     except Exception as e:
         _log(f"  ✗ VLM: {e}")
         return ""
 
 
-def eval_one(item: WorkItem, clients: list, seed: int, lang: str = 'cn') -> dict | None:
-    """单条 neg 二选一评测。_log_line 由主线程在 write_lock 内统一打印。"""
+def eval_one(item: WorkItem, eps: list[VLMEndpoint], seed: int, lang: str = 'cn') -> dict | None:
     with _inf_lock:
         idx = _inflight.index(min(_inflight))
         _inflight[idx] += 1
-    c, mid, eb = clients[idx]
+    ep = eps[idx]
     try:
         a_is_orig = _rng(seed).random() < 0.5
         neg_text  = strip_slots(item.neg["category_3_slotted_description"])
         a, b      = (item.original, neg_text) if a_is_orig else (neg_text, item.original)
-        answer    = call_vlm(item.frames, _PROMPT[lang].format(a=a, b=b), c, mid, eb)
+        answer    = call_vlm(item.img_bytes, _PROMPT[lang].format(a=a, b=b), ep)
         letter    = answer[0] if answer and answer[0] in "AB" else ""
         if not letter:
             return None
@@ -110,7 +115,7 @@ def eval_one(item: WorkItem, clients: list, seed: int, lang: str = 'cn') -> dict
 
 def collect_conf(src: Path, lookup, conf_w, inco_w, done: set,
                  fps: float, max_side: int, seed: int) -> list[WorkItem]:
-    view   = src.stem.split("_")[-1]
+    view   = src.stem.split("_")[1]
     frames = ensure_frames(src.parent / f"{view}.mp4", fps, max_side)
     if not frames:
         return []
@@ -118,9 +123,10 @@ def collect_conf(src: Path, lookup, conf_w, inco_w, done: set,
     orig_s = aug.get("category_3_slotted_description", "")
     if not orig_s:
         return []
-    rel  = str(src.parent.relative_to(DATA_ROOT))
-    orig = strip_slots(orig_s)
-    return [WorkItem("conf", frames, n, orig, rel, view)
+    rel      = str(src.parent.relative_to(DATA_ROOT))
+    orig     = strip_slots(orig_s)
+    img_b    = frames_to_img_bytes(frames)
+    return [WorkItem("conf", img_b, n, orig, rel, view)
             for n in sample_negatives(orig_s, lookup, conf_w, inco_w, rng=_rng(seed))
             if f"{rel}|{view}|{n['replaced_slot']}|{n['original_value']}|{n['new_value']}" not in done]
 
@@ -135,13 +141,14 @@ def collect_hard(dir_path: Path, view: str, key_rec_map: dict,
     if not orig_s:
         return []
     orig  = strip_slots(orig_s)
+    img_b = frames_to_img_bytes(frames)
     items = []
     for k, rec in sorted(key_rec_map.items(), key=lambda x: x[0][2:]):
         _, _, slot, ov, nv = k
         neg_s = replace_slot(orig_s, slot, ov, nv)
         if neg_s == orig_s or f"{rel}|{view}|{slot}|{ov}|{nv}" in done:
             continue
-        items.append(WorkItem("hard", frames,
+        items.append(WorkItem("hard", img_b,
                               {"category_3_slotted_description": neg_s, "source": rec["source"],
                                "replaced_slot": slot, "original_value": ov, "new_value": nv},
                               orig, rel, view))
@@ -186,16 +193,14 @@ def load_done(path: Path) -> set[str]:
 
 def main() -> None:
     pa = argparse.ArgumentParser(description="Script 8: VLM 混淆句评测（两阶段流水线）")
-    pa.add_argument("--lang",     default="cn", choices=["cn", "en"],
-                    help="语言版本，决定读取的 augment 文件与输出文件名（默认 cn）")
+    pa.add_argument("--lang",     default="cn", choices=["cn", "en"])
     pa.add_argument("--mode",     choices=["confusable", "hard", "all"], default="all")
     pa.add_argument("--host",     default="127.0.0.1")
     pa.add_argument("--port",     default="8000", help="逗号分隔多端口")
     pa.add_argument("--fps",      type=float, default=FPS_DEFAULT)
     pa.add_argument("--max-side", type=int,   default=768, dest="max_side")
-    pa.add_argument("--out",      default=None, help="eval_results 输出路径（默认 eval_results_{lang}.jsonl）")
-    pa.add_argument("--out-hard", default=None, dest="out_hard",
-                    help="eval_results_hard 输出路径（默认 eval_results_hard_{lang}.jsonl）")
+    pa.add_argument("--out",      default=None)
+    pa.add_argument("--out-hard", default=None, dest="out_hard")
     pa.add_argument("--limit",    type=int, default=0, help="调试：限制目录数")
     pa.add_argument("--dry-run",  action="store_true", dest="dry_run")
     pa.add_argument("--seed",     type=int, default=42)
@@ -208,14 +213,15 @@ def main() -> None:
 
     random.seed(args.seed)
 
-    clients = []
+    eps = []
     if not args.dry_run:
-        clients = build_vlm_clients(args.host, parse_ports(args.port))
-        if not clients:
+        eps = build_vlm_endpoints(args.host, parse_ports(args.port))
+        if not eps:
             print(f"✗ 无法连接 {args.host}:{args.port}", file=sys.stderr)
             sys.exit(1)
-        _inflight[:] = [0] * len(clients)
-        print(f"模型: {clients[0][1]}  workers={args.workers}")
+        _inflight[:] = [0] * len(eps)
+        model_tag = eps[0].mod_b.decode().strip('"')
+        print(f"模型: {model_tag}  workers={args.workers}")
 
     lookup = conf_w = inco_w = None
     if args.mode in ("confusable", "all"):
@@ -252,10 +258,6 @@ def main() -> None:
     if done_conf: print(f"[resume] confusable 已完成 {len(done_conf)} 条")
     if done_hard: print(f"[resume] hard       已完成 {len(done_hard)} 条")
 
-    # ── Phase 1: 并行帧加载 + 采样 ────────────────────────────────────────────
-    print(f"\n[Phase 1] 帧加载 + 采样  workers={args.workers}")
-    items: list[WorkItem] = []
-
     def _gc(src):
         return collect_conf(src, lookup, conf_w, inco_w, done_conf,
                             args.fps, args.max_side, args.seed)
@@ -264,43 +266,57 @@ def main() -> None:
         (dp, v), krm = task
         return collect_hard(dp, v, krm, done_hard, args.fps, args.max_side)
 
-    with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futs = [pool.submit(_gc, s) for s in aug_files] + \
-               [pool.submit(_gh, t) for t in hard_tasks]
-        for f in as_completed(futs):
-            items += f.result()
-
-    n_conf = sum(1 for it in items if it.mode == "conf")
-    n_hard = sum(1 for it in items if it.mode == "hard")
-    print(f"[Phase 1] 完成: conf={n_conf}  hard={n_hard}  total={len(items)}\n")
-
     if args.dry_run:
+        print(f"\n[Phase 1] 帧加载 + 采样  workers={args.workers}")
+        items: list[WorkItem] = []
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            futs = [pool.submit(_gc, s) for s in aug_files] + \
+                   [pool.submit(_gh, t) for t in hard_tasks]
+            for f in as_completed(futs):
+                items += f.result()
         for it in items[:4]:
             print(f"{'─'*60}\n{_PROMPT[args.lang].format(a=it.original, b=strip_slots(it.neg['category_3_slotted_description']))}\n")
         return
 
-    if not items:
-        print("无待评测项，退出")
-        return
-
-    # ── Phase 2: 并发 VLM 评测 ────────────────────────────────────────────────
-    print(f"[Phase 2] VLM 评测  {len(items)} 条  workers={args.workers}")
+    # ── Phase 1 + Phase 2 流水线 ──────────────────────────────────────────────
+    # Phase 1 通过 add_done_callback 把结果直接提交给 p2_pool，
+    # p1_pool 退出后 p2_map 全量填充，再用 as_completed 收结果写盘。
+    print(f"\n[Phase 1+2] 流水线评测  workers={args.workers}")
     write_lock   = Lock()
+    p2_map: dict = {}
+    p2_lock      = Lock()
     hard_records: list[dict] = []
     c_total = c_ok = h_total = h_ok = done_cnt = 0
 
-    with (out_path.open("a", encoding="utf-8") as fout,
-          out_hard_path.open("a", encoding="utf-8") as fout_hard,
-          ThreadPoolExecutor(max_workers=args.workers) as pool):
+    p2_pool = ThreadPoolExecutor(max_workers=len(eps))
 
-        futs = {pool.submit(eval_one, it, clients, args.seed, args.lang): it for it in items}
-        for fut in as_completed(futs):
+    def _on_p1(fut):
+        try:
+            new_items = fut.result() or []
+        except Exception as e:
+            _log(f"  ✗ Phase1: {e}")
+            return
+        for it in new_items:
+            f = p2_pool.submit(eval_one, it, eps, args.seed, args.lang)
+            with p2_lock:
+                p2_map[f] = it
+
+    with ThreadPoolExecutor(max_workers=args.workers) as p1_pool:
+        for src in aug_files:
+            p1_pool.submit(_gc, src).add_done_callback(_on_p1)
+        for t in hard_tasks:
+            p1_pool.submit(_gh, t).add_done_callback(_on_p1)
+    # p1_pool 退出：所有 Phase 1 完成，所有 _on_p1 回调已执行，p2_map 全量填充
+
+    with (out_path.open("a", encoding="utf-8") as fout,
+          out_hard_path.open("a", encoding="utf-8") as fout_hard):
+        for fut in as_completed(p2_map):
             record   = fut.result()
-            it       = futs[fut]
+            it       = p2_map[fut]
             done_cnt += 1
             if record is None:
                 if done_cnt % 200 == 0:
-                    print(f"  进度 {done_cnt}/{len(items)}  conf={c_total} hard={h_total}")
+                    print(f"  进度 {done_cnt}/{len(p2_map)}  conf={c_total} hard={h_total}")
                 continue
             log_line = record.pop("_log_line", None)
             with write_lock:
@@ -313,20 +329,22 @@ def main() -> None:
                     hard_records.append(record)
                     h_total += 1; h_ok += record["is_correct"]
                 if done_cnt % 200 == 0:
-                    print(f"  进度 {done_cnt}/{len(items)}  conf={c_total} hard={h_total}")
+                    print(f"  进度 {done_cnt}/{len(p2_map)}  conf={c_total} hard={h_total}")
                     fout.flush(); fout_hard.flush()
         fout.flush(); fout_hard.flush()
 
+    p2_pool.shutdown(wait=True)
+
     if hard_records:
-        model_name = clients[0][1].split("/")[-1] if clients else "unknown"
+        model_name = eps[0].mod_b.decode().strip('"').split("/")[-1] if eps else "unknown"
         flush_hard_all(hard_records, model_name, args.lang)
         print(f"\n[hard_all] 已更新 {len(hard_records)} 条  model={model_name}")
 
     print("\n[DONE]")
     if c_total:
-        print(f"  confusable {c_total}条  准确率 {c_ok/c_total*100:.1f}%  → {args.out}")
+        print(f"  confusable {c_total}条  准确率 {c_ok/c_total*100:.1f}%  → {out_path.name}")
     if h_total:
-        print(f"  hard       {h_total}条  准确率 {h_ok/h_total*100:.1f}%  → {args.out_hard}")
+        print(f"  hard       {h_total}条  准确率 {h_ok/h_total*100:.1f}%  → {out_hard_path.name}")
 
 
 if __name__ == "__main__":
