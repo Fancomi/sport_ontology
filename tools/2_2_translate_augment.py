@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""将 augment_*.json 的中文描述翻译为英文，输出为同目录 augment_{view}_en.json。
+"""将 augment_*_cn.json 的中文描述翻译为英文，输出为同目录 augment_{view}.json。
 
 翻译策略：
-  - 以 augment_*.json（中文）为主要信息源，内容语义对齐为核心
+  - 以 augment_*_cn.json（中文）为主要信息源，内容语义对齐为核心
   - 以 metadata.json 原始英文作为弱约束参考（动作名称、器械等术语）
   - 以 slot_ontology.json 中各节点的 en 字段作为槽位值的译文参考
   - 若原文有更自然的表达，允许使用新译法（优先流畅性 > 死板对照）
@@ -27,10 +27,10 @@ from llm_client import LLMClient, parse_ports, parse_json_response
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
 ONTOLOGY_PATH = Path(__file__).resolve().parent / 'slot_ontology.json'
-VIEWS         = [('front', 'augment_front.json', 'augment_front_en.json'),
-                 ('side',  'augment_side.json',  'augment_side_en.json')]
-TRANSLATE_KEY = '_en_translated'       # 标记已完成翻译
-QC_KEY        = '_en_validated'        # 标记 QC 已通过
+VIEWS         = [('front', 'augment_front_cn.json', 'augment_front.json'),
+                 ('side',  'augment_side_cn.json',  'augment_side.json')]
+TRANSLATE_KEY = '_translated'       # 标记已完成翻译
+QC_KEY        = '_validated'        # 标记 QC 已通过
 
 # ── Ontology 槽位值中英对照表 ──────────────────────────────────────────────────
 def _load_slot_en_map() -> dict[str, str]:
@@ -272,7 +272,7 @@ def process_one(meta_cn_path: Path, client: LLMClient,
 
 # ── 入口 ──────────────────────────────────────────────────────────────────────
 def main() -> None:
-    parser = argparse.ArgumentParser(description='将 augment_*.json 翻译为英文')
+    parser = argparse.ArgumentParser(description='将 augment_*_cn.json 翻译为英文 augment_{view}.json')
     parser.add_argument('--host',          default='127.0.0.1')
     parser.add_argument('--port',          default='8001',
                         help='LLM 端口，逗号分隔多端口 (e.g. 8001,8002,...)')

@@ -13,10 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 
-from config import DATA_ROOT
+from config import DATA_ROOT, LangPaths, augment_name
 from hard_utils import load_hard_all, save_hard_all, slotted_desc
 from llm_client import build_vlm_clients, parse_ports
-from ontology_utils import (ONTOLOGY_PATH, build_lookup, load_weights,
+from ontology_utils import (build_lookup, load_weights,
                              replace_slot, sample_negatives, strip_slots)
 from video_frames import ensure_frames, FPS_DEFAULT
 
@@ -143,10 +143,10 @@ def collect_hard(dir_path: Path, view: str, key_rec_map: dict,
 
 # ── hard_all 批量写回 ─────────────────────────────────────────────────────────
 
-def flush_hard_all(records: list[dict], model_name: str) -> None:
+def flush_hard_all(records: list[dict], model_name: str, lang: str = 'cn') -> None:
     if not records:
         return
-    hist = load_hard_all()
+    hist = load_hard_all(lang)
     for r in records:
         key = (r["video"], r["view"], r["replaced_slot"], r["original_value"], r["new_value"])
         if key not in hist:
@@ -158,7 +158,7 @@ def flush_hard_all(records: list[dict], model_name: str) -> None:
             hist[key]["error_count"] = hist[key].get("error_count", 0) + 1
             hist[key].setdefault("error_by_model", {})[model_name] = \
                 hist[key]["error_by_model"].get(model_name, 0) + 1
-    save_hard_all(hist)
+    save_hard_all(hist, lang)
 
 
 def load_done(path: Path) -> set[str]:
@@ -179,18 +179,25 @@ def load_done(path: Path) -> set[str]:
 
 def main() -> None:
     pa = argparse.ArgumentParser(description="Script 8: VLM 混淆句评测（两阶段流水线）")
+    pa.add_argument("--lang",     default="cn", choices=["cn", "en"],
+                    help="语言版本，决定读取的 augment 文件与输出文件名（默认 cn）")
     pa.add_argument("--mode",     choices=["confusable", "hard", "all"], default="all")
     pa.add_argument("--host",     default="127.0.0.1")
     pa.add_argument("--port",     default="8000", help="逗号分隔多端口")
     pa.add_argument("--fps",      type=float, default=FPS_DEFAULT)
     pa.add_argument("--max-side", type=int,   default=768, dest="max_side")
-    pa.add_argument("--out",      default="eval_results.jsonl")
-    pa.add_argument("--out-hard", default="eval_results_hard.jsonl", dest="out_hard")
+    pa.add_argument("--out",      default=None, help="eval_results 输出路径（默认 eval_results_{lang}.jsonl）")
+    pa.add_argument("--out-hard", default=None, dest="out_hard",
+                    help="eval_results_hard 输出路径（默认 eval_results_hard_{lang}.jsonl）")
     pa.add_argument("--limit",    type=int, default=0, help="调试：限制目录数")
     pa.add_argument("--dry-run",  action="store_true", dest="dry_run")
     pa.add_argument("--seed",     type=int, default=42)
     pa.add_argument("-w", "--workers", type=int, default=1)
     args = pa.parse_args()
+
+    lp = LangPaths(args.lang)
+    out_path      = Path(args.out)      if args.out      else lp.eval_results
+    out_hard_path = Path(args.out_hard) if args.out_hard else lp.eval_results_hard
 
     random.seed(args.seed)
 
@@ -205,9 +212,9 @@ def main() -> None:
 
     lookup = conf_w = inco_w = None
     if args.mode in ("confusable", "all"):
-        ontology       = json.loads(ONTOLOGY_PATH.read_text("utf-8"))
+        ontology       = json.loads(lp.slot_ontology.read_text("utf-8"))
         lookup         = build_lookup(ontology)
-        conf_w, inco_w = load_weights()
+        conf_w, inco_w = load_weights(lang=args.lang)
 
     # ── 文件收集 ──────────────────────────────────────────────────────────────
     aug_files:  list[Path]  = []
@@ -215,11 +222,11 @@ def main() -> None:
 
     if args.mode in ("confusable", "all"):
         for v in VIEWS:
-            aug_files += list(DATA_ROOT.rglob(f"augment_{v}.json"))
+            aug_files += list(DATA_ROOT.rglob(augment_name(v, args.lang)))
 
     if args.mode in ("hard", "all"):
         by_vv: dict[tuple, dict] = defaultdict(dict)
-        for k, rec in load_hard_all().items():
+        for k, rec in load_hard_all(args.lang).items():
             by_vv[(DATA_ROOT / k[0], k[1])][k] = rec
         hard_tasks = list(by_vv.items())
 
@@ -231,10 +238,10 @@ def main() -> None:
 
     n_dirs = len({f.parent for f in aug_files} | {d for (d, _), _ in hard_tasks})
     print(f"\n目录={n_dirs}  augment={len(aug_files)}  hard_groups={len(hard_tasks)}"
-          f"  out={args.out}  out_hard={args.out_hard}")
+          f"  out={out_path.name}  out_hard={out_hard_path.name}")
 
-    done_conf = load_done(Path(args.out))
-    done_hard = load_done(Path(args.out_hard)) if args.mode in ("hard", "all") else set()
+    done_conf = load_done(out_path)
+    done_hard = load_done(out_hard_path) if args.mode in ("hard", "all") else set()
     if done_conf: print(f"[resume] confusable 已完成 {len(done_conf)} 条")
     if done_hard: print(f"[resume] hard       已完成 {len(done_hard)} 条")
 
@@ -275,8 +282,8 @@ def main() -> None:
     hard_records: list[dict] = []
     c_total = c_ok = h_total = h_ok = done_cnt = 0
 
-    with (Path(args.out).open("a", encoding="utf-8") as fout,
-          Path(args.out_hard).open("a", encoding="utf-8") as fout_hard,
+    with (out_path.open("a", encoding="utf-8") as fout,
+          out_hard_path.open("a", encoding="utf-8") as fout_hard,
           ThreadPoolExecutor(max_workers=args.workers) as pool):
 
         futs = {pool.submit(eval_one, it, clients, args.seed): it for it in items}
@@ -305,7 +312,7 @@ def main() -> None:
 
     if hard_records:
         model_name = clients[0][1].split("/")[-1] if clients else "unknown"
-        flush_hard_all(hard_records, model_name)
+        flush_hard_all(hard_records, model_name, args.lang)
         print(f"\n[hard_all] 已更新 {len(hard_records)} 条  model={model_name}")
 
     print("\n[DONE]")

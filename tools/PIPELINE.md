@@ -10,7 +10,6 @@
 | `2_augment_wiki` | `metadata_cn.json` + 视频 | `augment_{view}.json` | VLM 生成槽位描述，内嵌 QC 循环 |
 | `2_1_check_augment` | `augment_{view}.json` | `augment_{view}.json`（原地） | 两层槽位质检（独立批量或内嵌于 step 2） |
 | `3_collect_slots` | `augment_{view}.json` | `slot_vocab.json` + PNG | 槽位词频统计与可视化 |
-| ~~`4_fetch_vocab_info`~~ | ~~—~~ | ~~—~~ | **已删除**（Wordnet 信息收集，用途有限） |
 | `5_enrich_with_llm` | `slot_vocab.json` | `slot_ontology.json` | LLM 构建本体（8 类关系属性） |
 | `5_1_clean_ontology` | `slot_ontology.json` | `slot_ontology.json`（原地） | LLM 删减 R1/R2/R3/I1/I2 违规关系 |
 | `6_build_wiki` | `slot_ontology.json` | `../sport_ontology/**/*.md` | 构建 Obsidian 可视化本体 |

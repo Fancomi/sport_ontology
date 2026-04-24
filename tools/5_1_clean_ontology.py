@@ -22,7 +22,9 @@ from pathlib import Path
 from threading import Lock
 from llm_client import LLMClient, parse_ports, parse_json_response
 
-ONTO_PATH     = Path(__file__).parent / "slot_ontology.json"
+from config import LangPaths
+
+ONTO_PATH     = LangPaths('cn').slot_ontology
 PROGRESS_PATH = Path(__file__).parent / "5_1_progress.json"
 
 SLOTS = (
@@ -293,6 +295,10 @@ def clean_node(slot: str, word: str, node: dict, client: LLMClient) -> dict | No
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="5.1: LLM 清理 confusable/incompatibility")
+    parser.add_argument("--lang",    default="cn", choices=["cn", "en"],
+                        help="语言版本，决定默认的 slot_ontology 路径（默认 cn）")
+    parser.add_argument("--onto",    default=None,
+                        help="覆盖默认 slot_ontology_{lang}.json 路径")
     parser.add_argument("--slots", nargs="*", default=list(SLOTS))
     parser.add_argument("--force", action="store_true", help="强制重新处理已完成节点")
     parser.add_argument("--poe",   action="store_true", help="使用 POE 后端")
@@ -303,7 +309,8 @@ def main() -> None:
                         help="并发 worker 数，建议与端口数一致")
     args = parser.parse_args()
 
-    ontology = json.loads(ONTO_PATH.read_text("utf-8"))
+    onto_path = Path(args.onto) if args.onto else LangPaths(args.lang).slot_ontology
+    ontology = json.loads(onto_path.read_text("utf-8"))
     progress = json.loads(PROGRESS_PATH.read_text("utf-8")) if PROGRESS_PATH.exists() else {}
 
     try:
@@ -370,10 +377,10 @@ def main() -> None:
                 pass
 
     # 所有 worker 完成后一次性落盘
-    ONTO_PATH.write_text(json.dumps(ontology, ensure_ascii=False, indent=2), "utf-8")
+    onto_path.write_text(json.dumps(ontology, ensure_ascii=False, indent=2), "utf-8")
     PROGRESS_PATH.write_text(json.dumps(progress, ensure_ascii=False, indent=2), "utf-8")
     total_done = sum(len(v) for v in progress.values())
-    print(f"\n✓ 完成，累计 {total_done} 节点 → {ONTO_PATH}")
+    print(f"\n✓ 完成，累计 {total_done} 节点 → {onto_path}")
 
     if PROGRESS_PATH.exists():
         PROGRESS_PATH.unlink()

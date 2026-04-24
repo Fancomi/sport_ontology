@@ -27,7 +27,9 @@ from hard_utils import (key_valid, load_hard_all, save_hard_all, clean_stale)
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Script 9: 提取答错对 → hard_{view}.json")
-    parser.add_argument("--input", nargs="+", default=["eval_results.jsonl"],
+    parser.add_argument("--lang",  default="cn", choices=["cn", "en"],
+                        help="语言版本，影响默认输入/输出文件名（默认 cn）")
+    parser.add_argument("--input", nargs="+", default=None,
                         help="eval_results*.jsonl，可指定多个文件（hard_all.jsonl 累计所有）")
     parser.add_argument("--clean", action="store_true",
                         help="过滤 [slot:orig] 已不在当前 augment 的过期条目，"
@@ -36,12 +38,16 @@ def main() -> None:
                         help="清零所有 error_count 和 error_by_model（通常在重新跑 step 8 前执行）")
     args = parser.parse_args()
 
+    from config import LangPaths
+    lp          = LangPaths(args.lang)
+    input_files = args.input if args.input else [str(lp.eval_results)]
+
     # ── 读取输入文件 ──────────────────────────────────────────────────────────
     n_total = n_stale = 0
     counts: dict[tuple, int]  = defaultdict(int)
     meta:   dict[tuple, dict] = {}
 
-    for path in args.input:
+    for path in input_files:
         for line in Path(path).read_text("utf-8").splitlines():
             try:
                 r = json.loads(line)
@@ -51,7 +57,7 @@ def main() -> None:
             key = (r.get("video", ""), r.get("view", ""),
                    r.get("replaced_slot", ""), r.get("original_value", ""),
                    r.get("new_value", ""))
-            if args.clean and not key_valid(key):
+            if args.clean and not key_valid(key, args.lang):
                 n_stale += 1
                 continue
             if r.get("is_correct") is False:
@@ -63,7 +69,7 @@ def main() -> None:
     n_unique_pairs = len(counts)
 
     # ── 合入 hard_all（仅添加新 pair，error_count 由 step 8 维护）────────────
-    hist  = load_hard_all()
+    hist  = load_hard_all(args.lang)
     n_new = 0
     for key in counts:
         if key not in hist:
@@ -82,7 +88,7 @@ def main() -> None:
     # ── --clean：清理历史过期条目 ─────────────────────────────────────────────
     n_hist_stale = 0
     if args.clean:
-        hist, n_hist_stale = clean_stale(hist)
+        hist, n_hist_stale = clean_stale(hist, args.lang)
 
     # ── --reset-counts：清零计数 ──────────────────────────────────────────────
     if args.reset_counts:
@@ -90,7 +96,7 @@ def main() -> None:
             v["error_count"] = 0
             v.pop("error_by_model", None)
 
-    save_hard_all(hist)
+    save_hard_all(hist, args.lang)
     n_negs = len(hist)
 
     # ── 统计 error_count 分布 ─────────────────────────────────────────────────

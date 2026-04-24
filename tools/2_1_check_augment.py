@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""校验并修正 augment_*.json 中的 category_3_slotted_description。
+"""校验并修正 augment_*_cn.json 中的 category_3_slotted_description。
 
 用法：python 2_1_check_augment.py [--host HOST] [--port PORT] [--backend local|poe]
 """
@@ -183,7 +183,7 @@ def process_one(aug_path: Path, client: LLMClient) -> str:
 
 # ── 入口 ──────────────────────────────────────────────────────────────────────
 def main() -> None:
-    ap = argparse.ArgumentParser(description='校验/修正 augment_*.json 的 category_3_slotted_description')
+    ap = argparse.ArgumentParser(description='校验/修正 augment_*_cn.json 的 category_3_slotted_description')
     ap.add_argument('--host',    default='127.0.0.1')
     ap.add_argument('--port',    default='8000',
                     help='LLM 端口，逗号分隔多端口 (e.g. 8001,8002,...)')
@@ -192,7 +192,7 @@ def main() -> None:
                     help='并发 worker 数，建议与端口数一致')
     args = ap.parse_args()
 
-    all_aug = sorted(DATA_ROOT.rglob('augment_*.json'))
+    all_aug = sorted(DATA_ROOT.rglob('augment_*_cn.json'))
     pending, done, no_field = [], 0, 0
     for p in all_aug:
         try:

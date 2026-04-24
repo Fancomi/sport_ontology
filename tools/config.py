@@ -26,4 +26,34 @@ def _resolve_data_root() -> Path:
         f"或设置环境变量 DATA_ROOT"
     )
 
-DATA_ROOT = _resolve_data_root()
+DATA_ROOT  = _resolve_data_root()
+TOOLS_DIR  = Path(__file__).resolve().parent
+
+
+# ── 语言感知路径工具 ───────────────────────────────────────────────────────────
+
+def augment_name(view: str, lang: str = 'cn') -> str:
+    """每视频目录下的 augment 文件名，例如 augment_front_cn.json。"""
+    return f'augment_{view}_{lang}.json'
+
+
+class LangPaths:
+    """集中管理 tools/ 目录下所有语言相关的全局文件路径。
+
+    用法：
+        p = LangPaths('cn')
+        p.slot_vocab      # tools/slot_vocab_cn.json
+        p.hard_all        # tools/hard_all_cn.jsonl
+    """
+    def __init__(self, lang: str = 'cn'):
+        self.lang = lang
+        d = TOOLS_DIR
+        self.slot_vocab         = d / f'slot_vocab_{lang}.json'
+        self.slot_ontology      = d / f'slot_ontology_{lang}.json'
+        self.eval_results       = d / f'eval_results_{lang}.jsonl'
+        self.eval_results_hard  = d / f'eval_results_hard_{lang}.jsonl'
+        self.eval_stats         = d / f'eval_stats_{lang}.json'
+        self.hard_all           = d / f'hard_all_{lang}.jsonl'
+        self.eval_accuracy      = d / f'eval_accuracy_{lang}.png'
+        self.slot_overview_png  = d / f'slot_overview_{lang}.png'
+        self.slot_vocab_png     = d / f'slot_vocab_{lang}.png'

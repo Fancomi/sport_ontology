@@ -24,11 +24,13 @@ from pathlib import Path
 from threading import Lock
 from typing import Optional
 
+from config import LangPaths
 from llm_client import LLMClient, parse_ports, parse_json_response
 
 # ── 配置 ─────────────────────────────────────────────────────────────────────
-VOCAB_PATH = Path(__file__).parent / "slot_vocab.json"
-OUT_PATH   = Path(__file__).parent / "slot_ontology.json"
+_DEFAULT_LANG = 'cn'
+VOCAB_PATH = LangPaths(_DEFAULT_LANG).slot_vocab
+OUT_PATH   = LangPaths(_DEFAULT_LANG).slot_ontology
 
 SLOTS = (
     "gender", "camera_view", "equipment", "contact_part", "contact_type",
@@ -541,9 +543,11 @@ def merge_node(source_count: int, llm_result: dict) -> dict:
 # ── 入口 ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="LLM 补充 slot_vocab.json 节点属性，产出/更新 slot_ontology.json")
-    parser.add_argument("--vocab",  dest="vocab_path", default=str(VOCAB_PATH))
-    parser.add_argument("--out",    dest="out_path",   default=str(OUT_PATH))
+    parser = argparse.ArgumentParser(description="LLM 补充 slot_vocab_{lang}.json 节点属性，产出/更新 slot_ontology_{lang}.json")
+    parser.add_argument("--lang",    default="cn", choices=["cn", "en"],
+                        help="语言版本，影响默认的 vocab/out 路径（默认 cn）")
+    parser.add_argument("--vocab",   dest="vocab_path", default=None)
+    parser.add_argument("--out",     dest="out_path",   default=None)
     parser.add_argument("--slots",  nargs="*",         default=list(SLOTS))
     parser.add_argument("--force",  action="store_true", help="强制重新处理已有条目")
     parser.add_argument("--poe",    action="store_true", help="使用 POE 后端")
@@ -554,8 +558,9 @@ def main() -> None:
                         help="并发 worker 数，建议与端口数一致")
     args = parser.parse_args()
 
-    vocab_path = Path(args.vocab_path)
-    out_path   = Path(args.out_path)
+    lp         = LangPaths(args.lang)
+    vocab_path = Path(args.vocab_path) if args.vocab_path else lp.slot_vocab
+    out_path   = Path(args.out_path)   if args.out_path   else lp.slot_ontology
 
     if not vocab_path.exists():
         print(f"✗ 输入文件不存在: {vocab_path}，请先运行 3_collect_slots.py")

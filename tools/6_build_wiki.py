@@ -18,7 +18,9 @@ import argparse
 import json
 from pathlib import Path
 
-IN_PATH = Path(__file__).parent / "slot_ontology.json"
+from config import LangPaths
+
+IN_PATH = LangPaths('cn').slot_ontology
 OUT_DIR = Path(__file__).parent.parent / "sport_ontology"
 
 SLOT_CN = {

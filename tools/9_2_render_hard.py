@@ -52,7 +52,7 @@ import argparse, json
 from collections import defaultdict
 from pathlib import Path
 
-from config import DATA_ROOT
+from config import DATA_ROOT, LangPaths, augment_name
 from hard_utils import load_hard_all
 from ontology_utils import replace_slot, strip_slots
 
@@ -107,11 +107,11 @@ def _build_pair(k: tuple, rec: dict, original_slotted: str) -> dict | None:
     return pair
 
 
-def render(hard_all_path: Path, views: list[str] | None) -> tuple[int, int]:
-    """渲染 hard_all.jsonl → hn_render_{view}.json，返回 (文件数, 条目总数)。"""
-    default_path = Path(__file__).parent / "hard_all.jsonl"
+def render(hard_all_path: Path, views: list[str] | None, lang: str = 'cn') -> tuple[int, int]:
+    """渲染 hard_all_{lang}.jsonl → hn_render_{view}.json，返回 (文件数, 条目总数)。"""
+    default_path = LangPaths(lang).hard_all
     if hard_all_path == default_path:
-        hist = load_hard_all()
+        hist = load_hard_all(lang)
     else:
         hist = {}
         for line in hard_all_path.read_text("utf-8").splitlines():
@@ -133,7 +133,7 @@ def render(hard_all_path: Path, views: list[str] | None) -> tuple[int, int]:
 
     n_files = n_pairs = 0
     for (video, view), keys in sorted(by_vv.items()):
-        aug_path = DATA_ROOT / video / f"augment_{view}.json"
+        aug_path = DATA_ROOT / video / augment_name(view, lang)
         if not aug_path.exists():
             continue
         try:
@@ -186,11 +186,13 @@ def clean(views: list[str] | None) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="9_2: 渲染 hard_all.jsonl → hn_render_{view}.json（单向，不进 loop）"
+        description="9_2: 渲染 hard_all_{lang}.jsonl → hn_render_{view}.json（单向，不进 loop）"
     )
+    parser.add_argument("--lang",  default="cn", choices=["cn", "en"],
+                        help="语言版本，影响默认 hard_all 路径（默认 cn）")
     parser.add_argument(
-        "--input", default=str(Path(__file__).parent / "hard_all.jsonl"),
-        help="输入 hard_all.jsonl 路径（默认 tools/hard_all.jsonl）",
+        "--input", default=None,
+        help="输入 hard_all_{lang}.jsonl 路径（默认 tools/hard_all_{lang}.jsonl）",
     )
     parser.add_argument(
         "--views", nargs="+", choices=["front", "side"],
@@ -207,7 +209,7 @@ def main() -> None:
         print(f"[clean] 已删除 {n} 个渲染文件")
         return
 
-    hard_all_path = Path(args.input)
+    hard_all_path = Path(args.input) if args.input else LangPaths(args.lang).hard_all
     if not hard_all_path.exists():
         print(f"✗ 找不到 {hard_all_path}")
         return
@@ -217,7 +219,7 @@ def main() -> None:
         print(f"视角过滤: {args.views}")
     print()
 
-    n_files, n_pairs = render(hard_all_path, args.views)
+    n_files, n_pairs = render(hard_all_path, args.views, args.lang)
 
     print(f"\n[DONE]  渲染文件={n_files}  条目总数={n_pairs}")
     print(f"输出:   {{DATA_ROOT}}/{{video}}/hn_render_{{view}}.json")

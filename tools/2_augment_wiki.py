@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """对 muscle_wiki 每个动作的 front.mp4/side.mp4，调用 VLM 扩写描述。
-结果保存为同目录的 augment_front.json / augment_side.json。
+结果保存为同目录的 augment_front_cn.json / augment_side_cn.json。
 
 生产流程（四步）：
   P1 [VLM] 生成 category_3_slotted_description
@@ -32,7 +32,7 @@ _run_qc_loop = _c.run_qc_loop
 PROMPT_CAT3_PATH = Path(__file__).resolve().parent / 'Prompt_Augment.md'
 PROMPT_FULL_PATH = Path(__file__).resolve().parent / 'Prompt_Augment_full.md'
 MAX_TOKENS       = 4096
-VIEWS            = [('front', 'augment_front.json'), ('side', 'augment_side.json')]
+VIEWS            = [('front', 'augment_front_cn.json'), ('side', 'augment_side_cn.json')]
 
 
 # ── Prompt 构建 ────────────────────────────────────────────────────────────────
@@ -194,8 +194,8 @@ def main() -> None:
 
     all_meta = sorted(DATA_ROOT.rglob('metadata_cn.json'))
     pending  = [p for p in all_meta
-                if not (p.parent / 'augment_front.json').exists()
-                or not (p.parent / 'augment_side.json').exists()]
+                if not (p.parent / 'augment_front_cn.json').exists()
+                or not (p.parent / 'augment_side_cn.json').exists()]
     if args.reverse:
         pending = list(reversed(pending))
     print(f'共 {len(all_meta)} 个动作，待处理 {len(pending)} 个，已完成 {len(all_meta) - len(pending)} 个')

@@ -12,7 +12,9 @@ P4 互斥扩展: A.incompatibility ∋ B(在库) → A.incompatibility ∪= B.sy
 import argparse, json
 from pathlib import Path
 
-ONTO_DEFAULT  = Path(__file__).parent / "slot_ontology.json"
+from config import LangPaths
+
+ONTO_DEFAULT  = LangPaths('cn').slot_ontology
 _UNION_FIELDS = ("antonyms", "confusable_siblings", "incompatibility")
 
 

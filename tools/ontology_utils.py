@@ -1,4 +1,4 @@
-"""ontology_utils.py — slot_ontology.json 加载、采样与槽位文本工具。
+"""ontology_utils.py — slot_ontology_{lang}.json 加载、采样与槽位文本工具。
 
 被 8_eval_confusable 和 8_3_cloze_eval 共用；hard_utils 从此处导入 replace_slot / strip_slots。
 """
@@ -6,12 +6,12 @@
 import json, math, random, re
 from pathlib import Path
 
-ONTOLOGY_PATH = Path(__file__).parent / "slot_ontology.json"
-STATS_PATH    = Path(__file__).parent / "eval_stats.json"
-SLOT_RE       = re.compile(r"\[(\w+):([^\]]+)\]")   # findall → (slot, value)
-_STRIP_RE     = re.compile(r"\[\w+:([^\]]+)\]")      # sub    → 保留 value，去掉标签
-SKIP_SLOTS    = frozenset({"gender"})
-N_PER_TYPE    = 5    # confusable / incompatibility 各采样上限
+from config import LangPaths
+
+SLOT_RE    = re.compile(r"\[(\w+):([^\]]+)\]")   # findall → (slot, value)
+_STRIP_RE  = re.compile(r"\[\w+:([^\]]+)\]")      # sub    → 保留 value，去掉标签
+SKIP_SLOTS = frozenset({"gender"})
+N_PER_TYPE = 5    # confusable / incompatibility 各采样上限
 
 
 # ── 槽位文本工具 ───────────────────────────────────────────────────────────────
@@ -118,11 +118,13 @@ def sample_negatives(
     )
 
 
-def load_weights(stats_path: Path = STATS_PATH) -> tuple[dict | None, dict | None]:
-    """从 eval_stats.json 加载各槽位 error_rate 权重，返回 (conf_w, inco_w)。
+def load_weights(stats_path: Path = None, lang: str = 'cn') -> tuple[dict | None, dict | None]:
+    """从 eval_stats_{lang}.json 加载各槽位 error_rate 权重，返回 (conf_w, inco_w)。
 
     文件不存在时返回 (None, None)，退化为均匀采样。
     """
+    if stats_path is None:
+        stats_path = LangPaths(lang).eval_stats
     if not stats_path.exists():
         return None, None
     raw  = json.loads(stats_path.read_text("utf-8"))

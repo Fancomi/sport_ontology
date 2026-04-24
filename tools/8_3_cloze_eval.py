@@ -14,9 +14,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import Lock
 
-from config import DATA_ROOT
+from config import DATA_ROOT, LangPaths, augment_name
 from llm_client import build_vlm_clients, parse_ports
-from ontology_utils import ONTOLOGY_PATH, SLOT_RE, build_lookup
+from ontology_utils import SLOT_RE, build_lookup
 from video_frames import ensure_frames, FPS_DEFAULT
 
 VIEWS          = ("front", "side")
@@ -181,6 +181,8 @@ def eval_file(src: Path, frames: list[str], client, model: str,
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="8_3: 完形填空 VLM 评测")
+    parser.add_argument("--lang",       default="cn", choices=["cn", "en"],
+                        help="语言版本，决定读取的 augment 文件（默认 cn）")
     parser.add_argument("--host",     default="127.0.0.1")
     parser.add_argument("--port",     default="8000", help="逗号分隔多端口")
     parser.add_argument("--fps",      type=float, default=FPS_DEFAULT)
@@ -195,7 +197,7 @@ def main() -> None:
     args = parser.parse_args()
 
     random.seed(args.seed)
-    ontology = json.loads(ONTOLOGY_PATH.read_text("utf-8"))
+    ontology = json.loads(LangPaths(args.lang).slot_ontology.read_text("utf-8"))
     lookup   = build_lookup(ontology)
 
     vlm_clients = []
@@ -206,7 +208,7 @@ def main() -> None:
         _inflight[:] = [0] * len(vlm_clients)
         print(f"模型: {vlm_clients[0][1]}\n")
 
-    files = [p for v in VIEWS for p in DATA_ROOT.rglob(f"augment_{v}.json")]
+    files = [p for v in VIEWS for p in DATA_ROOT.rglob(augment_name(v, args.lang))]
     if args.limit:
         files = files[:args.limit]
     print(f"待评测文件: {len(files)}")

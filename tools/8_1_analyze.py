@@ -269,15 +269,23 @@ def print_duplicates(records: list[dict], stats: dict, top_n: int = 5) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="评测结果统计（含 Cohen's Kappa）")
-    parser.add_argument("--input",   default="eval_results.jsonl")
-    parser.add_argument("--out",     default="eval_accuracy.png")
-    parser.add_argument("--stats",   default="eval_stats.json",
-                        help="输出采样权重 JSON（供 7_gen_confusable.py 使用）")
+    parser.add_argument("--lang",    default="cn", choices=["cn", "en"],
+                        help="语言版本，影响默认输入/输出文件名（默认 cn）")
+    parser.add_argument("--input",   default=None)
+    parser.add_argument("--out",     default=None)
+    parser.add_argument("--stats",   default=None,
+                        help="输出采样权重 JSON（供 step 8 使用）")
     parser.add_argument("--compare", nargs=2, metavar=("FILE_A", "FILE_B"), default=None,
                         help="对比模式：输入两个 jsonl，每槽位并排两柱")
     parser.add_argument("--labels",  nargs=2, metavar=("LABEL_A", "LABEL_B"), default=None,
                         help="对比模式的模型名称（默认取文件名）")
     args = parser.parse_args()
+
+    from config import LangPaths
+    lp          = LangPaths(args.lang)
+    input_path  = Path(args.input)  if args.input  else lp.eval_results
+    out_path    = Path(args.out)    if args.out    else lp.eval_accuracy
+    stats_path  = Path(args.stats)  if args.stats  else lp.eval_stats
 
     # ── 对比模式 ──────────────────────────────────────────────────────────────
     if args.compare:
@@ -299,13 +307,12 @@ def main() -> None:
             print_table(stats, tk, tn)
             print()
 
-        out = Path(args.out) if args.out != "eval_accuracy.png" \
-              else Path(f"eval_compare_{label_a}_vs_{label_b}.png")
-        plot_compare(stats_a, stats_b, label_a, label_b, cov_a, cov_b, out)
+        compare_out = out_path if args.out else Path(f"eval_compare_{label_a}_vs_{label_b}.png")
+        plot_compare(stats_a, stats_b, label_a, label_b, cov_a, cov_b, compare_out)
         return
 
     # ── 单文件模式 ────────────────────────────────────────────────────────────
-    records = load(Path(args.input))
+    records = load(input_path)
     print(f"有效记录: {len(records)} 条\n")
 
     stats            = compute(records)
@@ -314,8 +321,8 @@ def main() -> None:
     cov = top3_cov(records)
     print_table(stats, total_k, total_n)
     print_duplicates(records, stats)
-    plot(stats, Path(args.out), cov)
-    save_stats(stats, Path(args.stats))
+    plot(stats, out_path, cov)
+    save_stats(stats, stats_path)
 
 
 if __name__ == "__main__":

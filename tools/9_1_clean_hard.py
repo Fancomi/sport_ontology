@@ -135,6 +135,8 @@ def judge_one(key: tuple, client: LLMClient,
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="9.1: LLM 审核 Hard Negative 句子级有效性")
+    parser.add_argument("--lang",   default="cn", choices=["cn", "en"],
+                        help="语言版本，影响 hard_all 文件路径（默认 cn）")
     parser.add_argument("--slots",   nargs="*",       help="只处理指定槽位（默认全部）")
     parser.add_argument("--limit",   type=int, default=0,
                         help="调试：只处理前 N 条（0=全部）")
@@ -158,7 +160,7 @@ def main() -> None:
         print(f"✗ 连接失败: {e}", file=sys.stderr)
         sys.exit(1)
 
-    hist     = load_hard_all()
+    hist     = load_hard_all(args.lang)
     progress = json.loads(PROGRESS_PATH.read_text("utf-8")) if PROGRESS_PATH.exists() else {}
 
     # 待处理条目：按 slot 过滤 + 跳过已处理
@@ -221,7 +223,7 @@ def main() -> None:
     for k in to_delete:
         hist.pop(k, None)
 
-    save_hard_all(hist)
+    save_hard_all(hist, args.lang)
     print(f"[DONE]  hard_all条目={len(hist)}")
 
     if PROGRESS_PATH.exists():

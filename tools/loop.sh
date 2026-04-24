@@ -2,9 +2,9 @@
 # loop.sh — Hard Negative 迭代采集大循环
 #
 # 流程（× ROUNDS 轮）:
-#   8  → VLM 评测（在线采样 confusable，读 eval_stats.json 加权；首轮均匀采样）
-#   8.1→ 分析结果，覆盖 eval_stats.json（供下一轮加权）
-#   9  → 提取 hard，merge 入 hard_all.jsonl（幂等去重）
+#   8  → VLM 评测（在线采样 confusable，读 eval_stats_{LANG}.json 加权；首轮均匀采样）
+#   8.1→ 分析结果，覆盖 eval_stats_{LANG}.json（供下一轮加权）
+#   9  → 提取 hard，merge 入 hard_all_{LANG}.jsonl（幂等去重）
 #
 # 全部轮次完成后：
 #   9.1→ LLM 审核 hard negative 句子级有效性
@@ -16,6 +16,7 @@ HOST="127.0.0.1"
 PORT="8001,8002,8003,8004,8005,8006,8007,8008"
 WORKERS=8
 ROUNDS=58
+LANG="cn"                              # ← cn / en 切换语言
 BAKUP_DIR="BAKUP/20260423_qwen3_6"
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -24,40 +25,43 @@ cd "$SCRIPT_DIR"
 mkdir -p "$BAKUP_DIR"
 
 echo "════════════════════════════════════════════════════"
-echo "  Hard Negative Loop  ×${ROUNDS} rounds"
+echo "  Hard Negative Loop  ×${ROUNDS} rounds  [lang=${LANG}]"
 echo "  HOST=$HOST  PORT=$PORT  WORKERS=$WORKERS"
 echo "════════════════════════════════════════════════════"
 
 for i in $(seq 1 $ROUNDS); do
     TS=$(date +%Y%m%d_%H%M%S)
     RN=$(printf '%02d' $i)
-    ROUND_OUT="${BAKUP_DIR}/eval_results_r${RN}_${TS}.jsonl"
-    ROUND_PNG="${BAKUP_DIR}/eval_accuracy_r${RN}_${TS}.png"
-    ROUND_STATS="${BAKUP_DIR}/eval_stats_r${RN}_${TS}.json"
+    ROUND_OUT="${BAKUP_DIR}/eval_results_${LANG}_r${RN}_${TS}.jsonl"
+    ROUND_PNG="${BAKUP_DIR}/eval_accuracy_${LANG}_r${RN}_${TS}.png"
+    ROUND_STATS="${BAKUP_DIR}/eval_stats_${LANG}_r${RN}_${TS}.json"
 
     echo ""
     echo "────────────────────────────────────────────────────"
     printf "  Round %d / %d   [%s]\n" $i $ROUNDS "$TS"
     echo "────────────────────────────────────────────────────"
 
-    # 8. VLM 评测 confusable（在线采样，读 eval_stats.json 加权；首轮文件不存在时均匀采样）
+    # 8. VLM 评测 confusable（在线采样，读 eval_stats_{LANG}.json 加权；首轮均匀采样）
     echo "[8] VLM 评测 confusable（在线采样）..."
     python3 8_eval_confusable.py \
         --host $HOST --port $PORT -w $WORKERS \
+        --lang $LANG \
         --mode confusable \
         --out "$ROUND_OUT"
 
-    # 8.1 分析：覆盖 eval_stats.json 供下一轮加权；同时备份到 BAKUP
+    # 8.1 分析：覆盖 eval_stats_{LANG}.json 供下一轮加权；同时备份到 BAKUP
     echo "[8.1] 分析结果..."
     python3 8_1_analyze.py \
+        --lang  $LANG \
         --input "$ROUND_OUT" \
         --out   "$ROUND_PNG" \
-        --stats "eval_stats.json"
-    cp "eval_stats.json" "$ROUND_STATS"
+        --stats "eval_stats_${LANG}.json"
+    cp "eval_stats_${LANG}.json" "$ROUND_STATS"
 
-    # 9. 提取 hard，merge 入 hard_all（--clean 过滤过期条目，幂等）
+    # 9. 提取 hard，merge 入 hard_all_{LANG}（--clean 过滤过期条目，幂等）
     echo "[9] 提取 hard negatives..."
     python3 9_extract_errors.py \
+        --lang  $LANG \
         --input "$ROUND_OUT" \
         --clean
 
@@ -67,11 +71,11 @@ done
 # ── 全部轮次完成后：LLM 审核 ────────────────────────────────────────────────
 echo ""
 echo "════════════════════════════════════════════════════"
-echo "  9.1  LLM 审核 Hard Negative 句子级有效性"
+echo "  9.1  LLM 审核 Hard Negative 句子级有效性  [lang=${LANG}]"
 echo "════════════════════════════════════════════════════"
-python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS
+python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS --lang $LANG
 
 echo ""
 echo "════════════════════════════════════════════════════"
-printf "  All done. %d rounds completed.\n" $ROUNDS
+printf "  All done. %d rounds completed.  lang=%s\n" $ROUNDS "$LANG"
 echo "════════════════════════════════════════════════════"

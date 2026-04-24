@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""遍历所有 augment_*.json，统计 category_3_slotted_description 中的槽位值分布，
+"""遍历所有 augment_*_cn.json，统计 category_3_slotted_description 中的槽位值分布，
 识别异常槽位键，并绘制：
   1. slot_overview.png  — 各槽位 token 占比 + 异常槽位数量（总览柱状图）
   2. slot_vocab.png     — 各槽位 Top-N 值频次柱状图
@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 
-from config import DATA_ROOT
+from config import DATA_ROOT, LangPaths
 
 SLOTS = (
     "gender", "camera_view", "equipment", "contact_part", "contact_type",
@@ -51,17 +51,17 @@ OUT_DIR_DEFAULT = Path(__file__).parent
 
 # ── 收集 ──────────────────────────────────────────────────────────────────────
 
-def collect(data_root: Path) -> tuple[dict, dict, set]:
+def collect(data_root: Path, lang: str = 'cn') -> tuple[dict, dict, set]:
     """返回 (vocab, abnormal, abnormal_files)
     vocab:          {slot: {value: count}}  合法槽位
     abnormal:       {key: count}            非法槽位键
-    abnormal_files: 含非法槽位的 augment_*.json 路径集合
+    abnormal_files: 含非法槽位的 augment_*_cn.json 路径集合
     """
     vocab    = {s: defaultdict(int) for s in SLOTS}
     abnormal: dict[str, int] = defaultdict(int)
     abnormal_files: set[Path] = set()
 
-    files = sorted(data_root.rglob("augment_*.json"))
+    files = sorted(data_root.rglob(f"augment_*_{lang}.json"))
     print(f"发现 {len(files)} 个增强文件，开始解析...")
 
     for f in files:
@@ -183,21 +183,24 @@ def plot_values(vocab: dict, out: Path, top_n: int = 20) -> None:
 # ── 入口 ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="统计 augment_*.json 槽位分布并绘图")
+    parser = argparse.ArgumentParser(description="统计 augment_*_cn.json 槽位分布并绘图")
     parser.add_argument("--top",     type=int, default=20,
                         help="每个槽位展示 Top-N 值（默认 20）")
     parser.add_argument("--out-dir", default=str(OUT_DIR_DEFAULT),
                         help="输出目录（默认脚本同级目录）")
+    parser.add_argument("--lang",    default="cn", choices=["cn", "en"],
+                        help="语言版本，决定读取的 augment 文件与输出文件名后缀（默认 cn）")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    lp = LangPaths(args.lang)
 
-    vocab, abnormal, abnormal_files = collect(DATA_ROOT)
+    vocab, abnormal, abnormal_files = collect(DATA_ROOT, args.lang)
 
     # ── 写入 JSON（覆盖）────────────────────────────────────────────────────
-    vocab_path    = out_dir / "slot_vocab.json"
-    abnormal_path = out_dir / "slot_abnormal.json"
+    vocab_path    = lp.slot_vocab
+    abnormal_path = out_dir / f"slot_abnormal_{args.lang}.json"
     vocab_path.write_text(json.dumps(vocab, ensure_ascii=False, indent=2), "utf-8")
     abnormal_path.write_text(json.dumps(
         dict(sorted(abnormal.items(), key=lambda x: x[1], reverse=True)),
@@ -230,14 +233,14 @@ def main() -> None:
     else:
         print("\n✓ 无异常槽位键")
 
-    print(f"\n✓ slot_vocab.json    → {vocab_path}")
-    print(f"✓ slot_abnormal.json → {abnormal_path}")
+    print(f"\n✓ {vocab_path.name}    → {vocab_path}")
+    print(f"✓ {abnormal_path.name} → {abnormal_path}")
 
     # ── 绘图 ────────────────────────────────────────────────────────────────
-    plot_overview(vocab, abnormal, out_dir / "slot_overview.png")
-    plot_values(vocab, out_dir / "slot_vocab.png", args.top)
+    plot_overview(vocab, abnormal, lp.slot_overview_png)
+    plot_values(vocab, lp.slot_vocab_png, args.top)
 
-    # ── 删除含异常槽位的 augment_*.json，便于 2_augment_wiki 重新生成 ──────────
+    # ── 删除含异常槽位的 augment_*_{lang}.json，便于重新生成 ─────────────────
     if abnormal_files:
         print(f"\n删除含异常槽位的文件（共 {len(abnormal_files)} 个）：")
         for f in sorted(abnormal_files):
