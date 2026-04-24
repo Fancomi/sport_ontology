@@ -21,11 +21,18 @@ from ontology_utils import (build_lookup, load_weights,
 from video_frames import ensure_frames, FPS_DEFAULT
 
 VIEWS, MAX_TOKENS = ("front", "side"), 8
-PROMPT = (
-    "以上是一段健身动作视频。以下有两句文字描述，哪一句更符合实际视频？\n"
-    "A: {a}\nB: {b}\n只回复一个字母 A 或 B。"
-    "请保持思考过程简短高效，不要过度发散，思考过程请控制在 1000 字以内。"
-)
+_PROMPT = {
+    'cn': (
+        "以上是一段健身动作视频。以下有两句文字描述，哪一句更符合实际视频？\n"
+        "A: {a}\nB: {b}\n只回复一个字母 A 或 B。"
+        "请保持思考过程简短高效，不要过度发散，思考过程请控制在 1000 字以内。"
+    ),
+    'en': (
+        "The video above shows a fitness exercise. Which description better matches the video?\n"
+        "A: {a}\nB: {b}\nReply with a single letter A or B only."
+        " Keep your reasoning concise and focused, under 1000 words."
+    ),
+}
 
 _tls      = threading.local()
 _prt_lock = Lock()
@@ -70,7 +77,7 @@ def call_vlm(frames: list, prompt: str, client, model: str,
         return ""
 
 
-def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
+def eval_one(item: WorkItem, clients: list, seed: int, lang: str = 'cn') -> dict | None:
     """单条 neg 二选一评测。_log_line 由主线程在 write_lock 内统一打印。"""
     with _inf_lock:
         idx = _inflight.index(min(_inflight))
@@ -80,7 +87,7 @@ def eval_one(item: WorkItem, clients: list, seed: int) -> dict | None:
         a_is_orig = _rng(seed).random() < 0.5
         neg_text  = strip_slots(item.neg["category_3_slotted_description"])
         a, b      = (item.original, neg_text) if a_is_orig else (neg_text, item.original)
-        answer    = call_vlm(item.frames, PROMPT.format(a=a, b=b), c, mid, eb)
+        answer    = call_vlm(item.frames, _PROMPT[lang].format(a=a, b=b), c, mid, eb)
         letter    = answer[0] if answer and answer[0] in "AB" else ""
         if not letter:
             return None
@@ -269,7 +276,7 @@ def main() -> None:
 
     if args.dry_run:
         for it in items[:4]:
-            print(f"{'─'*60}\n{PROMPT.format(a=it.original, b=strip_slots(it.neg['category_3_slotted_description']))}\n")
+            print(f"{'─'*60}\n{_PROMPT[args.lang].format(a=it.original, b=strip_slots(it.neg['category_3_slotted_description']))}\n")
         return
 
     if not items:
@@ -286,7 +293,7 @@ def main() -> None:
           out_hard_path.open("a", encoding="utf-8") as fout_hard,
           ThreadPoolExecutor(max_workers=args.workers) as pool):
 
-        futs = {pool.submit(eval_one, it, clients, args.seed): it for it in items}
+        futs = {pool.submit(eval_one, it, clients, args.seed, args.lang): it for it in items}
         for fut in as_completed(futs):
             record   = fut.result()
             it       = futs[fut]

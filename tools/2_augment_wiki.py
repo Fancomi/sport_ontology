@@ -19,7 +19,7 @@ from threading import Lock
 from typing import Optional, Tuple
 from openai import OpenAI
 
-from config import DATA_ROOT
+from config import DATA_ROOT, PROMPTS_DIR
 from llm_client import LLMClient, build_vlm_clients, parse_ports, parse_json_response
 from video_frames import ensure_frames, prebuild_cache, cache_dir, load_cache, FPS_DEFAULT, MAX_SIDE_DEFAULT
 
@@ -29,8 +29,8 @@ _c = importlib.import_module('2_1_check_augment')
 _run_qc_loop = _c.run_qc_loop
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
-PROMPT_CAT3_PATH = Path(__file__).resolve().parent / 'Prompt_Augment.md'
-PROMPT_FULL_PATH = Path(__file__).resolve().parent / 'Prompt_Augment_full.md'
+PROMPT_CAT3_PATH = PROMPTS_DIR / '2_augment_p1_cat3_cn.md'
+PROMPT_FULL_PATH = PROMPTS_DIR / '2_augment_p2_full_cn.md'
 MAX_TOKENS       = 4096
 VIEWS            = [('front', 'augment_front_cn.json'), ('side', 'augment_side_cn.json')]
 

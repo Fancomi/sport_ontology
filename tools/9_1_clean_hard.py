@@ -17,70 +17,18 @@ from hard_utils import (slotted_desc, replace_slot, strip_slots,
                         key_to_str, str_to_key,
                         load_hard_all, save_hard_all)
 from llm_client import LLMClient, parse_ports, parse_json_response
+from config import load_prompts
 
 PROGRESS_PATH = Path(__file__).parent / "9_1_progress.json"
 
-# ── System Prompt ──────────────────────────────────────────────────────────────
-
-SYSTEM = """\
-你是运动健身领域的Hard Negative质量审核专家，熟悉解剖学、力量训练和运动视频分析。
-
-# 任务
-审核健身视频VQA项目的Hard Negative样本。
-给定一对句子：原句（正确描述）和负句（替换一个槽位值后的描述），判断该负句是否构成有效的Hard Negative。
-
-# 背景
-有效的Hard Negative：人类通过12秒健身视频，能可靠区分哪句正确。
-无效的Hard Negative会误导模型训练，需删除。
-
-# 删除规则（满足任一即删）
-SC1【上下文等价】在此句具体动作语境中，替换词与原词语义等价，两句均可合理描述同类视频 → 删除
-    ✓ 深蹲中 [force_part:臀大肌→臀部肌群]：上位概念，在深蹲语境中两者等价
-    ✓ 卧推中 [force_part:胸大肌→胸肌]：别名，等价
-
-SC2【上下文视觉不可辨】在此句描述的具体动作中，原值和替换值在12秒视频中无法可靠区分 → 删除
-    ✓ 哑铃弯举中 [contact_type:正握→锤式握]：手腕旋转细节在动作中极难判断
-    ✓ 静态支撑中 [trajectory:保持→等长收缩]：视觉表现完全相同
-
-# 保留原则（优先保留）
-  - 替换前后两句在该具体动作中有明显视觉差异
-  - 不确定时保留，宁可漏删，不要误删
-
-# 输出
-仅输出 JSON，不含说明文字：
-{"keep": true/false, "reason": "简短理由（≤20字）"}
-
-请保持思考过程简短高效，控制在 500 字以内。
-"""
-
-# ── Few-shot 示例 ──────────────────────────────────────────────────────────────
-
-EXAMPLES = [
-    {
-        "slot": "force_part", "orig": "臀大肌", "new": "臀部肌群",
-        "sentence": "[gender:女性]进行[exercise:深蹲]，[trajectory:离心下降]阶段[force_part:臀大肌]拉伸",
-        "expected": {"keep": False},
-        "reason": "SC1: 深蹲语境中'臀部肌群'是'臀大肌'上位词，两句描述同一视觉现象",
-    },
-    {
-        "slot": "contact_type", "orig": "正握", "new": "锤式握",
-        "sentence": "[gender:男性]进行[exercise:哑铃弯举]，[contact_part:双手][contact_type:正握]握住[equipment:哑铃]",
-        "expected": {"keep": False},
-        "reason": "SC2: 弯举中正握/锤式握手腕旋转差异在12秒视频中极难可靠区分",
-    },
-    {
-        "slot": "trajectory", "orig": "向心上升", "new": "离心下降",
-        "sentence": "[gender:男性]完成[exercise:引体向上][trajectory:向心上升]靠近横杆，[force_part:背阔肌]主导发力",
-        "expected": {"keep": True},
-        "reason": "保留: 身体上移vs下移方向相反，视觉差异明显",
-    },
-]
 
 # ── Prompt 构建 ────────────────────────────────────────────────────────────────
 
-def build_user(slot: str, orig: str, new: str, original: str, negative: str) -> str:
+def build_user(slot: str, orig: str, new: str, original: str, negative: str,
+               lang: str) -> str:
+    p = load_prompts('9_1_clean', lang)
     parts = []
-    for ex in EXAMPLES:
+    for ex in p['examples']:
         neg_ex = replace_slot(ex["sentence"], ex["slot"], ex["orig"], ex["new"])
         parts.append(
             f'替换: [{ex["slot"]}] {ex["orig"]} → {ex["new"]}\n'
@@ -99,27 +47,29 @@ def build_user(slot: str, orig: str, new: str, original: str, negative: str) -> 
         f"输出:"
     )
 
+
 # ── 单条审核 ───────────────────────────────────────────────────────────────────
 
-def judge_one(key: tuple, client: LLMClient,
+def judge_one(key: tuple, client: LLMClient, lang: str = 'cn',
               verbose: bool = False) -> tuple[bool | None, str]:
     """返回 (True/False/None, reason_str)。True=保留，False=删除，None=失败。
     verbose=True 时打印完整 SYSTEM + USER prompt。
     """
     video, view, slot, orig, new = key
-    original = slotted_desc(video, view)
+    original = slotted_desc(video, view, lang)
     if not original:
         return None, "augment不存在"
     negative = replace_slot(original, slot, orig, new)
     if negative == original:          # 槽位在原句中已不存在
         return False, "槽位已消失"
-    user_msg = build_user(slot, orig, new, original, negative)
+    p = load_prompts('9_1_clean', lang)
+    user_msg = build_user(slot, orig, new, original, negative, lang)
     if verbose:
         sep = "─" * 60
-        print(f"\n[SYSTEM]\n{sep}\n{SYSTEM}\n{sep}")
+        print(f"\n[SYSTEM]\n{sep}\n{p['system']}\n{sep}")
         print(f"\n[USER]\n{sep}\n{user_msg}\n{sep}\n")
     result = client.chat([
-        {"role": "system", "content": SYSTEM},
+        {"role": "system", "content": p['system']},
         {"role": "user",   "content": user_msg},
     ])
     if not result:
@@ -183,7 +133,7 @@ def main() -> None:
         i, key = idx_key
         _, _, slot, orig, new = key
 
-        result, reason = judge_one(key, client, verbose=args.verbose)
+        result, reason = judge_one(key, client, lang=args.lang, verbose=args.verbose)
         decision = "keep" if result is True else ("delete" if result is False else "failed")
 
         with file_lock:

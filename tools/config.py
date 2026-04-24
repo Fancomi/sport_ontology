@@ -26,8 +26,21 @@ def _resolve_data_root() -> Path:
         f"或设置环境变量 DATA_ROOT"
     )
 
-DATA_ROOT  = _resolve_data_root()
-TOOLS_DIR  = Path(__file__).resolve().parent
+DATA_ROOT    = _resolve_data_root()
+TOOLS_DIR    = Path(__file__).resolve().parent
+PROMPTS_DIR  = TOOLS_DIR / 'prompts'
+
+
+def load_prompts(script: str, lang: str) -> dict:
+    """加载 prompts/{script}_{lang}.json，结果缓存（同进程内幂等）。"""
+    import json
+    from functools import lru_cache
+
+    @lru_cache(maxsize=None)
+    def _load(path: str) -> dict:
+        return json.loads(Path(path).read_text('utf-8'))
+
+    return _load(str(PROMPTS_DIR / f'{script}_{lang}.json'))
 
 
 # ── 语言感知路径工具 ───────────────────────────────────────────────────────────

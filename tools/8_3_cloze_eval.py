@@ -28,7 +28,8 @@ MAX_TOKENS     = 256
 _inflight: list[int] = []
 _inf_lock = Lock()
 
-PROMPT_TMPL = """\
+_PROMPT_TMPL = {
+    'cn': """\
 以上是一段健身动作视频。请根据视频内容完成以下完形填空，每空从给定选项中选出最符合视频的答案。
 
 {sentence}
@@ -36,7 +37,17 @@ PROMPT_TMPL = """\
 {options}
 
 请按以下格式作答，只输出答案行，不要解释：
-{answer_fmt}"""
+{answer_fmt}""",
+    'en': """\
+The video above shows a fitness exercise. Complete the following cloze test by selecting the answer that best matches the video for each blank.
+
+{sentence}
+
+{options}
+
+Reply in the following format only — output the answer lines, no explanation:
+{answer_fmt}""",
+}
 
 
 # ── ontology 工具 ─────────────────────────────────────────────────────────────
@@ -124,13 +135,13 @@ def build_cloze(text: str, lookup: dict, ontology: dict,
     return cloze_text, slots_info
 
 
-def format_prompt(cloze_text: str, slots_info: list[dict]) -> str:
+def format_prompt(cloze_text: str, slots_info: list[dict], lang: str = 'cn') -> str:
     opts_lines = "\n".join(
         f"({s['idx']}) [{s['slot']}]  " + "  ".join(f"{l}.{v}" for l, v in s["options"])
         for s in slots_info
     )
     answer_fmt = "  ".join(f"({s['idx']})=?" for s in slots_info)
-    return PROMPT_TMPL.format(sentence=cloze_text, options=opts_lines, answer_fmt=answer_fmt)
+    return _PROMPT_TMPL[lang].format(sentence=cloze_text, options=opts_lines, answer_fmt=answer_fmt)
 
 
 # ── VLM 调用 ─────────────────────────────────────────────────────────────────
@@ -153,7 +164,7 @@ def call_vlm(frames: list[str], prompt: str, client, model: str, extra_body: dic
 
 def eval_file(src: Path, frames: list[str], client, model: str,
               lookup: dict, ontology: dict, extra_body: dict,
-              min_choices: int = 2) -> list[dict]:
+              min_choices: int = 2, lang: str = 'cn') -> list[dict]:
     data = json.loads(src.read_text("utf-8"))
     text = data.get("category_3_slotted_description", "")
     if not text:
@@ -163,7 +174,7 @@ def eval_file(src: Path, frames: list[str], client, model: str,
     if not slots_info:
         return []
 
-    prompt   = format_prompt(cloze_text, slots_info)
+    prompt   = format_prompt(cloze_text, slots_info, lang)
     response = call_vlm(frames, prompt, client, model, extra_body)
     answers  = {int(m.group(1)): m.group(2).upper() for m in ANS_RE.finditer(response)}
 
@@ -241,7 +252,7 @@ def main() -> None:
         if args.dry_run:
             text       = json.loads(src.read_text("utf-8")).get("category_3_slotted_description", "")
             cloze, si  = build_cloze(text, lookup, ontology, args.min_choices)
-            with print_lock: print(f"{'─'*60}\n{format_prompt(cloze, si)}\n{'─'*60}")
+            with print_lock: print(f"{'─'*60}\n{format_prompt(cloze, si, args.lang)}\n{'─'*60}")
             return
 
         with _inf_lock:
@@ -249,7 +260,7 @@ def main() -> None:
             _inflight[idx] += 1
         c, mid, eb = vlm_clients[idx]
         try:
-            records = eval_file(src, frames, c, mid, lookup, ontology, eb, args.min_choices)
+            records = eval_file(src, frames, c, mid, lookup, ontology, eb, args.min_choices, args.lang)
         finally:
             with _inf_lock:
                 _inflight[idx] = max(0, _inflight[idx] - 1)

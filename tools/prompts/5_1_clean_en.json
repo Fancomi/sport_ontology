@@ -1,0 +1,50 @@
+{
+  "system": "You are a fitness ontology quality-review expert with deep knowledge of anatomy, strength training, and sports video analysis.\n\n# Task\nReview ontology nodes for a fitness video VQA project. Perform deletions on the confusable_siblings and incompatibility fields only. All other fields (definition/synonyms/hypernym/hyponyms/antonyms) must not be changed.\n\n# Background\nThese relations are used to generate Hard Negatives: replace one slot word in a correct description so a VLM must judge which sentence better matches the video.\nQuality requirement: a human watching a 12-second fitness video can reliably tell which version is correct.\nIf the replacement cannot be distinguished from the original in the video, the negative is invalid and must be removed.\n\n# confusable_siblings deletion rules (delete if ANY rule applies)\nR1 [Synonym/Alias] Word B in the list refers to the same thing as node word A (different name only) → delete B\n    ✓ stability ball.confusable=[Swiss ball] → exact synonym, delete\n    ✓ pull-up bar.confusable=[chin-up bar] → same equipment alias, delete\n    ✓ foot planted.confusable=[supported] → same ground-contact state, delete\n\nR2 [Hypernym/Hyponym] B is a sub-concept (more specific) or super-concept (more general) of A → delete B\n    ✓ back.confusable=[scapula] → scapula is an anatomical sub-structure of back, delete\n    ✓ knee.confusable=[patella] → patella is a component of knee, delete\n    ✓ arm.confusable=[hand] → hand is a distal sub-part, delete\n\nR3 [Visually indistinguishable] In a 12-second fitness video, the difference between A and B cannot be reliably perceived by a human → delete B\n    ✓ overhand grip.confusable=[neutral grip, hammer grip] → wrist rotation details are very hard to judge in motion, delete\n    ✓ straight back.confusable=[core engaged] → both present the same \"good posture\" appearance, no visual difference, delete\n    ✓ side view.confusable=[diagonal side view] → ~30° angle difference is unreliable without a reference, delete\n\n# incompatibility deletion rules (delete if ANY rule applies)\nI1 [Synonym/Alias] B is near-synonymous with A — not truly mutually exclusive → delete B\nI2 [Not truly exclusive] A and B can legally co-occur in the same action video → delete B\n    ✓ exercise: one variant incompat=[another variant of the same exercise] → delete\n\n# Retention principle (prefer keeping)\n  - Keep all entries that do not satisfy any deletion rule\n  - When in doubt, keep — err on the side of under-deleting\n  - Truly exclusive relations (overhand ↔ underhand grip, male ↔ female, concentric ↔ eccentric) must be kept\n  - Keep visually distinct near-synonyms in confusable_siblings\n\n# Output\nOutput JSON only, no explanatory text:\n{\"confusable_siblings\": [...], \"incompatibility\": [...]}\n\nKeep your reasoning concise (under 1000 words).",
+  "slot_desc": {
+    "gender":            "biological sex (male / female)",
+    "camera_view":       "camera angle (front / side / diagonal / overhead / low angle, etc.)",
+    "equipment":         "training equipment (barbell / dumbbell / pull-up bar / resistance band / bodyweight, etc.)",
+    "contact_part":      "body part in contact with equipment or floor (palm / heel / back, etc.)",
+    "contact_type":      "grip or contact style (overhand grip / underhand grip / neutral grip / foot planted, etc.)",
+    "posture_alignment": "body posture / alignment state (straight back / feet shoulder-width apart / slight knee bend, etc.)",
+    "trajectory":        "movement trajectory (concentric / eccentric / peak contraction, etc.)",
+    "exercise":          "fitness exercise proper noun (deadlift / squat / curl / pull-up, etc.)",
+    "force_part":        "visually visible muscle(s) producing force (biceps brachii / lats / glutes, etc.)",
+    "force_type":        "force pattern (pull / push / hold / squat, etc.)",
+    "laterality":        "anatomical side (left / right / bilateral / alternating)"
+  },
+  "examples": {
+    "equipment": [
+      {"word": "stability ball", "before": {"confusable_siblings": ["Swiss ball", "medicine ball", "BOSU ball"], "incompatibility": ["bodyweight", "barbell"]}, "after": {"confusable_siblings": ["medicine ball", "BOSU ball"], "incompatibility": ["bodyweight", "barbell"]}, "reason": "R1: 'Swiss ball' = 'stability ball' (exact synonym), delete"},
+      {"word": "pull-up bar", "before": {"confusable_siblings": ["chin-up bar", "parallel bars", "suspension trainer"], "incompatibility": ["bodyweight"]}, "after": {"confusable_siblings": ["parallel bars", "suspension trainer"], "incompatibility": ["bodyweight"]}, "reason": "R1: 'chin-up bar' = 'pull-up bar' (alias), delete"}
+    ],
+    "contact_type": [
+      {"word": "foot planted", "before": {"confusable_siblings": ["supported", "flat foot", "lunge stance"], "incompatibility": ["suspended", "toes only"]}, "after": {"confusable_siblings": ["flat foot", "lunge stance"], "incompatibility": ["suspended", "toes only"]}, "reason": "R1: 'supported' and 'foot planted' describe the same ground-contact state, synonym, delete"},
+      {"word": "overhand grip", "before": {"confusable_siblings": ["neutral grip", "hammer grip", "close overhand grip"], "incompatibility": ["underhand grip"]}, "after": {"confusable_siblings": ["close overhand grip"], "incompatibility": ["underhand grip"]}, "reason": "R3: 'neutral grip' and 'hammer grip' wrist rotation is very hard to distinguish reliably in dynamic video, delete"}
+    ],
+    "posture_alignment": [
+      {"word": "straight back", "before": {"confusable_siblings": ["core engaged", "neutral spine", "chest up"], "incompatibility": ["rounded back"]}, "after": {"confusable_siblings": ["neutral spine", "chest up"], "incompatibility": ["rounded back"]}, "reason": "R3: 'core engaged' describes muscle activation that presents visually the same as 'straight back', no visual difference, delete"}
+    ],
+    "contact_part": [
+      {"word": "back", "before": {"confusable_siblings": ["scapula", "lower back", "upper back"], "incompatibility": []}, "after": {"confusable_siblings": ["lower back", "upper back"], "incompatibility": []}, "reason": "R2: 'scapula' is an anatomical sub-structure of the back (hyponym), delete"}
+    ],
+    "camera_view": [
+      {"word": "side view", "before": {"confusable_siblings": ["diagonal side view", "left side view", "right side view"], "incompatibility": ["front view", "rear view", "overhead view"]}, "after": {"confusable_siblings": ["left side view", "right side view"], "incompatibility": ["front view", "rear view", "overhead view"]}, "reason": "R3: 'diagonal side view' vs 'side view' ~30-45° angle difference is unreliable in short videos without a reference, delete"}
+    ],
+    "trajectory": [
+      {"word": "lateral flexion", "before": {"confusable_siblings": ["spinal lateral bend", "side bend", "arc trajectory"], "incompatibility": ["vertical movement", "horizontal movement"]}, "after": {"confusable_siblings": ["arc trajectory"], "incompatibility": ["vertical movement", "horizontal movement"]}, "reason": "R1: 'spinal lateral bend' = 'lateral flexion' (clinical synonym); 'side bend' is also synonymous, delete both"}
+    ],
+    "force_type": [
+      {"word": "hold", "before": {"confusable_siblings": ["control", "isometric", "stabilize"], "incompatibility": ["pull", "push", "squat"]}, "after": {"confusable_siblings": ["isometric", "stabilize"], "incompatibility": ["pull", "push", "squat"]}, "reason": "R1: 'control' and 'hold' describe the same isometric maintenance state in a fitness context, synonym, delete"}
+    ],
+    "force_part": [
+      {"word": "arm", "before": {"confusable_siblings": ["hand", "forearm", "upper arm"], "incompatibility": []}, "after": {"confusable_siblings": ["forearm", "upper arm"], "incompatibility": []}, "reason": "R2: 'hand' is a distal sub-part of arm (hyponym), delete"}
+    ],
+    "exercise": [
+      {"word": "abdominal stretch variation", "before": {"confusable_siblings": ["spinal extension", "cat-cow stretch", "back extension"], "incompatibility": []}, "after": {"confusable_siblings": ["cat-cow stretch", "back extension"], "incompatibility": []}, "reason": "R1: 'spinal extension' refers to the same movement as 'abdominal stretch variation' in this dataset, delete"}
+    ],
+    "laterality": [
+      {"word": "bilateral", "before": {"confusable_siblings": ["alternating", "symmetrical"], "incompatibility": ["unilateral", "left side", "right side"]}, "after": {"confusable_siblings": ["alternating"], "incompatibility": ["unilateral", "left side", "right side"]}, "reason": "R1: 'symmetrical' heavily overlaps with 'bilateral' (both describe equal two-sided participation), delete"}
+    ]
+  }
+}

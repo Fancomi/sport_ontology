@@ -19,17 +19,48 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.font_manager as _fm
 
-# 注册本地黑体字体（支持完整 CJK）
-_HEITI_PATH = ("/root/paddlejob/workspace/env_run/penghaotian/envs/dino/lib/"
-               "python3.11/site-packages/matplotlib/mpl-data/fonts/ttf/HeiTi.ttf")
-try:
-    _fe = _fm.FontEntry(fname=_HEITI_PATH, name="HeiTi",
-                        style="normal", variant="normal",
-                        weight=400, stretch="normal", size="scalable")
-    _fm.fontManager.ttflist.append(_fe)
-    matplotlib.rcParams["font.sans-serif"] = ["HeiTi"] + list(matplotlib.rcParams["font.sans-serif"])
-except Exception:
-    pass
+# 自动查找 CJK 字体（优先系统字体，再扫描 matplotlib ttf 目录）
+def _find_cjk_font() -> str | None:
+    _CJK_NAMES = ["Noto Sans CJK SC", "Noto Sans CJK", "WenQuanYi Micro Hei",
+                  "Source Han Sans CN", "AR PL UMing CN", "HeiTi", "SimHei"]
+    # 1. 尝试 fc-list 已知 family name
+    for name in _CJK_NAMES:
+        try:
+            paths = _fm.findfont(_fm.FontProperties(family=name), fallback_to_default=False)
+            if paths and "DejaVu" not in paths:
+                return paths
+        except (ValueError, Exception):
+            continue
+    # 2. 扫描系统字体路径（.ttf / .ttc / .otf）
+    import subprocess, shutil
+    if shutil.which("fc-list"):
+        try:
+            out = subprocess.check_output(["fc-list", ":lang=zh"],
+                                          text=True, stderr=subprocess.DEVNULL)
+            for line in out.splitlines():
+                path = line.split(":")[0].strip()
+                if path.lower().endswith((".ttf", ".ttc", ".otf")):
+                    return path
+        except Exception:
+            pass
+    # 3. 扫描 matplotlib 自带 ttf 目录
+    mpl_ttf = Path(_fm.__file__).parent / "mpl-data" / "fonts" / "ttf"
+    for pat in ("*[Hh]ei*.ttf", "*CJK*.ttf", "*Hans*.ttf"):
+        hits = list(mpl_ttf.glob(pat))
+        if hits:
+            return str(hits[0])
+    return None
+
+_CJK_FONT_PATH = _find_cjk_font()
+if _CJK_FONT_PATH:
+    try:
+        _fe = _fm.FontEntry(fname=_CJK_FONT_PATH, name="_AutoCJK",
+                            style="normal", variant="normal",
+                            weight=400, stretch="normal", size="scalable")
+        _fm.fontManager.ttflist.append(_fe)
+        matplotlib.rcParams["font.sans-serif"] = ["_AutoCJK"] + list(matplotlib.rcParams["font.sans-serif"])
+    except Exception:
+        pass
 matplotlib.rcParams["axes.unicode_minus"] = False
 
 import matplotlib.pyplot as plt
@@ -44,22 +75,34 @@ SLOTS = (
     "force_type", "laterality",
 )
 _SLOT_SET = frozenset(SLOTS)
-_RE_SLOT  = re.compile(r'\[(\w+):([^\]]+)\]')
+_RE_SLOT      = re.compile(r'\[(\w+):([^\]]+)\]')   # 正常 [key:value]
+_RE_SLOT_BARE = re.compile(r'\[([^\]:]+)\]')          # 残缺 [key] 或 [乱码]（无冒号）
 
 OUT_DIR_DEFAULT = Path(__file__).parent
 
 
+_RE_CJK = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]')
+
+def _has_cjk(s: str) -> bool:
+    return bool(_RE_CJK.search(s))
+
+
 # ── 收集 ──────────────────────────────────────────────────────────────────────
 
-def collect(data_root: Path, lang: str = 'cn') -> tuple[dict, dict, set]:
-    """返回 (vocab, abnormal, abnormal_files)
-    vocab:          {slot: {value: count}}  合法槽位
-    abnormal:       {key: count}            非法槽位键
-    abnormal_files: 含非法槽位的 augment_*_cn.json 路径集合
+def collect(data_root: Path, lang: str = 'cn') -> tuple[dict, dict, dict, set]:
+    """返回 (vocab, abnormal_keys, abnormal_values, abnormal_files)
+
+    vocab:            {slot: {value: count}}   合法槽位
+    abnormal_keys:    {key: count}             非法槽位键（键名不在 SLOTS 中）
+    abnormal_values:  {slot: {value: count}}   槽位值语言违规
+                        cn 模式：槽位值为纯英文（无 CJK 字符）→ 违规
+                        en 模式：槽位值含 CJK 字符（含任意中文）→ 违规
+    abnormal_files:   含以上任一问题的文件路径集合
     """
-    vocab    = {s: defaultdict(int) for s in SLOTS}
-    abnormal: dict[str, int] = defaultdict(int)
-    abnormal_files: set[Path] = set()
+    vocab:            dict[str, defaultdict] = {s: defaultdict(int) for s in SLOTS}
+    abnormal_keys:    dict[str, int]         = defaultdict(int)
+    abnormal_values:  dict[str, dict]        = {s: defaultdict(int) for s in SLOTS}
+    abnormal_files:   set[Path]              = set()
 
     files = sorted(data_root.rglob(f"augment_*_{lang}.json"))
     print(f"发现 {len(files)} 个增强文件，开始解析...")
@@ -70,15 +113,35 @@ def collect(data_root: Path, lang: str = 'cn') -> tuple[dict, dict, set]:
         except Exception:
             continue
         text = d.get("category_3_slotted_description", "")
+        # 先检测残缺槽位（无冒号，如 [force_曲]），记入 abnormal_keys 后跳过
+        matched_spans = set()
+        for m in _RE_SLOT.finditer(text):
+            matched_spans.add(m.span())
+        for m in _RE_SLOT_BARE.finditer(text):
+            if m.span() not in matched_spans:        # 确实无 key:value 格式
+                abnormal_keys[m.group(1).strip()] += 1
+                abnormal_files.add(f)
         for m in _RE_SLOT.finditer(text):
             key, val = m.group(1), m.group(2).strip()
-            if key in _SLOT_SET:
-                vocab[key][val] += 1
-            else:
-                abnormal[key] += 1
+            if key not in _SLOT_SET:
+                abnormal_keys[key] += 1
+                abnormal_files.add(f)
+                continue
+            vocab[key][val] += 1
+            # 语言敏感值校验
+            if lang == 'en' and _has_cjk(val):
+                abnormal_values[key][val] += 1
+                abnormal_files.add(f)
+            elif lang == 'cn' and not _has_cjk(val):
+                abnormal_values[key][val] += 1
                 abnormal_files.add(f)
 
-    return {s: dict(v) for s, v in vocab.items()}, dict(abnormal), abnormal_files
+    return (
+        {s: dict(v) for s, v in vocab.items()},
+        dict(abnormal_keys),
+        {s: dict(v) for s, v in abnormal_values.items() if v},
+        abnormal_files,
+    )
 
 
 # ── 图1：槽位总览（占比 + 异常）──────────────────────────────────────────────
@@ -196,15 +259,11 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     lp = LangPaths(args.lang)
 
-    vocab, abnormal, abnormal_files = collect(DATA_ROOT, args.lang)
+    vocab, abnormal_keys, abnormal_values, abnormal_files = collect(DATA_ROOT, args.lang)
 
     # ── 写入 JSON（覆盖）────────────────────────────────────────────────────
-    vocab_path    = lp.slot_vocab
-    abnormal_path = out_dir / f"slot_abnormal_{args.lang}.json"
+    vocab_path = lp.slot_vocab
     vocab_path.write_text(json.dumps(vocab, ensure_ascii=False, indent=2), "utf-8")
-    abnormal_path.write_text(json.dumps(
-        dict(sorted(abnormal.items(), key=lambda x: x[1], reverse=True)),
-        ensure_ascii=False, indent=2), "utf-8")
 
     # ── 控制台摘要 ──────────────────────────────────────────────────────────
     total_tokens = sum(sum(v.values()) for v in vocab.values())
@@ -224,29 +283,44 @@ def main() -> None:
     print("─" * 80)
     print(f"  {'合计':<20} {total_kinds:>6}  {total_tokens:>7}")
 
-    if abnormal:
-        abn_total = sum(abnormal.values())
-        print(f"\n异常槽位键（{len(abnormal)} 种，{abn_total} 次，"
-              f"占全部槽位标注 {abn_total/(total_tokens+abn_total)*100:.1f}%）：")
-        for key, cnt in sorted(abnormal.items(), key=lambda x: x[1], reverse=True):
+    if abnormal_keys:
+        abn_total = sum(abnormal_keys.values())
+        print(f"\n异常槽位键（{len(abnormal_keys)} 种，{abn_total} 次）：")
+        for key, cnt in sorted(abnormal_keys.items(), key=lambda x: x[1], reverse=True):
             print(f"  [{key}]  {cnt} 次")
     else:
         print("\n✓ 无异常槽位键")
 
+    val_rule = "含 CJK 字符" if args.lang == "en" else "纯英文（无 CJK）"
+    if abnormal_values:
+        abn_val_total = sum(sum(v.values()) for v in abnormal_values.values())
+        print(f"\n异常槽位值（{val_rule}，{abn_val_total} 次）：")
+        for slot, vals in sorted(abnormal_values.items()):
+            for val, cnt in sorted(vals.items(), key=lambda x: x[1], reverse=True):
+                print(f"  [{slot}:{val}]  {cnt} 次")
+    else:
+        print(f"\n✓ 无异常槽位值（{val_rule}）")
+
     print(f"\n✓ {vocab_path.name}    → {vocab_path}")
-    print(f"✓ {abnormal_path.name} → {abnormal_path}")
 
     # ── 绘图 ────────────────────────────────────────────────────────────────
-    plot_overview(vocab, abnormal, lp.slot_overview_png)
+    plot_overview(vocab, abnormal_keys, lp.slot_overview_png)
     plot_values(vocab, lp.slot_vocab_png, args.top)
 
-    # ── 删除含异常槽位的 augment_*_{lang}.json，便于重新生成 ─────────────────
+    # ── 删除含异常的文件，便于重新生成 ───────────────────────────────────────
+    if args.lang == "cn":
+        fix_hint = ("重新运行 python3 2_augment_wiki.py --host HOST --port PORT -w N\n"
+                    "  原因：槽位值须为中文，纯英文值说明 VLM 扩写未按中文模式生成")
+    else:
+        fix_hint = ("重新运行 python3 2_2_translate_augment.py --host HOST --port PORT -w N [--check]\n"
+                    "  原因：槽位值须为纯英文，含 CJK 字符说明翻译未完成或 QC 未通过")
+
     if abnormal_files:
         print(f"\n删除含异常槽位的文件（共 {len(abnormal_files)} 个）：")
         for f in sorted(abnormal_files):
             f.unlink()
             print(f"  ✗ {f.relative_to(DATA_ROOT)}")
-        print(f"✓ 已删除 {len(abnormal_files)} 个文件，可重新运行 2_augment_wiki 修复")
+        print(f"✓ 已删除 {len(abnormal_files)} 个文件，修复方法：\n  {fix_hint}")
     else:
         print("\n✓ 无需删除文件")
 

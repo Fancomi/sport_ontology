@@ -15,38 +15,42 @@ LANG="en"                              # ← cn / en 切换语言
 # # 1. 翻译metadata到metadata_cn
 # python3 1_translate_wiki.py --host $HOST --port $PORT -w $WORKERS
 
-# 2. VLM 扩写视频描述（--check 启用 LLM 质检，质检复用同一组端口）
+# # 2. VLM 扩写视频描述（--check 启用 LLM 质检，质检复用同一组端口）
 # python3 2_augment_wiki.py --host $HOST --port $PORT --check -w $WORKERS
 
 # 2.1 批量校验 augment_xxx_cn.json 合规性 [已合入2混合调用]
 # python3 2_1_check_augment.py --host $HOST --port $PORT -w $WORKERS
 
-# 2.2 将 augment_*_cn.json 中文描述翻译为英文，输出 augment_{view}_en.json
-#     --check  翻译后启动 LLM 语义 QC 自校正循环（最多 12 轮）
-# python3 2_2_translate_augment.py --host $HOST --port $PORT -w $WORKERS
-# python3 2_2_translate_augment.py --host $HOST --port $PORT -w $WORKERS --check
+# # 2.2 将 augment_*_cn.json 中文描述翻译为英文，输出 augment_{view}_en.json
+# #     --check  翻译后启动 LLM 语义 QC 自校正循环（最多 12 轮）
+# #     _validated 仅在 QC 通过时写入，失败文件下次运行自动重试（无需 --reset-qc）
+# python3 2_2_translate_augment.py --host $HOST --port $PORT -w $WORKERS --check --dry-run --limit 2
+# for i in $(seq 1 5); do
+#     python3 2_2_translate_augment.py --host $HOST --port $PORT -w $WORKERS --check
+# done
 
-# # 3. 槽位统计: 覆盖输出 slot_vocab_{lang}.json / slot_vocab_{lang}.png
-python3 3_collect_slots.py --lang $LANG #[--top 20]
 
-# # 5. LLM 补充本体属性：读取 slot_vocab_{lang}.json，产出/更新 slot_ontology_{lang}.json
-# #    清理过期键、补充新词、保留已有条目
+# # # 3. 槽位统计: 覆盖输出 slot_vocab_{lang}.json / slot_vocab_{lang}.png
+# python3 3_collect_slots.py --lang $LANG #[--top 20]
+
+# # # 5. LLM 补充本体属性：读取 slot_vocab_{lang}.json，产出/更新 slot_ontology_{lang}.json
+# # #    清理过期键、补充新词、保留已有条目
 # python3 5_enrich_with_llm.py --host $HOST --port $PORT -w $WORKERS --lang $LANG
 
-# # 5.1 基于 LLM 清理 slot_ontology_{lang}.json 中不恰当的混淆关系。
+# # # 5.1 基于 LLM 清理 slot_ontology_{lang}.json 中不恰当的混淆关系。
 # python3 5_1_clean_ontology.py --host $HOST --port $PORT -w $WORKERS --lang $LANG
 
-# # # 5.2 关系对称传播增强（无 LLM，纯集合运算，可反复运行直到 5_1 收敛）
-# # #    默认输出到临时文件，确认后加 --output slot_ontology_{lang}.json 覆盖
-# # python3 5_2_infer_relations.py --output slot_ontology_temp.json
-# # python3 5_2_infer_relations.py --output slot_ontology_${LANG}.json
+# # # # 5.2 关系对称传播增强（无 LLM，纯集合运算，可反复运行直到 5_1 收敛）
+# # # python3 5_2_infer_relations.py --lang $LANG  # 原地覆盖
+# python3 5_2_infer_relations.py --lang $LANG
 # # # 5.2 完成后建议重跑 5.1 清理传播引入的噪声（循环直到两脚本均无变化）
 # for i in $(seq 1 5); do
 #     python3 5_1_clean_ontology.py --host $HOST --port $PORT -w $WORKERS --lang $LANG
 # done
 
 # # 6. 图谱构建[可视化]
-# python3 6_build_wiki.py
+# python3 6_build_wiki.py --lang cn --force
+# python3 6_build_wiki.py --lang en --force
 
 # # 8. VLM 评测（在线采样 confusable / 重刷 hard）
 # #    --mode confusable  在线采样评测，结果追加 eval_results_{lang}.jsonl

@@ -12,9 +12,9 @@ P4 互斥扩展: A.incompatibility ∋ B(在库) → A.incompatibility ∪= B.sy
 import argparse, json
 from pathlib import Path
 
+import argparse as _ap
 from config import LangPaths
 
-ONTO_DEFAULT  = LangPaths('cn').slot_ontology
 _UNION_FIELDS = ("antonyms", "confusable_siblings", "incompatibility")
 
 
@@ -75,14 +75,17 @@ def finalize(nodes: dict) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="5_2_infer_relations: slot_ontology 关系对称传播增强")
-    parser.add_argument("--input",      default=str(ONTO_DEFAULT))
-    parser.add_argument("--output",     default=None, help="输出路径（默认原地覆盖 --input）")
+    parser.add_argument("--lang",        default="cn", choices=["cn", "en"],
+                        help="语言版本，决定默认 input/output 路径（默认 cn）")
+    parser.add_argument("--input",       default=None,
+                        help="输入路径（默认 slot_ontology_{lang}.json）")
+    parser.add_argument("--output",      default=None, help="输出路径（默认原地覆盖 --input）")
     parser.add_argument("--slots",      nargs="*",    help="只处理指定槽位（默认全部）")
     parser.add_argument("--max-rounds", type=int, default=50, dest="max_rounds",
                         help="最大迭代轮数（默认50，通常3-5轮收敛）")
     args = parser.parse_args()
 
-    src     = Path(args.input)
+    src     = Path(args.input)  if args.input  else LangPaths(args.lang).slot_ontology
     dst     = Path(args.output) if args.output else src
     onto    = json.loads(src.read_text("utf-8"))
     targets = args.slots or list(onto.keys())
