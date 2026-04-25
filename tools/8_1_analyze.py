@@ -369,9 +369,18 @@ def main() -> None:
         print(f"输入文件 ({len(files)} 个):")
         for f in files:
             print(f"  {f}")
-        base_dir   = common_dir or Path(".")
-        out_path   = Path(args.out)   if args.out   else base_dir / "eval_merged.png"
-        stats_path = Path(args.stats) if args.stats else base_dir / "eval_merged.json"
+        if args.out:
+            out_path = Path(args.out)
+        elif len(files) == 1:
+            out_path = files[0].with_suffix(".png")
+        else:
+            out_path = (common_dir or Path(".")) / "eval_merged.png"
+        if args.stats:
+            stats_path = Path(args.stats)
+        elif len(files) == 1:
+            stats_path = files[0].with_name(files[0].stem.replace("eval_results", "eval_stats") + ".json")
+        else:
+            stats_path = (common_dir or Path(".")) / "eval_merged.json"
     else:
         files      = [lp.eval_results]
         out_path   = Path(args.out)   if args.out   else lp.eval_accuracy
