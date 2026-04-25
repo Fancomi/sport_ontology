@@ -224,9 +224,13 @@ def print_table(stats: dict, total_k: float, total_n: int) -> None:
           f"{total_a:>5.1f}% κ={total_k:>+.2f} n={total_n}")
 
 
-def save_stats(stats: dict, path: Path) -> None:
-    """将每槽位 × 每类型的准确率/Kappa/error_rate 存为 JSON，供 7_gen_confusable.py 加权采样。"""
-    out = {}
+def save_stats(stats: dict, path: Path, records: list[dict]) -> None:
+    """将每槽位 × 每类型的准确率/Kappa/error_rate 存为 JSON，供 step 8 加权采样。
+
+    顶层 _summary 字段记录本次评测的汇总指标，方便后续直接读取而无需重新打印。
+    load_weights() 只读 slot 层两级，_summary 以下划线前缀隔离，不影响采样逻辑。
+    """
+    out: dict = {}
     for slot, by_src in stats.items():
         out[slot] = {}
         for src in SOURCES:
@@ -238,6 +242,25 @@ def save_stats(stats: dict, path: Path) -> None:
                 "error_rate": round(1 - a / 100, 4),
                 "n":          n,
             }
+
+    # ── 汇总摘要（以 _ 前缀隔离，load_weights 不读此字段）────────────────────
+    total_k, total_n = kappa(records)
+    total_a = (total_k + 1) / 2
+    by_src_total: dict[str, list] = defaultdict(list)
+    for r in records:
+        by_src_total[r["source"]].append(r)
+    summary: dict = {
+        "total_n":   total_n,
+        "total_acc": round(total_a, 4),
+        "total_kappa": round(total_k, 4),
+    }
+    for src in SOURCES:
+        recs = by_src_total.get(src, [])
+        sa, sn = acc(recs)
+        sk, _  = kappa(recs)
+        summary[src] = {"acc": round(sa / 100, 4), "kappa": round(sk, 4), "n": sn}
+    out["_summary"] = summary
+
     path.write_text(json.dumps(out, ensure_ascii=False, indent=2), "utf-8")
     print(f"统计: {path}")
 
@@ -322,7 +345,7 @@ def main() -> None:
     print_table(stats, total_k, total_n)
     print_duplicates(records, stats)
     plot(stats, out_path, cov)
-    save_stats(stats, stats_path)
+    save_stats(stats, stats_path, records)
 
 
 if __name__ == "__main__":

@@ -129,9 +129,11 @@ def load_weights(stats_path: Path = None, lang: str = 'cn') -> tuple[dict | None
         return None, None
     raw  = json.loads(stats_path.read_text("utf-8"))
     conf = {slot: v["confusable_siblings"]["error_rate"]
-            for slot, v in raw.items() if "confusable_siblings" in v}
+            for slot, v in raw.items()
+            if not slot.startswith("_") and "confusable_siblings" in v}
     inco = {slot: v["incompatibility"]["error_rate"]
-            for slot, v in raw.items() if "incompatibility" in v}
+            for slot, v in raw.items()
+            if not slot.startswith("_") and "incompatibility" in v}
     print("[weights] " + ", ".join(
         f"{s}={v:.2f}" for s, v in sorted(conf.items(), key=lambda x: -x[1])
     ))
