@@ -53,7 +53,7 @@ for i in $(seq 0 7); do
         --async-scheduling \
         --enable-auto-tool-choice \
         --tool-call-parser qwen3_coder \
-        --speculative-config '{"method":"qwen3_next_mtp","num_speculative_tokens":2}' \
+        --speculative-config '{"method":"qwen3_next_mtp","num_speculative_tokens":5}' \
         --port $PORT &
         # --reasoning-parser qwen3 \
     echo "  GPU $i → port $PORT, VLLM_PORT=$((20000 + i * 20)) (pid $!)"

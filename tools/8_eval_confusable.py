@@ -166,12 +166,12 @@ def flush_hard_all(records: list[dict], model_name: str, lang: str = 'cn') -> No
         if key not in hist:
             continue
         hist[key]["pred_count"] = hist[key].get("pred_count", 0) + 1
-        hist[key].setdefault("pred_by_model", {})[model_name] = \
-            hist[key]["pred_by_model"].get(model_name, 0) + 1
+        _pbm = hist[key].setdefault("pred_by_model", {})
+        _pbm[model_name] = _pbm.get(model_name, 0) + 1
         if not r["is_correct"]:
             hist[key]["error_count"] = hist[key].get("error_count", 0) + 1
-            hist[key].setdefault("error_by_model", {})[model_name] = \
-                hist[key]["error_by_model"].get(model_name, 0) + 1
+            _ebm = hist[key].setdefault("error_by_model", {})
+            _ebm[model_name] = _ebm.get(model_name, 0) + 1
     save_hard_all(hist, lang)
 
 

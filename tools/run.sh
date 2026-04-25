@@ -5,7 +5,7 @@
 HOST="127.0.0.1"
 PORT="8001,8002,8003,8004,8005,8006,8007,8008"
 WORKERS=8
-LANG="en"                              # ← cn / en 切换语言
+LANG="cn"                              # ← cn / en 切换语言
 # ─────────────────────────────────────────────────────────────────────────────
 
 # 视频描述 / 处理预热
@@ -52,15 +52,18 @@ LANG="en"                              # ← cn / en 切换语言
 # python3 6_build_wiki.py --lang cn --force
 # python3 6_build_wiki.py --lang en --force
 
-# # 8. VLM 评测（在线采样 confusable / 重刷 hard）
+# # 8. VLM 评测（挖掘 confusable / 评测 hard）
 # #    --mode confusable  在线采样评测，结果追加 eval_results_{lang}.jsonl
 # #    --mode hard        重刷累计 hard 分数（先跑 9 --reset-counts）
 # #    --mode all         全部（默认）
-# python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --mode confusable
-# python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --mode hard
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --lang $LANG
+# python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --mode confusable
 
-# # 测试
+# 评测 HARD
+python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --mode hard
+
+
+# # 实验smoke
 # python3 8_eval_confusable.py \
 # --host $HOST --port $PORT -w $WORKERS \
 # --lang $LANG --mode confusable --limit 40 \
