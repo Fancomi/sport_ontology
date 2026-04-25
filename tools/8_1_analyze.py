@@ -34,16 +34,23 @@ SOURCES   = ("confusable_siblings", "incompatibility")
 SRC_LABEL = {"confusable_siblings": "Confusable", "incompatibility": "Incompatible"}
 
 
-def load(path: Path) -> list[dict]:
-    records = []
-    for line in path.read_text("utf-8").splitlines():
-        try:
-            r = json.loads(line)
-            if r.get("is_correct") is not None:
-                records.append(r)
-        except Exception:
-            pass
-    return records
+def load_dedup(paths: list[Path]) -> list[dict]:
+    """从多个 jsonl 文件加载记录，按 (video, view, replaced_slot, original_value, new_value) 去重。
+    同一 key 保留最后出现的记录（靠后文件 / 靠后行视为更新版本）。
+    """
+    seen: dict[tuple, dict] = {}
+    for p in paths:
+        for line in p.read_text("utf-8").splitlines():
+            try:
+                r = json.loads(line)
+                if r.get("is_correct") is None:
+                    continue
+                key = (r.get("video"), r.get("view"),
+                       r.get("replaced_slot"), r.get("original_value"), r.get("new_value"))
+                seen[key] = r
+            except Exception:
+                pass
+    return list(seen.values())
 
 
 def acc(records: list[dict]) -> tuple[float, int]:
@@ -290,11 +297,36 @@ def print_duplicates(records: list[dict], stats: dict, top_n: int = 5) -> None:
                 print(f"    {orig} → {new}: {c} ({c/total*100:.1f}%)")
 
 
+def resolve_inputs(raw: list[str]) -> tuple[list[Path], Path | None]:
+    """将 --input 参数列表展开为实际 jsonl 文件列表，并返回公共目录（若输入均在同一目录）。
+
+    - 目录：递归收集目录下所有 eval_results*.jsonl，按文件名排序
+    - 文件：直接使用
+    返回 (sorted_paths, common_dir_or_None)
+    """
+    files: list[Path] = []
+    for s in raw:
+        p = Path(s)
+        if p.is_dir():
+            found = sorted(p.rglob("eval_results*.jsonl"))
+            if not found:
+                raise SystemExit(f"✗ 目录 {p} 中未找到 eval_results*.jsonl")
+            files.extend(found)
+        else:
+            files.append(p)
+
+    dirs = {f.parent for f in files}
+    common_dir = dirs.pop() if len(dirs) == 1 else None
+    return files, common_dir
+
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="评测结果统计（含 Cohen's Kappa）")
     parser.add_argument("--lang",    default="cn", choices=["cn", "en"],
                         help="语言版本，影响默认输入/输出文件名（默认 cn）")
-    parser.add_argument("--input",   default=None)
+    parser.add_argument("--input",   nargs="+", default=None,
+                        help="jsonl 文件或目录（目录自动收集 eval_results*.jsonl），可多个")
     parser.add_argument("--out",     default=None)
     parser.add_argument("--stats",   default=None,
                         help="输出采样权重 JSON（供 step 8 使用）")
@@ -305,20 +337,7 @@ def main() -> None:
     args = parser.parse_args()
 
     from config import LangPaths
-    lp          = LangPaths(args.lang)
-    input_path  = Path(args.input)  if args.input  else lp.eval_results
-    if args.out:
-        out_path = Path(args.out)
-    elif args.input:
-        out_path = input_path.with_suffix(".png")
-    else:
-        out_path = lp.eval_accuracy
-    if args.stats:
-        stats_path = Path(args.stats)
-    elif args.input:
-        stats_path = input_path.with_name(input_path.stem.replace("eval_results", "eval_stats") + ".json")
-    else:
-        stats_path = lp.eval_stats
+    lp = LangPaths(args.lang)
 
     # ── 对比模式 ──────────────────────────────────────────────────────────────
     if args.compare:
@@ -326,8 +345,8 @@ def main() -> None:
         label_a = args.labels[0] if args.labels else path_a.stem
         label_b = args.labels[1] if args.labels else path_b.stem
 
-        recs_a = load(path_a)
-        recs_b = load(path_b)
+        recs_a = load_dedup([path_a])
+        recs_b = load_dedup([path_b])
         print(f"[{label_a}] {len(recs_a)} 条    [{label_b}] {len(recs_b)} 条\n")
 
         stats_a, stats_b = compute(recs_a), compute(recs_b)
@@ -340,13 +359,27 @@ def main() -> None:
             print_table(stats, tk, tn)
             print()
 
-        compare_out = out_path if args.out else Path(f"eval_compare_{label_a}_vs_{label_b}.png")
-        plot_compare(stats_a, stats_b, label_a, label_b, cov_a, cov_b, compare_out)
+        out_path = Path(args.out) if args.out else Path(f"eval_compare_{label_a}_vs_{label_b}.png")
+        plot_compare(stats_a, stats_b, label_a, label_b, cov_a, cov_b, out_path)
         return
 
-    # ── 单文件模式 ────────────────────────────────────────────────────────────
-    records = load(input_path)
-    print(f"有效记录: {len(records)} 条\n")
+    # ── 多文件 / 目录模式 ─────────────────────────────────────────────────────
+    if args.input:
+        files, common_dir = resolve_inputs(args.input)
+        print(f"输入文件 ({len(files)} 个):")
+        for f in files:
+            print(f"  {f}")
+        base_dir   = common_dir or Path(".")
+        out_path   = Path(args.out)   if args.out   else base_dir / "eval_merged.png"
+        stats_path = Path(args.stats) if args.stats else base_dir / "eval_merged.json"
+    else:
+        files      = [lp.eval_results]
+        out_path   = Path(args.out)   if args.out   else lp.eval_accuracy
+        stats_path = Path(args.stats) if args.stats else lp.eval_stats
+
+    # ── 加载 + 去重 ───────────────────────────────────────────────────────────
+    records = load_dedup(files)
+    print(f"\n有效记录（去重后）: {len(records)} 条\n")
 
     stats            = compute(records)
     total_k, total_n = kappa(records)
