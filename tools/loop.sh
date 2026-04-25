@@ -16,8 +16,8 @@ HOST="127.0.0.1"
 PORT="8001,8002,8003,8004,8005,8006,8007,8008"
 WORKERS=8
 ROUNDS=58
-LANG="cn"                              # ← cn / en 切换语言
-BAKUP_DIR="BAKUP/20260423_qwen3_6"
+LANG="en"                              # ← cn / en 切换语言
+BAKUP_DIR="BAKUP/20260425_qwen3_6_en"
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
