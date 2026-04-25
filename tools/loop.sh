@@ -33,7 +33,6 @@ for i in $(seq 1 $ROUNDS); do
     TS=$(date +%Y%m%d_%H%M%S)
     RN=$(printf '%02d' $i)
     ROUND_OUT="${BAKUP_DIR}/eval_results_${LANG}_r${RN}_${TS}.jsonl"
-    ROUND_PNG="${BAKUP_DIR}/eval_accuracy_${LANG}_r${RN}_${TS}.png"
     ROUND_STATS="${BAKUP_DIR}/eval_stats_${LANG}_r${RN}_${TS}.json"
 
     echo ""
@@ -54,7 +53,6 @@ for i in $(seq 1 $ROUNDS); do
     python3 8_1_analyze.py \
         --lang  $LANG \
         --input "$ROUND_OUT" \
-        --out   "$ROUND_PNG" \
         --stats "eval_stats_${LANG}.json"
     cp "eval_stats_${LANG}.json" "$ROUND_STATS"
 

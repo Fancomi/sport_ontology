@@ -59,9 +59,8 @@ LANG="cn"                              # ← cn / en 切换语言
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --lang $LANG
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --mode confusable
 
-# 评测 HARD
+# 评测 HARD, 读取hard_all_$LANG.jsonl
 python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --mode hard
-
 
 # # 实验smoke
 # python3 8_eval_confusable.py \
@@ -74,17 +73,20 @@ python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --lang $LANG 
 # python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --dry-run --limit 4
 # python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --limit 4
 
-# # 8.1 分析混淆判断结果
-# python3 8_1_analyze.py \
-#     --lang  $LANG \
-#     --input eval_results_hard_${LANG}.jsonl \
-#     --out   eval_accuracy_hard_${LANG}.png \
-#     --stats eval_stats_hard_${LANG}.json
+# =======================================
+# # 8.1 分析混淆判断结果（--out 和 --stats 可省略，自动在 input 同目录同 stem 生成）
+# python3 8_1_analyze.py --lang $LANG --input eval_results_hard_${LANG}.jsonl
+# python3 8_1_analyze.py --lang $LANG --input BAKUP/eval_results_hard_gemma源gemma测.jsonl
+# python3 8_1_analyze.py --lang $LANG --input BAKUP/eval_results_hard_gemma源Qwen36测.jsonl
+# python3 8_1_analyze.py --lang $LANG --input BAKUP/20260423_qwen3_6/eval_results_cn_r08_20260425_093403.jsonl
+# python3 8_1_analyze.py --lang $LANG --input BAKUP/20260422_gemma4/eval_results_r45_20260423_124535.jsonl
+
 # python3 8_1_analyze.py --compare \
 # BAKUP/eval_results_v2_gemma.jsonl \
 # BAKUP/eval_results_v2_qwen3.6.jsonl \
 # --labels Gemma Qwen3.6
 
+# =======================================
 # # 9. 从 eval_results_{lang}.jsonl 提取答错对，幂等合入 hard_all_{lang}.jsonl
 # #    --input  可指定多个文件取并集
 # #    --clean  清理 augment 更新后 [slot:orig] 已失效的历史条目

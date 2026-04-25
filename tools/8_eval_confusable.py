@@ -9,7 +9,7 @@
 消除 8 线程同时 json.dumps 大 payload 的 GIL 热点。
 """
 
-import argparse, json, random, sys, threading
+import argparse, contextlib, json, random, sys, threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -208,8 +208,8 @@ def main() -> None:
     args = pa.parse_args()
 
     lp = LangPaths(args.lang)
-    out_path      = Path(args.out)      if args.out      else lp.eval_results
-    out_hard_path = Path(args.out_hard) if args.out_hard else lp.eval_results_hard
+    out_path      = Path(args.out)      if args.out      else lp.eval_results       if args.mode in ("confusable", "all") else None
+    out_hard_path = Path(args.out_hard) if args.out_hard else lp.eval_results_hard  if args.mode in ("hard",       "all") else None
 
     random.seed(args.seed)
 
@@ -308,8 +308,8 @@ def main() -> None:
             p1_pool.submit(_gh, t).add_done_callback(_on_p1)
     # p1_pool 退出：所有 Phase 1 完成，所有 _on_p1 回调已执行，p2_map 全量填充
 
-    with (out_path.open("a", encoding="utf-8") as fout,
-          out_hard_path.open("a", encoding="utf-8") as fout_hard):
+    _open = lambda p: p.open("a", encoding="utf-8") if p else contextlib.nullcontext()
+    with _open(out_path) as fout, _open(out_hard_path) as fout_hard:
         for fut in as_completed(p2_map):
             record   = fut.result()
             it       = p2_map[fut]
@@ -330,8 +330,10 @@ def main() -> None:
                     h_total += 1; h_ok += record["is_correct"]
                 if done_cnt % 200 == 0:
                     print(f"  进度 {done_cnt}/{len(p2_map)}  conf={c_total} hard={h_total}")
-                    fout.flush(); fout_hard.flush()
-        fout.flush(); fout_hard.flush()
+                    if fout:    fout.flush()
+                    if fout_hard: fout_hard.flush()
+        if fout:      fout.flush()
+        if fout_hard: fout_hard.flush()
 
     p2_pool.shutdown(wait=True)
 

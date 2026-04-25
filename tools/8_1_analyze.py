@@ -307,8 +307,18 @@ def main() -> None:
     from config import LangPaths
     lp          = LangPaths(args.lang)
     input_path  = Path(args.input)  if args.input  else lp.eval_results
-    out_path    = Path(args.out)    if args.out    else lp.eval_accuracy
-    stats_path  = Path(args.stats)  if args.stats  else lp.eval_stats
+    if args.out:
+        out_path = Path(args.out)
+    elif args.input:
+        out_path = input_path.with_suffix(".png")
+    else:
+        out_path = lp.eval_accuracy
+    if args.stats:
+        stats_path = Path(args.stats)
+    elif args.input:
+        stats_path = input_path.with_name(input_path.stem.replace("eval_results", "eval_stats") + ".json")
+    else:
+        stats_path = lp.eval_stats
 
     # ── 对比模式 ──────────────────────────────────────────────────────────────
     if args.compare:
