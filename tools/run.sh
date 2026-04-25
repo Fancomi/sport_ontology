@@ -75,11 +75,11 @@ python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --lang $LANG 
 
 # =======================================
 # # 8.1 分析混淆判断结果（--out 和 --stats 可省略，自动在 input 同目录同 stem 生成）
-# python3 8_1_analyze.py --lang $LANG --input eval_results_hard_${LANG}.jsonl
-# python3 8_1_analyze.py --lang $LANG --input BAKUP/eval_results_hard_gemma源gemma测.jsonl
-# python3 8_1_analyze.py --lang $LANG --input BAKUP/eval_results_hard_gemma源Qwen36测.jsonl
-# python3 8_1_analyze.py --lang $LANG --input BAKUP/20260423_qwen3_6/eval_results_cn_r08_20260425_093403.jsonl
-# python3 8_1_analyze.py --lang $LANG --input BAKUP/20260422_gemma4/eval_results_r45_20260423_124535.jsonl
+# python3 8_1_analyze.py --input eval_results_hard_${LANG}.jsonl
+# python3 8_1_analyze.py --input BAKUP/eval_results_hard_gemma源gemma测.jsonl
+# python3 8_1_analyze.py --input BAKUP/eval_results_hard_gemma源Qwen36测.jsonl
+python3 8_1_analyze.py --input BAKUP/20260423_qwen3_6
+python3 8_1_analyze.py --input BAKUP/20260422_gemma4
 
 # python3 8_1_analyze.py --compare \
 # BAKUP/eval_results_v2_gemma.jsonl \

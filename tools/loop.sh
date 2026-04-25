@@ -51,7 +51,6 @@ for i in $(seq 1 $ROUNDS); do
     # 8.1 分析：覆盖 eval_stats_{LANG}.json 供下一轮加权；同时备份到 BAKUP
     echo "[8.1] 分析结果..."
     python3 8_1_analyze.py \
-        --lang  $LANG \
         --input "$ROUND_OUT" \
         --stats "eval_stats_${LANG}.json"
     cp "eval_stats_${LANG}.json" "$ROUND_STATS"
