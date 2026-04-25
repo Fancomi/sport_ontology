@@ -251,7 +251,7 @@ def main() -> None:
 
     n_dirs = len({f.parent for f in aug_files} | {d for (d, _), _ in hard_tasks})
     print(f"\n目录={n_dirs}  augment={len(aug_files)}  hard_groups={len(hard_tasks)}"
-          f"  out={out_path.name}  out_hard={out_hard_path.name}")
+          f"  out={out_path.name if out_path else '-'}  out_hard={out_hard_path.name if out_hard_path else '-'}")
 
     done_conf = load_done(out_path)
     done_hard = load_done(out_hard_path) if args.mode in ("hard", "all") else set()
