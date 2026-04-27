@@ -107,20 +107,24 @@ def _build_pair(k: tuple, rec: dict, original_slotted: str) -> dict | None:
     return pair
 
 
+def _load_hist(path: Path, lang: str) -> dict:
+    """加载 hard_all 数据；默认路径走缓存版 load_hard_all，否则直接解析文件。"""
+    if path == LangPaths(lang).hard_all:
+        return load_hard_all(lang)
+    hist = {}
+    for line in path.read_text("utf-8").splitlines():
+        try:
+            r = json.loads(line)
+            k = (r["video"], r["view"], r["replaced_slot"], r["original_value"], r["new_value"])
+            hist[k] = r
+        except Exception:
+            pass
+    return hist
+
+
 def render(hard_all_path: Path, views: list[str] | None, lang: str = 'cn') -> tuple[int, int]:
     """渲染 hard_all_{lang}.jsonl → hn_render_{view}.json，返回 (文件数, 条目总数)。"""
-    default_path = LangPaths(lang).hard_all
-    if hard_all_path == default_path:
-        hist = load_hard_all(lang)
-    else:
-        hist = {}
-        for line in hard_all_path.read_text("utf-8").splitlines():
-            try:
-                r = json.loads(line)
-                k = (r["video"], r["view"], r["replaced_slot"], r["original_value"], r["new_value"])
-                hist[k] = r
-            except Exception:
-                pass
+    hist = _load_hist(hard_all_path, lang)
 
     rendered_from = str(hard_all_path)
 
@@ -187,18 +191,7 @@ def clean(views: list[str] | None) -> int:
 def coverage(hard_all_path: Path, views: list[str] | None, lang: str = 'cn') -> None:
     """dry-run：统计 hard_all 覆盖了多少个视频/视角，不写文件。"""
     from collections import Counter
-
-    if hard_all_path == LangPaths(lang).hard_all:
-        hist = load_hard_all(lang)
-    else:
-        hist = {}
-        for line in hard_all_path.read_text("utf-8").splitlines():
-            try:
-                r = json.loads(line)
-                k = (r["video"], r["view"], r["replaced_slot"], r["original_value"], r["new_value"])
-                hist[k] = r
-            except Exception:
-                pass
+    hist = _load_hist(hard_all_path, lang)
 
     # 收集所有有 augment 文件的 (video, view)
     all_vv: set[tuple[str, str]] = set()
@@ -242,7 +235,7 @@ def coverage(hard_all_path: Path, views: list[str] | None, lang: str = 'cn') -> 
             print(f"    ... 共 {len(uncovered)} 条")
 
 
-
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="9_2: 渲染 hard_all_{lang}.jsonl → hn_render_{view}.json（单向，不进 loop）"
     )
