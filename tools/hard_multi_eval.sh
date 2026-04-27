@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# hard_multi_eval.sh — 对多个 hard_all 源文件循环跑 N 轮 VLM hard 评测
+# hard_multi_eval.sh — 对多个 hard_all 源文件跑 N 轮 VLM hard 评测
 #
-# 每轮使用独立 --out-hard 文件（规避 done-resume 跳过逻辑），
-# pred_count / error_count 逐轮累计写回各源文件。
+# Phase1 每源文件只跑一次（--rounds 由 8_eval_confusable 内部循环），
+# pred/error 统计在内存中累积，完成后一次性 flush 写回源文件，避免大文件频繁写入。
 #
-# 完成后各源文件已含完整预测统计，直接用于：
-#   python3 9_extract_errors.py --lang cn --input BAKUP/hard_all_cn_xxx源.jsonl
+# 完成后用 9_extract_errors --hard-src 合并多个源文件并按阈值提取最终 hard_all：
+#   python3 9_extract_errors.py --lang cn \
+#     --hard-src BAKUP/hard_all_cn_gemma源.jsonl BAKUP/hard_all_cn_Qwen36源.jsonl \
+#     --min-pred 10 --min-error-rate 0.3
 #
-# 用法：
-#   bash hard_multi_eval.sh               # 默认 10 轮
-#   ROUNDS=3 bash hard_multi_eval.sh      # 快速调试
+# 环境变量覆盖：HOST / PORT / WORKERS / ROUNDS
 set -euo pipefail
 
 HOST="${HOST:-127.0.0.1}"
@@ -20,7 +20,6 @@ ROUNDS="${ROUNDS:-10}"
 TOOLS="$(cd "$(dirname "$0")" && pwd)"
 BAKUP="$TOOLS/BAKUP"
 
-# lang|源文件 列表（按需增减）
 SRC_FILES=(
     "cn|$BAKUP/hard_all_cn_gemma源.jsonl"
     "cn|$BAKUP/hard_all_cn_Qwen36源.jsonl"
@@ -28,9 +27,7 @@ SRC_FILES=(
     "en|$BAKUP/hard_all_en_Qwen36源.jsonl"
 )
 
-echo "════════════════════════════════════════════════════"
-echo "  hard_multi_eval  rounds=$ROUNDS  workers=$WORKERS"
-echo "════════════════════════════════════════════════════"
+echo "════ hard_multi_eval  rounds=$ROUNDS  workers=$WORKERS ════"
 
 for entry in "${SRC_FILES[@]}"; do
     lang="${entry%%|*}"
@@ -38,29 +35,23 @@ for entry in "${SRC_FILES[@]}"; do
     name="$(basename "$src" .jsonl)"
 
     if [[ ! -f "$src" ]]; then
-        echo "⚠  跳过（文件不存在）: $src"
-        continue
+        echo "⚠  跳过（文件不存在）: $src"; continue
     fi
 
     echo ""
     echo "── $name  lang=$lang ──"
-
-    for r in $(seq 1 "$ROUNDS"); do
-        rn=$(printf "%02d" "$r")
-        out_hard="$BAKUP/${name}_r${rn}.jsonl"
-        echo "  [Round $rn/$ROUNDS] → $(basename "$out_hard")"
-
-        python3 "$TOOLS/8_eval_confusable.py" \
-            --mode hard --lang "$lang" \
-            --hard-src "$src" \
-            --out-hard "$out_hard" \
-            --host "$HOST" --port "$PORT" -w "$WORKERS"
-    done
-
-    echo "  ✓ $name: $ROUNDS 轮完成，pred/error 已累计至源文件"
+    python3 "$TOOLS/8_eval_confusable.py" \
+        --mode hard --lang "$lang" \
+        --hard-src "$src" \
+        --out-hard "$BAKUP/${name}_eval.jsonl" \
+        --rounds "$ROUNDS" \
+        --host "$HOST" --port "$PORT" -w "$WORKERS"
+    echo "  ✓ $name 完成，pred/error 已写回源文件"
 done
 
 echo ""
 echo "════ ALL DONE ════"
-echo "pred_count / error_count 已写回各源文件，提取示例："
-echo "  python3 9_extract_errors.py --lang cn --input BAKUP/hard_all_cn_xxx源.jsonl"
+echo "用 9_extract_errors --hard-src 合并过滤，示例："
+echo "  python3 9_extract_errors.py --lang cn \\"
+echo "    --hard-src BAKUP/hard_all_cn_gemma源.jsonl BAKUP/hard_all_cn_Qwen36源.jsonl \\"
+echo "    --min-pred 10 --min-error-rate 0.3"

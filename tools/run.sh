@@ -63,9 +63,12 @@ LANG="en"                              # ← cn / en 切换语言
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --mode hard
 # #   --hard-src BAKUP/hard_all_cn_xxx源.jsonl  可指定源文件（不覆盖默认 hard_all）
 
-# # hard_multi_eval: 对多个 hard_all 源文件跑 N 轮（默认 10），累计 pred/error 统计
-# # 完成后用 9_extract_errors 按源文件做最终提取
+# # hard_multi_eval: Phase1 每源文件只跑一次，Phase2 循环 N 轮，完成后一次 flush
 # ROUNDS=10 bash hard_multi_eval.sh
+# # 多轮完成后合并多源文件，按阈值提取最终 hard_all
+# python3 9_extract_errors.py --lang cn \
+#     --hard-src BAKUP/hard_all_cn_gemma源.jsonl BAKUP/hard_all_cn_Qwen36源.jsonl \
+#     --min-pred 10 --min-error-rate 0.3
 
 # # 实验smoke
 # python3 8_eval_confusable.py \

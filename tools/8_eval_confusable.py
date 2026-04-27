@@ -209,12 +209,18 @@ def main() -> None:
     pa.add_argument("--hard-src", default=None, dest="hard_src",
                     help="hard_all 源文件路径（默认用 hard_all_{lang}.jsonl）；"
                          "读取 hard 条目并将 pred/error 统计写回此文件")
+    pa.add_argument("--rounds", type=int, default=1,
+                    help="hard 模式重复评测轮数（仅 --mode hard；Phase1 只跑一次，"
+                         "Phase2 循环 N 轮内存累积，完成后一次 flush 避免大文件频繁写入）")
     args = pa.parse_args()
 
     lp = LangPaths(args.lang)
     out_path      = Path(args.out)      if args.out      else lp.eval_results       if args.mode in ("confusable", "all") else None
     out_hard_path = Path(args.out_hard) if args.out_hard else lp.eval_results_hard  if args.mode in ("hard",       "all") else None
     hard_src      = Path(args.hard_src) if args.hard_src else None
+
+    if args.rounds > 1 and args.mode != "hard":
+        print("✗ --rounds > 1 仅支持 --mode hard", file=sys.stderr); sys.exit(1)
 
     random.seed(args.seed)
 
@@ -283,9 +289,50 @@ def main() -> None:
             print(f"{'─'*60}\n{_PROMPT[args.lang].format(a=it.original, b=strip_slots(it.neg['category_3_slotted_description']))}\n")
         return
 
-    # ── Phase 1 + Phase 2 流水线 ──────────────────────────────────────────────
-    # Phase 1 通过 add_done_callback 把结果直接提交给 p2_pool，
-    # p1_pool 退出后 p2_map 全量填充，再用 as_completed 收结果写盘。
+    # ── 多轮 hard 评测（--rounds > 1）────────────────────────────────────────
+    # Phase1 只跑一次，Phase2 循环 N 轮，所有结果内存累积，最后一次 flush_hard_all
+    if args.rounds > 1:
+        done_hard = set()   # 多轮模式：每轮重新评测所有条目，不做 resume
+        print(f"\n[Phase 1] 帧加载  workers={args.workers}")
+        hard_items: list[WorkItem] = []
+        with ThreadPoolExecutor(max_workers=args.workers) as p1:
+            for f in as_completed([p1.submit(_gh, t) for t in hard_tasks]):
+                hard_items += f.result() or []
+        print(f"[Phase 1] {len(hard_items)} 条\n")
+        if not hard_items:
+            print("无待评测项，退出"); return
+
+        hard_records: list[dict] = []
+        h_total = h_ok = 0
+        for rnd in range(1, args.rounds + 1):
+            rnd_ok = rnd_n = 0
+            print(f"── Round {rnd}/{args.rounds} ──")
+            with ThreadPoolExecutor(max_workers=len(eps)) as p2:
+                futs = {p2.submit(eval_one, it, eps, args.seed, args.lang): it
+                        for it in hard_items}
+                for fut in as_completed(futs):
+                    rec = fut.result()
+                    if rec is None:
+                        continue
+                    _log(rec.pop("_log_line", None))
+                    hard_records.append(rec)
+                    rnd_ok += rec["is_correct"]; rnd_n += 1
+            h_ok += rnd_ok; h_total += rnd_n
+            print(f"  Round {rnd}: {rnd_n}条  准确率 {rnd_ok/rnd_n*100:.1f}%" if rnd_n else "  Round {rnd}: 0条")
+
+        if out_hard_path and hard_records:
+            with out_hard_path.open("a", encoding="utf-8") as fh:
+                for rec in hard_records:
+                    fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+        model_name = eps[0].mod_b.decode().strip('"').split("/")[-1] if eps else "unknown"
+        flush_hard_all(hard_records, model_name, args.lang, hard_src)
+        print(f"\n[hard_all] 已更新 {len(hard_records)} 条  model={model_name}")
+        print(f"\n[DONE] hard {h_total}条（{args.rounds}轮）  "
+              f"准确率 {h_ok/h_total*100:.1f}%  → {out_hard_path.name if out_hard_path else '-'}")
+        return
+
+    # ── Phase 1 + Phase 2 流水线（单轮）─────────────────────────────────────
     print(f"\n[Phase 1+2] 流水线评测  workers={args.workers}")
     write_lock   = Lock()
     p2_map: dict = {}
