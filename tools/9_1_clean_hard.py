@@ -87,6 +87,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="9.1: LLM 审核 Hard Negative 句子级有效性")
     parser.add_argument("--lang",   default="cn", choices=["cn", "en"],
                         help="语言版本，影响 hard_all 文件路径（默认 cn）")
+    parser.add_argument("--input",  default=None,
+                        help="输入 hard_all_{lang}.jsonl 路径（默认 tools/hard_all_{lang}.jsonl）"
+                             "；指定后输出写到同目录同 stem 加 _cleaned 后缀，不覆盖默认文件")
+    parser.add_argument("--output", default=None,
+                        help="显式指定输出路径（覆盖自动推导）")
     parser.add_argument("--slots",   nargs="*",       help="只处理指定槽位（默认全部）")
     parser.add_argument("--limit",   type=int, default=0,
                         help="调试：只处理前 N 条（0=全部）")
@@ -101,6 +106,17 @@ def main() -> None:
     parser.add_argument("--workers", "-w", type=int, default=1)
     args = parser.parse_args()
 
+    from config import LangPaths
+    lp         = LangPaths(args.lang)
+    input_path = Path(args.input) if args.input else lp.hard_all
+    if args.output:
+        output_path = Path(args.output)
+    elif args.input:
+        p = Path(args.input)
+        output_path = p.with_name(p.stem + "_cleaned" + p.suffix)
+    else:
+        output_path = lp.hard_all   # 默认覆盖原文件
+
     try:
         client = LLMClient(backend="poe" if args.poe else "local",
                            host=args.host,
@@ -110,7 +126,20 @@ def main() -> None:
         print(f"✗ 连接失败: {e}", file=sys.stderr)
         sys.exit(1)
 
-    hist     = load_hard_all(args.lang)
+    # 加载指定来源
+    if input_path == lp.hard_all:
+        hist = load_hard_all(args.lang)
+    else:
+        hist = {}
+        for line in input_path.read_text("utf-8").splitlines():
+            try:
+                r = json.loads(line)
+                k = (r["video"], r["view"], r["replaced_slot"], r["original_value"], r["new_value"])
+                hist[k] = r
+            except Exception:
+                pass
+        print(f"输入: {input_path}  ({len(hist)} 条)")
+        print(f"输出: {output_path}\n")
     progress = json.loads(PROGRESS_PATH.read_text("utf-8")) if PROGRESS_PATH.exists() else {}
 
     # 待处理条目：按 slot 过滤 + 跳过已处理
@@ -173,8 +202,12 @@ def main() -> None:
     for k in to_delete:
         hist.pop(k, None)
 
-    save_hard_all(hist, args.lang)
-    print(f"[DONE]  hard_all条目={len(hist)}")
+    if output_path == lp.hard_all:
+        save_hard_all(hist, args.lang)
+    else:
+        lines = [json.dumps(v, ensure_ascii=False) for v in hist.values()]
+        output_path.write_text("\n".join(lines) + "\n", "utf-8")
+    print(f"[DONE]  hard_all条目={len(hist)}  → {output_path}")
 
     if PROGRESS_PATH.exists():
         PROGRESS_PATH.unlink()

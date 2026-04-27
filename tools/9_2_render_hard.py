@@ -184,7 +184,65 @@ def clean(views: list[str] | None) -> int:
     return n
 
 
-def main() -> None:
+def coverage(hard_all_path: Path, views: list[str] | None, lang: str = 'cn') -> None:
+    """dry-run：统计 hard_all 覆盖了多少个视频/视角，不写文件。"""
+    from collections import Counter
+
+    if hard_all_path == LangPaths(lang).hard_all:
+        hist = load_hard_all(lang)
+    else:
+        hist = {}
+        for line in hard_all_path.read_text("utf-8").splitlines():
+            try:
+                r = json.loads(line)
+                k = (r["video"], r["view"], r["replaced_slot"], r["original_value"], r["new_value"])
+                hist[k] = r
+            except Exception:
+                pass
+
+    # 收集所有有 augment 文件的 (video, view)
+    all_vv: set[tuple[str, str]] = set()
+    for v in ("front", "side") if not views else views:
+        for aug in DATA_ROOT.rglob(augment_name(v, lang)):
+            video = str(aug.parent.relative_to(DATA_ROOT))
+            all_vv.add((video, v))
+
+    # hard_all 里覆盖到的 (video, view)
+    covered_vv: dict[tuple[str, str], int] = Counter()
+    for k in hist:
+        if views and k[1] not in views:
+            continue
+        covered_vv[(k[0], k[1])] += 1
+
+    covered   = set(covered_vv)
+    uncovered = all_vv - covered
+
+    total_vv   = len(all_vv)
+    n_covered  = len(covered)
+    n_pairs    = sum(covered_vv.values())
+
+    print(f"\n[DRY-RUN 覆盖率统计]  来源: {hard_all_path.name}")
+    print(f"  视频/视角总数:  {total_vv}")
+    print(f"  已有 hard 条目: {n_covered}  ({n_covered/total_vv*100:.1f}%)")
+    print(f"  未覆盖:         {len(uncovered)}  ({len(uncovered)/total_vv*100:.1f}%)")
+    print(f"  hard 条目总数:  {n_pairs}  (平均 {n_pairs/n_covered:.1f} 条/视频)" if n_covered else "")
+
+    # 按 slot 统计分布
+    slot_cnt: Counter = Counter(k[2] for k in hist if not views or k[1] in views)
+    if slot_cnt:
+        print("\n  [slot 分布]")
+        for slot, cnt in slot_cnt.most_common():
+            print(f"    {slot:<22} {cnt}")
+
+    if uncovered:
+        print(f"\n  [未覆盖视频/视角] (前 20 条)")
+        for vv in sorted(uncovered)[:20]:
+            print(f"    {vv[0]} [{vv[1]}]")
+        if len(uncovered) > 20:
+            print(f"    ... 共 {len(uncovered)} 条")
+
+
+
     parser = argparse.ArgumentParser(
         description="9_2: 渲染 hard_all_{lang}.jsonl → hn_render_{view}.json（单向，不进 loop）"
     )
@@ -197,6 +255,10 @@ def main() -> None:
     parser.add_argument(
         "--views", nargs="+", choices=["front", "side"],
         help="只渲染指定视角（默认全部）",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", dest="dry_run",
+        help="不写文件，仅统计 hard_all 对视频的覆盖率和 slot 分布",
     )
     parser.add_argument(
         "--clean", action="store_true",
@@ -212,6 +274,10 @@ def main() -> None:
     hard_all_path = Path(args.input) if args.input else LangPaths(args.lang).hard_all
     if not hard_all_path.exists():
         print(f"✗ 找不到 {hard_all_path}")
+        return
+
+    if args.dry_run:
+        coverage(hard_all_path, args.views, args.lang)
         return
 
     print(f"渲染来源: {hard_all_path}")

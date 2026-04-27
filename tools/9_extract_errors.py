@@ -25,6 +25,21 @@ from pathlib import Path
 from hard_utils import (key_valid, load_hard_all, save_hard_all, clean_stale)
 
 
+def resolve_inputs(raw: list[str]) -> list[Path]:
+    """将文件/目录列表展开为 jsonl 路径列表（目录自动 glob eval_results*.jsonl）。"""
+    files: list[Path] = []
+    for s in raw:
+        p = Path(s)
+        if p.is_dir():
+            found = sorted(p.rglob("eval_results*.jsonl"))
+            if not found:
+                raise SystemExit(f"✗ 目录 {p} 中未找到 eval_results*.jsonl")
+            files.extend(found)
+        else:
+            files.append(p)
+    return files
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Script 9: 提取答错对 → hard_{view}.json")
     parser.add_argument("--lang",  default="cn", choices=["cn", "en"],
@@ -40,7 +55,8 @@ def main() -> None:
 
     from config import LangPaths
     lp          = LangPaths(args.lang)
-    input_files = args.input if args.input else [str(lp.eval_results)]
+    raw_inputs  = args.input if args.input else [str(lp.eval_results)]
+    input_files = resolve_inputs(raw_inputs)
 
     # ── 读取输入文件 ──────────────────────────────────────────────────────────
     n_total = n_stale = 0
@@ -48,7 +64,7 @@ def main() -> None:
     meta:   dict[tuple, dict] = {}
 
     for path in input_files:
-        for line in Path(path).read_text("utf-8").splitlines():
+        for line in path.read_text("utf-8").splitlines():
             try:
                 r = json.loads(line)
             except Exception:
@@ -112,7 +128,7 @@ def main() -> None:
         print(f"  # {note}")
         print(f"  {label:<14} = {value}")
 
-    print(f"\n[input]  {len(args.input)} 个文件")
+    print(f"\n[input]  {len(input_files)} 个文件")
     row("总条目",     n_total,        "所有输入行数（含答对）")
     if args.clean:
         row("过期事件",   n_stale,        "[slot:orig] 已不在当前 augment，丢弃")
