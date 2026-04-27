@@ -78,9 +78,10 @@ LANG="cn"                              # ← cn / en 切换语言
 # python3 8_1_analyze.py --input eval_results_hard_${LANG}.jsonl
 # python3 8_1_analyze.py --input BAKUP/eval_results_hard_gemma源gemma测.jsonl
 # python3 8_1_analyze.py --input BAKUP/eval_results_hard_gemma源Qwen36测.jsonl
-# python3 8_1_analyze.py --input BAKUP/20260423_qwen3_6
-# python3 8_1_analyze.py --input BAKUP/20260422_gemma4
-python3 8_1_analyze.py --input BAKUP/eval_results_hard_cn_Qwen36源gemma测.jsonl
+# python3 8_1_analyze.py --input BAKUP/eval_results_hard_cn_Qwen36源gemma测.jsonl
+# python3 8_1_analyze.py --input BAKUP/20260423_qwen3_6/
+# python3 8_1_analyze.py --input BAKUP/20260422_gemma4/
+python3 8_1_analyze.py --input BAKUP/20260425_qwen3_6_en/
 
 # python3 8_1_analyze.py --compare \
 # BAKUP/eval_results_v2_gemma.jsonl \
