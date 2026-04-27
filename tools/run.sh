@@ -5,7 +5,7 @@
 HOST="127.0.0.1"
 PORT="8001,8002,8003,8004,8005,8006,8007,8008"
 WORKERS=8
-LANG="cn"                              # ← cn / en 切换语言
+LANG="en"                              # ← cn / en 切换语言
 # ─────────────────────────────────────────────────────────────────────────────
 
 # 视频描述 / 处理预热
@@ -61,6 +61,11 @@ LANG="cn"                              # ← cn / en 切换语言
 
 # 评测 HARD, 读取hard_all_$LANG.jsonl
 # python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --mode hard
+# #   --hard-src BAKUP/hard_all_cn_xxx源.jsonl  可指定源文件（不覆盖默认 hard_all）
+
+# # hard_multi_eval: 对多个 hard_all 源文件跑 N 轮（默认 10），累计 pred/error 统计
+# # 完成后用 9_extract_errors 按源文件做最终提取
+# ROUNDS=10 bash hard_multi_eval.sh
 
 # # 实验smoke
 # python3 8_eval_confusable.py \
@@ -81,7 +86,8 @@ LANG="cn"                              # ← cn / en 切换语言
 # python3 8_1_analyze.py --input BAKUP/eval_results_hard_cn_Qwen36源gemma测.jsonl
 # python3 8_1_analyze.py --input BAKUP/20260423_qwen3_6/
 # python3 8_1_analyze.py --input BAKUP/20260422_gemma4/
-python3 8_1_analyze.py --input BAKUP/20260425_qwen3_6_en/
+# python3 8_1_analyze.py --input BAKUP/20260425_qwen3_6_en/
+# python3 8_1_analyze.py --input BAKUP/20260424_gemma_en/
 
 # python3 8_1_analyze.py --compare \
 # BAKUP/eval_results_v2_gemma.jsonl \
@@ -95,6 +101,7 @@ python3 8_1_analyze.py --input BAKUP/20260425_qwen3_6_en/
 # #    --reset-counts  清零所有 error_count（在重新跑 step 8 --mode hard 前执行）
 # python3 9_extract_errors.py --lang $LANG --input eval_results_${LANG}.jsonl
 # python3 9_extract_errors.py --lang $LANG --reset-counts
+# python3 9_extract_errors.py --lang $LANG --input BAKUP/20260424_gemma_en --clean
 # python3 9_extract_errors.py --lang $LANG \
 #     --input \
 #     BAKUP/eval_results_v2_gemma.jsonl \
@@ -114,7 +121,7 @@ python3 8_1_analyze.py --input BAKUP/20260425_qwen3_6_en/
 # #     渲染全量（覆盖已有文件）
 # python3 9_2_render_hard.py --lang $LANG
 # #     指定不同来源版本
-# python3 9_2_render_hard.py --lang $LANG --input BAKUP/hard_all_v2.jsonl
+python3 9_2_render_hard.py --lang $LANG --input BAKUP/hard_all_en_gemma源.jsonl --dry-run
 # #     只渲染正面视角
 # python3 9_2_render_hard.py --lang $LANG --views front
 # #     删除所有渲染文件

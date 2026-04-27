@@ -132,12 +132,12 @@ def collect_conf(src: Path, lookup, conf_w, inco_w, done: set,
 
 
 def collect_hard(dir_path: Path, view: str, key_rec_map: dict,
-                 done: set, fps: float, max_side: int) -> list[WorkItem]:
+                 done: set, fps: float, max_side: int, lang: str = 'cn') -> list[WorkItem]:
     frames = ensure_frames(dir_path / f"{view}.mp4", fps, max_side)
     if not frames:
         return []
     rel    = str(dir_path.relative_to(DATA_ROOT))
-    orig_s = slotted_desc(rel, view)
+    orig_s = slotted_desc(rel, view, lang)
     if not orig_s:
         return []
     orig  = strip_slots(orig_s)
@@ -157,10 +157,11 @@ def collect_hard(dir_path: Path, view: str, key_rec_map: dict,
 
 # ── hard_all 批量写回 ─────────────────────────────────────────────────────────
 
-def flush_hard_all(records: list[dict], model_name: str, lang: str = 'cn') -> None:
+def flush_hard_all(records: list[dict], model_name: str,
+                   lang: str = 'cn', path: Path = None) -> None:
     if not records:
         return
-    hist = load_hard_all(lang)
+    hist = load_hard_all(lang, path)
     for r in records:
         key = (r["video"], r["view"], r["replaced_slot"], r["original_value"], r["new_value"])
         if key not in hist:
@@ -172,7 +173,7 @@ def flush_hard_all(records: list[dict], model_name: str, lang: str = 'cn') -> No
             hist[key]["error_count"] = hist[key].get("error_count", 0) + 1
             _ebm = hist[key].setdefault("error_by_model", {})
             _ebm[model_name] = _ebm.get(model_name, 0) + 1
-    save_hard_all(hist, lang)
+    save_hard_all(hist, lang, path)
 
 
 def load_done(path: Path) -> set[str]:
@@ -205,11 +206,15 @@ def main() -> None:
     pa.add_argument("--dry-run",  action="store_true", dest="dry_run")
     pa.add_argument("--seed",     type=int, default=42)
     pa.add_argument("-w", "--workers", type=int, default=1)
+    pa.add_argument("--hard-src", default=None, dest="hard_src",
+                    help="hard_all 源文件路径（默认用 hard_all_{lang}.jsonl）；"
+                         "读取 hard 条目并将 pred/error 统计写回此文件")
     args = pa.parse_args()
 
     lp = LangPaths(args.lang)
     out_path      = Path(args.out)      if args.out      else lp.eval_results       if args.mode in ("confusable", "all") else None
     out_hard_path = Path(args.out_hard) if args.out_hard else lp.eval_results_hard  if args.mode in ("hard",       "all") else None
+    hard_src      = Path(args.hard_src) if args.hard_src else None
 
     random.seed(args.seed)
 
@@ -239,7 +244,7 @@ def main() -> None:
 
     if args.mode in ("hard", "all"):
         by_vv: dict[tuple, dict] = defaultdict(dict)
-        for k, rec in load_hard_all(args.lang).items():
+        for k, rec in load_hard_all(args.lang, hard_src).items():
             by_vv[(DATA_ROOT / k[0], k[1])][k] = rec
         hard_tasks = list(by_vv.items())
 
@@ -253,7 +258,7 @@ def main() -> None:
     print(f"\n目录={n_dirs}  augment={len(aug_files)}  hard_groups={len(hard_tasks)}"
           f"  out={out_path.name if out_path else '-'}  out_hard={out_hard_path.name if out_hard_path else '-'}")
 
-    done_conf = load_done(out_path)
+    done_conf = load_done(out_path) if out_path else set()
     done_hard = load_done(out_hard_path) if args.mode in ("hard", "all") else set()
     if done_conf: print(f"[resume] confusable 已完成 {len(done_conf)} 条")
     if done_hard: print(f"[resume] hard       已完成 {len(done_hard)} 条")
@@ -264,7 +269,7 @@ def main() -> None:
 
     def _gh(task):
         (dp, v), krm = task
-        return collect_hard(dp, v, krm, done_hard, args.fps, args.max_side)
+        return collect_hard(dp, v, krm, done_hard, args.fps, args.max_side, args.lang)
 
     if args.dry_run:
         print(f"\n[Phase 1] 帧加载 + 采样  workers={args.workers}")
@@ -339,7 +344,7 @@ def main() -> None:
 
     if hard_records:
         model_name = eps[0].mod_b.decode().strip('"').split("/")[-1] if eps else "unknown"
-        flush_hard_all(hard_records, model_name, args.lang)
+        flush_hard_all(hard_records, model_name, args.lang, hard_src)
         print(f"\n[hard_all] 已更新 {len(hard_records)} 条  model={model_name}")
 
     print("\n[DONE]")

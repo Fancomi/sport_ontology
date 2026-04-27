@@ -37,12 +37,12 @@ def key_valid(key: tuple, lang: str = 'cn') -> bool:
 
 # ── hard_all_{lang}.jsonl I/O ──────────────────────────────────────────────────
 
-def load_hard_all(lang: str = 'cn') -> dict[tuple, dict]:
-    path = LangPaths(lang).hard_all
-    if not path.exists():
+def load_hard_all(lang: str = 'cn', path: Path = None) -> dict[tuple, dict]:
+    p = path or LangPaths(lang).hard_all
+    if not p.exists():
         return {}
     out = {}
-    for line in path.read_text("utf-8").splitlines():
+    for line in p.read_text("utf-8").splitlines():
         try:
             r = json.loads(line)
             k = (r["video"], r["view"], r["replaced_slot"], r["original_value"], r["new_value"])
@@ -51,8 +51,9 @@ def load_hard_all(lang: str = 'cn') -> dict[tuple, dict]:
             pass
     return out
 
-def save_hard_all(hist: dict[tuple, dict], lang: str = 'cn') -> None:
-    LangPaths(lang).hard_all.write_text(
+def save_hard_all(hist: dict[tuple, dict], lang: str = 'cn', path: Path = None) -> None:
+    p = path or LangPaths(lang).hard_all
+    p.write_text(
         "\n".join(json.dumps(v, ensure_ascii=False) for v in hist.values()) + "\n", "utf-8"
     )
 
