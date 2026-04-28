@@ -290,8 +290,10 @@ def main() -> None:
         return
 
     # ── 多轮 hard 评测（--rounds > 1）────────────────────────────────────────
-    # Phase1 只跑一次，Phase2 循环 N 轮，所有结果内存累积，最后一次 flush_hard_all
+    # Phase1 只跑一次，Phase2 循环 N 轮；每轮完成后追加写 out_hard_path（小 IO），
+    # 全部轮次完成后一次 flush_hard_all（大文件单次写），避免崩溃丢失所有结果。
     if args.rounds > 1:
+        import time
         done_hard = set()   # 多轮模式：每轮重新评测所有条目，不做 resume
         print(f"\n[Phase 1] 帧加载  workers={args.workers}")
         hard_items: list[WorkItem] = []
@@ -302,11 +304,18 @@ def main() -> None:
         if not hard_items:
             print("无待评测项，退出"); return
 
+        model_name = eps[0].mod_b.decode().strip('"').split("/")[-1] if eps else "unknown"
         hard_records: list[dict] = []
         h_total = h_ok = 0
+        t_all_start = time.time()
         for rnd in range(1, args.rounds + 1):
             rnd_ok = rnd_n = 0
-            print(f"── Round {rnd}/{args.rounds} ──")
+            rnd_records: list[dict] = []
+            t_rnd = time.time()
+            elapsed_all = t_rnd - t_all_start
+            print(f"── Round {rnd}/{args.rounds}  "
+                  f"[累计 {elapsed_all:.0f}s / 预计剩余 "
+                  f"{elapsed_all/max(rnd-1,1)*(args.rounds-rnd+1):.0f}s] ──")
             with ThreadPoolExecutor(max_workers=len(eps)) as p2:
                 futs = {p2.submit(eval_one, it, eps, args.seed, args.lang): it
                         for it in hard_items}
@@ -315,21 +324,26 @@ def main() -> None:
                     if rec is None:
                         continue
                     _log(rec.pop("_log_line", None))
-                    hard_records.append(rec)
+                    rnd_records.append(rec)
                     rnd_ok += rec["is_correct"]; rnd_n += 1
+            hard_records.extend(rnd_records)
             h_ok += rnd_ok; h_total += rnd_n
-            print(f"  Round {rnd}: {rnd_n}条  准确率 {rnd_ok/rnd_n*100:.1f}%" if rnd_n else "  Round {rnd}: 0条")
+            rnd_elapsed = time.time() - t_rnd
+            acc_str = f"{rnd_ok/rnd_n*100:.1f}%" if rnd_n else "n/a"
+            print(f"  Round {rnd}: {rnd_n}条  准确率 {acc_str}  耗时 {rnd_elapsed:.0f}s")
+            # 每轮追加写 _eval.jsonl（小 IO，崩溃保护）
+            if out_hard_path and rnd_records:
+                with out_hard_path.open("a", encoding="utf-8") as fh:
+                    for rec in rnd_records:
+                        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
-        if out_hard_path and hard_records:
-            with out_hard_path.open("a", encoding="utf-8") as fh:
-                for rec in hard_records:
-                    fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-
-        model_name = eps[0].mod_b.decode().strip('"').split("/")[-1] if eps else "unknown"
+        # 全部轮次完成，一次性更新 hard_all 源文件（大文件单次写）
         flush_hard_all(hard_records, model_name, args.lang, hard_src)
         print(f"\n[hard_all] 已更新 {len(hard_records)} 条  model={model_name}")
+        total_elapsed = time.time() - t_all_start
         print(f"\n[DONE] hard {h_total}条（{args.rounds}轮）  "
-              f"准确率 {h_ok/h_total*100:.1f}%  → {out_hard_path.name if out_hard_path else '-'}")
+              f"准确率 {h_ok/h_total*100:.1f}%  总耗时 {total_elapsed:.0f}s"
+              f"  → {out_hard_path.name if out_hard_path else '-'}")
         return
 
     # ── Phase 1 + Phase 2 流水线（单轮）─────────────────────────────────────

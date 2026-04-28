@@ -13,18 +13,18 @@
 set -euo pipefail
 
 HOST="${HOST:-127.0.0.1}"
-PORT="${PORT:-8001,8002,8003,8004,8005,8006,8007,8008}"
-WORKERS="${WORKERS:-8}"
-ROUNDS="${ROUNDS:-10}"
+PORT="${PORT:-8001,8002,8003,8004,8005,8006}"
+WORKERS="${WORKERS:-6}"
+ROUNDS="${ROUNDS:-5}"
 
 TOOLS="$(cd "$(dirname "$0")" && pwd)"
 BAKUP="$TOOLS/BAKUP"
 
 SRC_FILES=(
+    # "en|$BAKUP/hard_all_en_gemma源.jsonl"
+    "en|$BAKUP/hard_all_en_Qwen36源.jsonl"
     "cn|$BAKUP/hard_all_cn_gemma源.jsonl"
     "cn|$BAKUP/hard_all_cn_Qwen36源.jsonl"
-    "en|$BAKUP/hard_all_en_gemma源.jsonl"
-    "en|$BAKUP/hard_all_en_Qwen36源.jsonl"
 )
 
 echo "════ hard_multi_eval  rounds=$ROUNDS  workers=$WORKERS ════"

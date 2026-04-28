@@ -111,6 +111,11 @@ LANG="en"                              # ← cn / en 切换语言
 #     BAKUP/eval_results_v2_qwen3.6.jsonl \
 #     --clean --reset-counts
 
+# 跑一半的Hard用这个塞回去
+python3 9_extract_errors.py --lang en \
+--input BAKUP/hard_all_en_Qwen36源_eval.jsonl \
+--hard-base BAKUP/hard_all_en_Qwen36源.jsonl
+
 # # 9.1 LLM 审核 hard_all_{lang}.jsonl 句子级有效性（删除上下文等价 / 视觉不可辨条目）
 # #     --dry-run 只看判断结果，不写文件；--verbose 打印完整 prompt（配合 --limit）
 # python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --dry-run --verbose --limit 4

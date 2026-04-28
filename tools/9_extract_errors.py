@@ -151,11 +151,14 @@ def run_eval_input(args, lp) -> None:
     n_wrong_events = sum(error_counts.values())
     n_unique_pairs = len(error_counts)
 
-    # 合入 hard_all
-    hist  = load_hard_all(args.lang)
+    # 合入 hard_all（--hard-base 指定源文件；无则用默认 hard_all_{lang}.jsonl）
+    base_path = Path(args.hard_base) if getattr(args, "hard_base", None) else None
+    hist  = load_hard_all(args.lang, base_path)
     n_new = 0
-    for key in error_counts:
+    for key in pred_counts:
         if key not in hist:
+            if key not in error_counts:
+                continue   # 从未答错的 key 不新建条目
             r = meta[key]
             hist[key] = {
                 "video":          r["video"],  "view":           r["view"],
@@ -167,6 +170,10 @@ def run_eval_input(args, lp) -> None:
                 "pred_count":     pred_counts[key],
             }
             n_new += 1
+        else:
+            # 已存在条目：累加 pred/error（支持重放 _eval.jsonl 写回）
+            hist[key]["pred_count"]  = hist[key].get("pred_count",  0) + pred_counts[key]
+            hist[key]["error_count"] = hist[key].get("error_count", 0) + error_counts.get(key, 0)
 
     if args.clean:
         hist, n_hist_stale = clean_stale(hist, args.lang)
@@ -179,7 +186,7 @@ def run_eval_input(args, lp) -> None:
     hist, n_dropped = _apply_filters(hist, args.min_error_rate,
                                      args.min_errors, args.min_pred)
 
-    out_path = Path(args.output) if args.output else lp.hard_all
+    out_path = Path(args.output) if args.output else base_path or lp.hard_all
     save_hard_all(hist, args.lang, out_path)
 
     def row(label, value, note):
@@ -230,9 +237,14 @@ def main() -> None:
     # hard-all 模式
     parser.add_argument("--hard-src", nargs="+", dest="hard_src", default=None,
                         help="hard_all 源文件列表，合并后过滤（与 --input 互斥）")
+    # eval-results 模式专用：指定要写回的 hard_all 源文件
+    parser.add_argument("--hard-base", default=None, dest="hard_base",
+                        help="（eval-results 模式）从指定 hard_all 文件加载并写回，"
+                             "默认 hard_all_{lang}.jsonl；"
+                             "用于将 _eval.jsonl 回放到对应源文件")
     # 共同选项
     parser.add_argument("--output", default=None,
-                        help="输出路径（默认 hard_all_{lang}.jsonl）")
+                        help="输出路径（默认等于 --hard-base 或 hard_all_{lang}.jsonl）")
     parser.add_argument("--min-error-rate", type=float, default=0.0, dest="min_error_rate",
                         help="只保留 error_count/pred_count >= 阈值（0=不过滤）")
     parser.add_argument("--min-errors",  type=int, default=0, dest="min_errors",
