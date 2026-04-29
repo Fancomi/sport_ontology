@@ -59,5 +59,5 @@ for i in $(seq 0 7); do
     echo "  GPU $i → port $PORT, VLLM_PORT=$((20000 + i * 20)) (pid $!)"
 done
 
-echo "全部 8 个 qwen3.6-fp8 实例已启动，等待中... (Ctrl+C 停止全部)"
+echo "全部 qwen3.6-fp8 实例已启动，等待中... (Ctrl+C 停止全部)"
 wait

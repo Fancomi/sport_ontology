@@ -29,7 +29,7 @@ else
 fi
 MODEL=$SHM_MODEL
 
-for i in $(seq 0 7); do
+for i in $(seq 0 5); do
     PORT=$((8001 + i))
     # VLLM_PORT 指定内部端口扫描起点，每实例间隔 20，避免 race condition
     VLLM_PORT=$((20000 + i * 20)) CUDA_VISIBLE_DEVICES=$i vllm serve $MODEL \
@@ -46,5 +46,5 @@ for i in $(seq 0 7); do
     echo "  GPU $i → port $PORT, VLLM_PORT=$((20000 + i * 20)) (pid $!)"
 done
 
-echo "全部 8 个 gemma4 实例已启动，等待中... (Ctrl+C 停止全部)"
+echo "全部 gemma4 实例已启动，等待中... (Ctrl+C 停止全部)"
 wait
