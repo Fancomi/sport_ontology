@@ -31,7 +31,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 SOURCES   = ("confusable_siblings", "incompatibility")
-SRC_LABEL = {"confusable_siblings": "Confusable", "incompatibility": "Incompatible"}
+SRC_LABEL = {"confusable_siblings": "Confusable", "incompatibility": "Incompatible",
+             "cloze": "Cloze"}
 
 
 def load_dedup(paths: list[Path]) -> list[dict]:
@@ -73,7 +74,7 @@ def compute(records: list[dict]) -> dict[str, dict[str, list]]:
 
 
 def _all_recs(stats: dict, slot: str) -> list:
-    return stats[slot]["confusable_siblings"] + stats[slot]["incompatibility"]
+    return [r for recs in stats[slot].values() for r in recs]
 
 
 def top3_cov(records: list[dict]) -> dict[str, float]:
@@ -210,24 +211,26 @@ def plot(stats: dict, out: Path, cov: dict | None = None) -> None:
 
 
 def print_table(stats: dict, total_k: float, total_n: int) -> None:
-    hdr = f"{'Slot':<22} {'Confusable':>20} {'Incompatible':>20} {'Overall':>20}"
+    # Collect all sources present across all slots
+    all_srcs = sorted({src for slot_data in stats.values() for src in slot_data})
+    src_labels = [SRC_LABEL.get(s, s) for s in all_srcs]
+    col_w = 22
+    src_col = "".join(f"  {lbl:>20}" for lbl in src_labels)
+    hdr = f"{'Slot':<{col_w}}{src_col}  {'Overall':>20}"
     sep = "─" * len(hdr)
     print(hdr)
     print(sep)
     for slot in sorted(stats, key=lambda s: kappa(_all_recs(stats, s))[0]):
-        c_a, c_n = acc(stats[slot]["confusable_siblings"])
-        i_a, i_n = acc(stats[slot]["incompatibility"])
         o_a, o_n = acc(_all_recs(stats, slot))
-        c_k = kappa(stats[slot]["confusable_siblings"])[0]
-        i_k = kappa(stats[slot]["incompatibility"])[0]
-        o_k = kappa(_all_recs(stats, slot))[0]
-        print(f"  {slot:<20} "
-              f"{c_a:>5.1f}% κ={c_k:>+.2f} n={c_n:<3}  "
-              f"{i_a:>5.1f}% κ={i_k:>+.2f} n={i_n:<3}  "
-              f"{o_a:>5.1f}% κ={o_k:>+.2f} n={o_n}")
+        o_k      = kappa(_all_recs(stats, slot))[0]
+        src_vals = "".join(
+            f"  {acc(stats[slot].get(s, []))[0]:>5.1f}% κ={kappa(stats[slot].get(s, []))[0]:>+.2f} n={acc(stats[slot].get(s, []))[1]:<3}"
+            for s in all_srcs
+        )
+        print(f"  {slot:<{col_w - 2}}{src_vals}  {o_a:>5.1f}% κ={o_k:>+.2f} n={o_n}")
     print(sep)
-    total_a = (total_k + 1) / 2 * 100   # κ = 2·acc−1 的逆运算
-    print(f"  {'Total':<20} {'':>20} {'':>20} "
+    total_a = (total_k + 1) / 2 * 100
+    print(f"  {'Total':<{col_w - 2}}{'':>{20 * len(all_srcs) + 2 * len(all_srcs)}}  "
           f"{total_a:>5.1f}% κ={total_k:>+.2f} n={total_n}")
 
 
@@ -240,9 +243,9 @@ def save_stats(stats: dict, path: Path, records: list[dict]) -> None:
     out: dict = {}
     for slot, by_src in stats.items():
         out[slot] = {}
-        for src in SOURCES:
-            a, n = acc(by_src[src])
-            k, _ = kappa(by_src[src])
+        for src, recs in by_src.items():
+            a, n = acc(recs)
+            k, _ = kappa(recs)
             out[slot][src] = {
                 "acc":        round(a / 100, 4),
                 "kappa":      round(k, 4),
@@ -256,12 +259,13 @@ def save_stats(stats: dict, path: Path, records: list[dict]) -> None:
     by_src_total: dict[str, list] = defaultdict(list)
     for r in records:
         by_src_total[r["source"]].append(r)
+    all_srcs = sorted(by_src_total)
     summary: dict = {
-        "total_n":   total_n,
-        "total_acc": round(total_a, 4),
+        "total_n":     total_n,
+        "total_acc":   round(total_a, 4),
         "total_kappa": round(total_k, 4),
     }
-    for src in SOURCES:
+    for src in all_srcs:
         recs = by_src_total.get(src, [])
         sa, sn = acc(recs)
         sk, _  = kappa(recs)
@@ -281,9 +285,10 @@ def print_duplicates(records: list[dict], stats: dict, top_n: int = 5) -> None:
     for r in records:
         cnts[r["replaced_slot"]][r["source"]][(r["original_value"], r["new_value"])] += 1
 
+    all_srcs = sorted({src for slot_cnts in cnts.values() for src in slot_cnts})
     print("\n=== Replacement Pair Concentration ===")
     for slot in sorted(stats, key=lambda s: kappa(_all_recs(stats, s))[0]):
-        for src in SOURCES:
+        for src in all_srcs:
             cnt = cnts[slot].get(src)
             if not cnt:
                 continue
@@ -291,7 +296,8 @@ def print_duplicates(records: list[dict], stats: dict, top_n: int = 5) -> None:
             n_pair = len(cnt)
             top3   = sum(c for _, c in cnt.most_common(3))
             flag   = "  ⚠ 集中" if top3 / total > 0.5 and n_pair < 10 else ""
-            print(f"  {slot}/{SRC_LABEL[src]}: {total} records  "
+            lbl    = SRC_LABEL.get(src, src)
+            print(f"  {slot}/{lbl}: {total} records  "
                   f"{n_pair} pairs  top3={top3/total*100:.0f}%{flag}")
             for (orig, new), c in cnt.most_common(top_n):
                 print(f"    {orig} → {new}: {c} ({c/total*100:.1f}%)")
@@ -325,6 +331,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="评测结果统计（含 Cohen's Kappa）")
     parser.add_argument("--lang",    default="cn", choices=["cn", "en"],
                         help="语言版本，影响默认输入/输出文件名（默认 cn）")
+    parser.add_argument("--mode",    choices=["confusable", "hard"], default="confusable",
+                        help="分析模式：confusable（默认）读 eval_results_{lang}.jsonl；"
+                             "hard 读 eval_results_hard_{lang}.jsonl")
     parser.add_argument("--input",   nargs="+", default=None,
                         help="jsonl 文件或目录（目录自动收集 eval_results*.jsonl），可多个")
     parser.add_argument("--out",     default=None)
@@ -382,7 +391,8 @@ def main() -> None:
         else:
             stats_path = (common_dir or Path(".")) / "eval_merged.json"
     else:
-        files      = [lp.eval_results]
+        default_input = lp.eval_results_hard if args.mode == "hard" else lp.eval_results
+        files      = [default_input]
         out_path   = Path(args.out)   if args.out   else lp.eval_accuracy
         stats_path = Path(args.stats) if args.stats else lp.eval_stats
 

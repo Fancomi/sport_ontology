@@ -97,7 +97,7 @@ def main() -> None:
                         help="调试：只处理前 N 条（0=全部）")
     parser.add_argument("--force",   action="store_true", help="忽略进度缓存，强制重新处理")
     parser.add_argument("--dry-run", action="store_true", dest="dry_run",
-                        help="只打印判断结果，不写入 hard_all.jsonl 和 hard_{view}.json")
+                        help="只打印判断结果，不写入 hard_all.jsonl")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="打印每条完整 SYSTEM+USER prompt（建议配合 --limit 使用）")
     parser.add_argument("--poe",     action="store_true")
