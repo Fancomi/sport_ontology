@@ -222,8 +222,8 @@ def run_merge(args) -> None:
                     merged[k][cnt_key] = merged[k].get(cnt_key, 0) + v.get(cnt_key, 0)
                 for model_key in ("error_by_model", "pred_by_model"):
                     for m, c in v.get(model_key, {}).items():
-                        merged[k].setdefault(model_key, {})[m] = \
-                            merged[k][model_key].get(m, 0) + c
+                        bucket = merged[k].setdefault(model_key, {})
+                        bucket[m] = bucket.get(m, 0) + c
 
     print(f"\n合并后: {len(merged)} 条")
 
