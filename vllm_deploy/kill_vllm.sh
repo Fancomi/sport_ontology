@@ -1,5 +1,7 @@
 #!/bin/bash
-# 关闭所有占用 GPU 的进程（通过 fuser /dev/nvidia*）
+# 关闭所有占用 GPU 的进程（通过 fuser -v /dev/nvidia*）
+# 完整的看法:
+# nvidia-smi --query-compute-apps=gpu_index,pid,process_name,used_gpu_memory --format=csv 
 
 pids=$(fuser -v /dev/nvidia* 2>&1 | awk '/^[[:space:]]/ && $2 ~ /^[0-9]+$/ {print $2}' | sort -u)
 

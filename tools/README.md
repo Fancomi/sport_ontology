@@ -44,8 +44,8 @@
 
 | 阶段 | 脚本编号 | 目标 |
 |------|----------|------|
-| **Setup（一次性）** | 1 → 2 → 3 → 5 → 5.1 → 6 | 构建槽位描述与本体知识库 |
-| **Hard Negative Loop（迭代循环）** | 8 → 8.1 → 9 → 9.1 | 迭代采集、评测并沉淀 Hard Negative |
+| **Setup（一次性）** | 1 → 2 → 2.1 → 2.2 → 3 → 5 → 5.1 → 5.2 → 6 | 构建槽位描述与本体知识库 |
+| **Hard Negative Loop（迭代循环）** | 8 → 8.1 → 9 → 9.1 → 9.2 | 迭代采集、评测并沉淀 Hard Negative |
 
 > `loop.sh` 驱动 Hard Negative Loop 自动运行，默认 20 轮迭代后执行 LLM 终审（9.1）。
 
@@ -105,6 +105,14 @@
 
 ---
 
+### Step 2.2 — 英文槽位描述翻译 (`2_2_translate_augment.py`)
+
+将 `augment_{view}_cn.json` 中的 `category_3_slotted_description` 翻译为英文，产出 `augment_{view}_en.json`。以中文为权威源，`metadata.json` 和 `slot_ontology.json` 的 `en` 字段为弱参考。LLM 多轮自校正（最多 12 轮），校验语义与槽位集合完整性。
+
+**输入** `augment_{view}_cn.json` → **输出** `augment_{view}_en.json`
+
+---
+
 ### Step 3 — 槽位词表统计 (`3_collect_slots.py`)
 
 遍历所有 `augment_{view}.json`，统计 `category_3_slotted_description` 中各槽位的值及其频次，输出词表与可视化图表。含异常槽位键的文件将被自动删除，以便 Step 2 重新生成。
@@ -150,6 +158,14 @@
 
 ---
 
+### Step 5.2 — 本体关系对称传播 (`5_2_infer_relations.py`)
+
+纯集合运算（无 LLM），对 `slot_ontology.json` 做关系对称传播增强：同义词传播（P1）、反义扩展（P2）、混淆扩展（P3）、互斥扩展（P4），迭代至收敛后一次性去除自引用。不增删条目，只扩充字段值（取并集）。
+
+**输入/输出** `slot_ontology.json`（原地修改）
+
+---
+
 ### Step 6 — Obsidian 本体可视化 (`6_build_wiki.py`)
 
 将 `slot_ontology.json` 中每个节点转换为 Obsidian Markdown 文件，利用 `[[wikilink]]` 驱动图谱关系边，可在 Obsidian 中以图谱视图浏览整个 Ontology 结构。
@@ -160,25 +176,11 @@
 
 ## 4. Hard Negative Loop 阶段详解
 
-### 驱动脚本 (`loop.sh`)
+### 驱动脚本 (`loop.sh` / `hard_multi_eval.sh`)
 
-`loop.sh` 自动执行 `ROUNDS`（默认 20）轮 7 → 8 → 8.1 → 9 闭环，每轮产出独立的带时间戳结果文件并备份至 `BAKUP/`。全部轮次完成后自动触发 9.1 LLM 终审。
+`loop.sh` 自动执行 `ROUNDS`（默认 20）轮 8 → 8.1 → 9 闭环，每轮产出独立的带时间戳结果文件并备份至 `BAKUP/`。全部轮次完成后自动触发 9.1 LLM 终审。数据流详见 [PIPELINE.md](PIPELINE.md)。
 
-```
-eval_stats.json（反馈加权）
-      ↑
-   [7] 生成混淆样本
-      ↓
-   [8] VLM 二选一评测  →  eval_results_r{NN}_{TS}.jsonl
-      ↓
-   [8.1] 统计分析      →  eval_stats.json（更新）
-      ↓
-   [9]  提取 Hard      →  hard_all.jsonl（累计）
-      ↓（下一轮）
-   ...（共 ROUNDS 轮）
-      ↓（循环结束）
-   [9.1] LLM 终审      →  hard_all.jsonl（最终版）
-```
+`hard_multi_eval.sh` 用于对多个 `hard_all` 源文件（如来自不同模型的 gemma 源、Qwen 源）各自跑 N 轮 VLM hard 评测，pred/error 在内存中累积，完成后一次性 flush 写回各自的 `_eval.jsonl`。评测后配合 `9_extract_errors --from-eval` + `--merge` 合并多源结果。
 
 ---
 
@@ -199,7 +201,7 @@ eval_stats.json（反馈加权）
 
 ### Step 8.1 — 统计分析 (`8_1_analyze.py`)
 
-分析 `eval_results.jsonl`，按「槽位 × 替换类型」维度统计 VLM 准确率与 Cohen's Kappa（扣除 50% 随机基线），生成柱状图，并将各维度 `error_rate` 写入 `eval_stats.json` 供下一轮 Step 7 加权采样。
+分析 `eval_results.jsonl`，按「槽位 × 替换类型」维度统计 VLM 准确率与 Cohen's Kappa（扣除 50% 随机基线），生成柱状图，并将各维度 `error_rate` 写入 `eval_stats.json` 供下一轮 Step 8 加权采样。
 
 支持双模型对比模式（`--compare`），可横向对比不同 VLM 在各槽位上的混淆情况。
 
@@ -207,17 +209,17 @@ eval_stats.json（反馈加权）
 
 ---
 
-### Step 8.2 — 混淆对手动清理 (`8_2_cleanup_pairs.py`)
+### Step 8.3 — 完形填空 VLM 评测 (`8_3_cloze_eval.py`)
 
-人工排查发现有问题的替换对（如同义词、视觉不可辨）时，通过硬编码 `REMOVALS` 列表，从 `slot_ontology.json` 的 `confusable_siblings` 中移除对应条目，并同步删除 `eval_results.jsonl` 中关联记录。操作前自动备份原文件。
+将 `category_3_slotted_description` 的所有槽位同时置空为 `(N)`，让 VLM 从选项中填空，统计整句 / 总槽位 / 逐槽位准确率。选项数自适应（按 canonical 去重后有几个不同干扰就出几道题，最多 `N_CHOICES_MAX`），抽样在线完成，无需预生成中间文件。
 
-**输入/输出** `slot_ontology.json` + `eval_results.jsonl`（原地修改，备份至 `BAKUP/`）
+**输入** `augment_{view}.json` + 视频帧 → **输出** `eval_results_cloze*.jsonl`
 
 ---
 
 ### Step 9 — Hard Negative 提取与沉淀 (`9_extract_errors.py`)
 
-两种互斥模式，通过 `--from-eval` / `--merge` 明确区分，`--out` 为唯一输出参数。
+两种互斥模式，通过 `--from-eval` / `--merge` 明确区分，`--out` 为唯一输出参数（必填，不静默覆盖任何文件）。
 
 **模式一 `--from-eval`**：读取含 `is_correct` 字段的 `eval_results*.jsonl`，提取 VLM 答错的 pair，累加 `pred_count`/`error_count`，合入 `--out` 指定的 hard_all 文件（已存在则累加，不存在则新建）。
 
@@ -271,6 +273,16 @@ python3 9_extract_errors.py --lang cn \
 
 ---
 
+### Step 9.2 — Hard Negative 渲染 (`9_2_render_hard.py`)
+
+将 `hard_all_{lang}.jsonl` 渲染为每个视频叶目录下的 `hn_render_{view}_{lang}.json`，供人工标注使用。每条记录含 `hard_key`（五元组字符串），标注完成后可按 key 写回 `hard_all.jsonl`。
+
+支持 `--dry-run`（统计覆盖率，不写文件）、`--clean`（删除所有渲染文件）、`--views`（只渲染指定视角）。
+
+**输入** `hard_all_{lang}.jsonl` + `augment_{view}_{lang}.json` → **输出** `{video}/hn_render_{view}_{lang}.json`
+
+---
+
 ## 5. 人工标注定位
 
 本流水线包含两类人工标注介入，均在自动化步骤的下游运行：
@@ -288,78 +300,13 @@ python3 9_extract_errors.py --lang cn \
 |------|------|
 | `config.py` | 根据系统用户名自动解析 `DATA_ROOT`，支持环境变量覆盖 |
 | `llm_client.py` | 统一 LLM/VLM 客户端：支持 `local`（vLLM/llama.cpp）与 `poe` 两种后端，多端口轮询，并发批处理 |
+| `ontology_utils.py` | 槽位正则、`replace_slot`、`strip_slots`、`build_lookup` 等本体操作工具，被 step 8/9 系列脚本共享 |
 | `hard_utils.py` | `hard_all.jsonl` 与 `hard_{view}.json` 的共享 I/O 工具，含过期清理与全量重建 |
 | `video_frames.py` | 视频帧抽取、缩放、base64 编码与磁盘缓存，避免重复 IO |
 
 ---
 
-## 7. 快速上手
-
-### 前提
-
-```bash
-# 配置 VLM 推理服务（示例使用 vLLM）
-bash vllm_deploy/run_qwen3_6_vllm.sh
-
-# 安装依赖（openai / opencv-python / matplotlib 等）
-pip install openai opencv-python matplotlib tqdm
-```
-
-### Setup 阶段（一次性执行）
-
-```bash
-cd tools/
-HOST="127.0.0.1"
-PORT="8001,8002,8003,8004,8005,8006,8007,8008"
-WORKERS=8
-
-# 1. 翻译元数据
-python3 1_translate_wiki.py --host $HOST --port $PORT -w $WORKERS
-
-# 2. VLM 扩写槽位描述（含 LLM 质检）
-python3 2_augment_wiki.py --host $HOST --port $PORT --check -w $WORKERS
-
-# 3. 统计槽位词表
-python3 3_collect_slots.py
-
-# 5. LLM 构建本体
-python3 5_enrich_with_llm.py --host $HOST --port $PORT -w $WORKERS
-
-# 5.1 清理本体关系（可选，推荐使用 POE 后端）
-python3 5_1_clean_ontology.py --poe
-
-# 6. 生成 Obsidian 可视化（可选）
-python3 6_build_wiki.py
-```
-
-### Hard Negative Loop（自动迭代）
-
-```bash
-# 一键运行 20 轮迭代 + LLM 终审
-bash loop.sh
-```
-
-### 手动单步参考
-
-```bash
-# VLM 评测（在线采样 confusable 模式）
-python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode confusable
-
-# 统计分析，刷新 eval_stats.json
-python3 8_1_analyze.py
-
-# 提取 hard negatives，清理过期条目
-python3 9_extract_errors.py --lang en \
-    --from-eval eval_results_en.jsonl \
-    --out hard_all_en.jsonl --clean
-
-# LLM 终审（试跑模式）
-python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS --dry-run
-```
-
----
-
-## 8. 核心文件一览
+## 7. 核心文件一览
 
 | 文件 | 说明 |
 |------|------|
@@ -367,5 +314,5 @@ python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS --dry-run
 | `slot_ontology.json` | 轻量级 Ontology，含 8 类关系属性（Step 5 输出） |
 | `hard_all.jsonl` | 全局 Hard Negative 累计库（五元组 key + error_count） |
 | `hard_{view}.json` | 按视角索引的 Hard Negative，从 `hard_all.jsonl` 全量派生 |
-| `eval_stats.json` | 各槽位 × 类型的 error_rate，供 Step 7 加权采样 |
+| `eval_stats.json` | 各槽位 × 类型的 error_rate，供 Step 8 加权采样 |
 | `BAKUP/` | 每轮 eval_results、eval_stats、eval_accuracy 的时间戳备份 |

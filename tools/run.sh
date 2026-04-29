@@ -80,6 +80,13 @@ LANG="cn"                              # ← cn / en 切换语言
 # #     --limit N  限制文件数（调试）；--dry-run 只看 prompt 不调 VLM
 # python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --dry-run --limit 4
 # python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --limit 4
+ python3 8_3_cloze_eval.py \
+    --host $HOST --port $PORT \
+    --lang $LANG  --mode hard \
+    --hard-src BAKUP/hard_all_${LANG}_merged.jsonl \
+    --save-table # 产出 cloze_table_hard_cn.jsonl
+    # --table cloze_table_hard_cn.jsonl 可复现
+    # --dry-run --limit 3
 
 # =======================================
 # # 8.1 分析混淆判断结果（--out 和 --stats 可省略，自动在 input 同目录同 stem 生成）
@@ -159,8 +166,8 @@ LANG="cn"                              # ← cn / en 切换语言
 # 每条 pair 含 hard_key，标注完成后可按 key 写回 hard_all_{lang}.jsonl
 #
 # 渲染全量（覆盖已有文件）
-python3 9_2_render_hard.py --lang cn --input BAKUP/hard_all_cn_merged.jsonl #--dry-run #--views front
-python3 9_2_render_hard.py --lang en --input BAKUP/hard_all_en_merged.jsonl #--dry-run #--views front
+# python3 9_2_render_hard.py --lang cn --input BAKUP/hard_all_cn_merged.jsonl #--dry-run #--views front
+# python3 9_2_render_hard.py --lang en --input BAKUP/hard_all_en_merged.jsonl #--dry-run #--views front
 # 删除所有渲染文件
 # python3 9_2_render_hard.py --lang cn --clean
 # python3 9_2_render_hard.py --lang en --clean
