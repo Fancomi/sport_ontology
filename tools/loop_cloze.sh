@@ -35,10 +35,10 @@ for round in $(seq 1 "$ROUNDS"); do
     echo "  Round $round / $ROUNDS  $(date '+%H:%M:%S')"
     echo "──────────────────────────────────────────────────────────"
 
-    # 第一轮保存题目表，后续轮次直接追加（不覆盖）
-    EXTRA_FLAGS=""
+    # 第一轮保存题目表；全部轮次传 --no-resume，保证每轮重新评测所有条目
+    SAVE_TABLE_FLAG=""
     if [[ "$round" -eq 1 ]]; then
-        EXTRA_FLAGS="--save-table"
+        SAVE_TABLE_FLAG="--save-table"
     fi
 
     # ── cn ────────────────────────────────────────────────────────
@@ -48,7 +48,8 @@ for round in $(seq 1 "$ROUNDS"); do
         --host "$HOST" --port "$PORT" -w "$WORKERS" \
         --lang cn --mode hard \
         --hard-src "$CN_SRC" \
-        $EXTRA_FLAGS
+        --no-resume \
+        $SAVE_TABLE_FLAG
     echo "  ✓ cn Round $round 完成"
 
     # ── en ────────────────────────────────────────────────────────
@@ -58,7 +59,8 @@ for round in $(seq 1 "$ROUNDS"); do
         --host "$HOST" --port "$PORT" -w "$WORKERS" \
         --lang en --mode hard \
         --hard-src "$EN_SRC" \
-        $EXTRA_FLAGS
+        --no-resume \
+        $SAVE_TABLE_FLAG
     echo "  ✓ en Round $round 完成"
 done
 
