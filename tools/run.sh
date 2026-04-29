@@ -98,23 +98,47 @@ LANG="en"                              # ← cn / en 切换语言
 # --labels Gemma Qwen3.6
 
 # =======================================
-# # 9. 从 eval_results_{lang}.jsonl 提取答错对，幂等合入 hard_all_{lang}.jsonl
-# #    --input  可指定多个文件取并集
-# #    --clean  清理 augment 更新后 [slot:orig] 已失效的历史条目
+# # 9. 从 eval_results_{lang}.jsonl 提取答错对，累加合入 hard_all_{lang}.jsonl
+# #    --from-eval  eval_results*.jsonl 文件或目录（必填，与 --merge 互斥）
+# #    --merge      合并多个 hard_all*.jsonl（必填，与 --from-eval 互斥）
+# #    --out        输出路径（两种模式均必填）
+# #    --clean      清理 augment 更新后 [slot:orig] 已失效的历史条目
 # #    --reset-counts  清零所有 error_count（在重新跑 step 8 --mode hard 前执行）
-# python3 9_extract_errors.py --lang $LANG --input eval_results_${LANG}.jsonl
-# python3 9_extract_errors.py --lang $LANG --reset-counts
-# python3 9_extract_errors.py --lang $LANG --input BAKUP/20260424_gemma_en --clean
+# #
+# # 模式一：从 eval 结果提取 hard，写入（或累加入）指定 hard_all 文件
 # python3 9_extract_errors.py --lang $LANG \
-#     --input \
-#     BAKUP/eval_results_v2_gemma.jsonl \
-#     BAKUP/eval_results_v2_qwen3.6.jsonl \
-#     --clean --reset-counts
+# --from-eval eval_results_${LANG}.jsonl \
+# --out hard_all_${LANG}.jsonl
+# python3 9_extract_errors.py --lang $LANG \
+# --from-eval eval_results_${LANG}.jsonl \
+# --out hard_all_${LANG}.jsonl --clean
+# python3 9_extract_errors.py --lang $LANG \
+# --from-eval BAKUP/20260424_gemma_en \
+# --out hard_all_${LANG}.jsonl --clean
+# python3 9_extract_errors.py --lang $LANG \
+# --from-eval \
+# BAKUP/eval_results_v2_gemma.jsonl \
+# BAKUP/eval_results_v2_qwen3.6.jsonl \
+# --out hard_all_${LANG}.jsonl --clean --reset-counts
 
-# 跑一半的Hard用这个塞回去
+# # 将跑一半的 _eval.jsonl 写回对应源文件（不影响其他源文件）
+# python3 9_extract_errors.py --lang en \
+# --from-eval BAKUP/hard_all_en_Qwen36源_eval.jsonl \
+# --out BAKUP/hard_all_en_Qwen36源.jsonl
+
+# # 仅清零计数（重跑 step 8 hard 模式前）
+# python3 9_extract_errors.py --lang $LANG \
+# --from-eval eval_results_${LANG}.jsonl \
+# --out hard_all_${LANG}.jsonl --reset-counts
+
+# 模式二：合并多个源文件（去重+统计求和），写出新文件
+# 合并后同时过滤低质量条目，直接生成可用的 hard_all
 python3 9_extract_errors.py --lang en \
---input BAKUP/hard_all_en_Qwen36源_eval.jsonl \
---hard-base BAKUP/hard_all_en_Qwen36源.jsonl
+--merge BAKUP/hard_all_en_gemma源.jsonl \
+BAKUP/hard_all_en_Qwen36源.jsonl \
+--out BAKUP/hard_all_en_merged.jsonl
+# --min-pred 10 --min-error-rate 0.3
+
 
 # # 9.1 LLM 审核 hard_all_{lang}.jsonl 句子级有效性（删除上下文等价 / 视觉不可辨条目）
 # #     --dry-run 只看判断结果，不写文件；--verbose 打印完整 prompt（配合 --limit）

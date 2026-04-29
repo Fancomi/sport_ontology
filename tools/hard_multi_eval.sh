@@ -1,13 +1,27 @@
 #!/usr/bin/env bash
 # hard_multi_eval.sh — 对多个 hard_all 源文件跑 N 轮 VLM hard 评测
 #
-# Phase1 每源文件只跑一次（--rounds 由 8_eval_confusable 内部循环），
-# pred/error 统计在内存中累积，完成后一次性 flush 写回源文件，避免大文件频繁写入。
+# 每个源文件独立跑 --rounds 轮评测，pred/error 统计在内存中累积，
+# 完成后一次性 flush 写回各自的 _eval.jsonl（不覆盖原始源文件）。
 #
-# 完成后用 9_extract_errors --hard-src 合并多个源文件并按阈值提取最终 hard_all：
+# 评测完成后，用 9_extract_errors --from-eval 将 _eval.jsonl 写回各源文件，
+# 再用 --merge 合并多个源文件并按阈值提取最终 hard_all，例如：
+#
+#   # 将各源的评测结果写回源文件（逐一执行）
 #   python3 9_extract_errors.py --lang cn \
-#     --hard-src BAKUP/hard_all_cn_gemma源.jsonl BAKUP/hard_all_cn_Qwen36源.jsonl \
-#     --min-pred 10 --min-error-rate 0.3
+#       --from-eval BAKUP/hard_all_cn_gemma源_eval.jsonl \
+#       --out        BAKUP/hard_all_cn_gemma源.jsonl
+#
+#   python3 9_extract_errors.py --lang cn \
+#       --from-eval BAKUP/hard_all_cn_Qwen36源_eval.jsonl \
+#       --out        BAKUP/hard_all_cn_Qwen36源.jsonl
+#
+#   # 合并两个源文件，过滤低质量条目，写出最终 hard_all
+#   python3 9_extract_errors.py --lang cn \
+#       --merge BAKUP/hard_all_cn_gemma源.jsonl \
+#               BAKUP/hard_all_cn_Qwen36源.jsonl \
+#       --out hard_all_cn.jsonl \
+#       --min-pred 10 --min-error-rate 0.3
 #
 # 环境变量覆盖：HOST / PORT / WORKERS / ROUNDS
 set -euo pipefail
@@ -21,10 +35,10 @@ TOOLS="$(cd "$(dirname "$0")" && pwd)"
 BAKUP="$TOOLS/BAKUP"
 
 SRC_FILES=(
-    # "en|$BAKUP/hard_all_en_gemma源.jsonl"
-    "en|$BAKUP/hard_all_en_Qwen36源.jsonl"
     "cn|$BAKUP/hard_all_cn_gemma源.jsonl"
     "cn|$BAKUP/hard_all_cn_Qwen36源.jsonl"
+    "en|$BAKUP/hard_all_en_gemma源.jsonl"
+    "en|$BAKUP/hard_all_en_Qwen36源.jsonl"
 )
 
 echo "════ hard_multi_eval  rounds=$ROUNDS  workers=$WORKERS ════"
@@ -51,7 +65,17 @@ done
 
 echo ""
 echo "════ ALL DONE ════"
-echo "用 9_extract_errors --hard-src 合并过滤，示例："
+echo "下一步：将各 _eval.jsonl 写回各源文件，再合并过滤，示例："
 echo "  python3 9_extract_errors.py --lang cn \\"
-echo "    --hard-src BAKUP/hard_all_cn_gemma源.jsonl BAKUP/hard_all_cn_Qwen36源.jsonl \\"
-echo "    --min-pred 10 --min-error-rate 0.3"
+echo "      --from-eval BAKUP/hard_all_cn_gemma源_eval.jsonl \\"
+echo "      --out        BAKUP/hard_all_cn_gemma源.jsonl"
+echo ""
+echo "  python3 9_extract_errors.py --lang cn \\"
+echo "      --from-eval BAKUP/hard_all_cn_Qwen36源_eval.jsonl \\"
+echo "      --out        BAKUP/hard_all_cn_Qwen36源.jsonl"
+echo ""
+echo "  python3 9_extract_errors.py --lang cn \\"
+echo "      --merge BAKUP/hard_all_cn_gemma源.jsonl \\"
+echo "              BAKUP/hard_all_cn_Qwen36源.jsonl \\"
+echo "      --out hard_all_cn.jsonl \\"
+echo "      --min-pred 10 --min-error-rate 0.3"

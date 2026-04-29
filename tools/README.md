@@ -217,13 +217,42 @@ eval_stats.json（反馈加权）
 
 ### Step 9 — Hard Negative 提取与沉淀 (`9_extract_errors.py`)
 
-从 `eval_results.jsonl` 中提取 VLM 答错的记录（即模型混淆的样本对），去重后合入全局累计库 `hard_all.jsonl`，并全量重建 `hard_{view}.json`（从 `hard_all.jsonl` 派生，保证与当前 `augment` 数据一致）。
+两种互斥模式，通过 `--from-eval` / `--merge` 明确区分，`--out` 为唯一输出参数。
 
-- `--clean`：清理 `augment` 更新后槽位值已失效的历史条目
-- `--reset-counts`：清零所有 `error_count`（在重新运行 Step 8 前使用）
-- 支持 `--input` 指定多个历史 eval 文件取并集，实现跨轮次积累
+**模式一 `--from-eval`**：读取含 `is_correct` 字段的 `eval_results*.jsonl`，提取 VLM 答错的 pair，累加 `pred_count`/`error_count`，合入 `--out` 指定的 hard_all 文件（已存在则累加，不存在则新建）。
 
-**输入** `eval_results*.jsonl` → **输出** `hard_all.jsonl`（累计）、`hard_{view}.json`（重建）
+```bash
+# loop.sh 每轮调用（写入全局累计库）
+python3 9_extract_errors.py --lang en \
+    --from-eval BAKUP/eval_results_en_r01_xxx.jsonl \
+    --out hard_all_en.jsonl --clean
+
+# 将 _eval.jsonl 写回某个源文件（不影响其他源文件）
+python3 9_extract_errors.py --lang en \
+    --from-eval BAKUP/hard_all_en_Qwen36源_eval.jsonl \
+    --out        BAKUP/hard_all_en_Qwen36源.jsonl
+```
+
+**模式二 `--merge`**：合并两个或更多 hard_all 文件，以主键（video, view, replaced_slot, original_value, new_value）去重，重叠条目的 `pred_count`/`error_count`/`*_by_model` 对应字段求和，写出到 `--out`（不覆盖任何输入文件）。
+
+```bash
+# 合并两个源文件，写出新文件
+python3 9_extract_errors.py --lang en \
+    --merge BAKUP/hard_all_en_gemma源.jsonl \
+            BAKUP/hard_all_en_Qwen36源.jsonl \
+    --out BAKUP/hard_all_en_merged.jsonl
+
+# 合并后同时过滤低质量条目，直接生成可用的 hard_all
+python3 9_extract_errors.py --lang cn \
+    --merge BAKUP/hard_all_cn_gemma源.jsonl \
+            BAKUP/hard_all_cn_Qwen36源.jsonl \
+    --out hard_all_cn.jsonl \
+    --min-pred 10 --min-error-rate 0.3
+```
+
+共同选项：`--clean`（清理过期槽位条目）、`--reset-counts`（清零计数，重跑 step 8 前使用）、`--min-error-rate`/`--min-errors`/`--min-pred`（质量过滤阈值）。
+
+**输入** `eval_results*.jsonl`（模式一）或多个 `hard_all*.jsonl`（模式二）→ **输出** `--out` 指定路径
 
 ---
 
@@ -320,7 +349,9 @@ python3 8_eval_confusable.py --host $HOST --port $PORT -w $WORKERS --mode confus
 python3 8_1_analyze.py
 
 # 提取 hard negatives，清理过期条目
-python3 9_extract_errors.py --input eval_results.jsonl --clean
+python3 9_extract_errors.py --lang en \
+    --from-eval eval_results_en.jsonl \
+    --out hard_all_en.jsonl --clean
 
 # LLM 终审（试跑模式）
 python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS --dry-run

@@ -55,11 +55,12 @@ for i in $(seq 1 $ROUNDS); do
         --stats "eval_stats_${LANG}.json"
     cp "eval_stats_${LANG}.json" "$ROUND_STATS"
 
-    # 9. 提取 hard，merge 入 hard_all_{LANG}（--clean 过滤过期条目，幂等）
+    # 9. 提取 hard，累加入 hard_all_{LANG}.jsonl（--clean 过滤过期条目，幂等）
     echo "[9] 提取 hard negatives..."
     python3 9_extract_errors.py \
         --lang  $LANG \
-        --input "$ROUND_OUT" \
+        --from-eval "$ROUND_OUT" \
+        --out "hard_all_${LANG}.jsonl" \
         --clean
 
     echo "  ✓ Round ${i} 完成 → ${ROUND_OUT}"
