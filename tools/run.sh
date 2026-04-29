@@ -5,7 +5,7 @@
 HOST="127.0.0.1"
 PORT="8001,8002,8003,8004,8005,8006,8007,8008"
 WORKERS=8
-LANG="en"                              # ← cn / en 切换语言
+LANG="cn"                              # ← cn / en 切换语言
 # ─────────────────────────────────────────────────────────────────────────────
 
 # 视频描述 / 处理预热
@@ -104,17 +104,11 @@ LANG="en"                              # ← cn / en 切换语言
 # #    --out        输出路径（两种模式均必填）
 # #    --clean      清理 augment 更新后 [slot:orig] 已失效的历史条目
 # #    --reset-counts  清零所有 error_count（在重新跑 step 8 --mode hard 前执行）
-# #
+
 # # 模式一：从 eval 结果提取 hard，写入（或累加入）指定 hard_all 文件
 # python3 9_extract_errors.py --lang $LANG \
 # --from-eval eval_results_${LANG}.jsonl \
-# --out hard_all_${LANG}.jsonl
-# python3 9_extract_errors.py --lang $LANG \
-# --from-eval eval_results_${LANG}.jsonl \
-# --out hard_all_${LANG}.jsonl --clean
-# python3 9_extract_errors.py --lang $LANG \
-# --from-eval BAKUP/20260424_gemma_en \
-# --out hard_all_${LANG}.jsonl --clean
+# --out hard_all_${LANG}.jsonl  #--clean --reset-counts
 # python3 9_extract_errors.py --lang $LANG \
 # --from-eval \
 # BAKUP/eval_results_v2_gemma.jsonl \
@@ -131,13 +125,27 @@ LANG="en"                              # ← cn / en 切换语言
 # --from-eval eval_results_${LANG}.jsonl \
 # --out hard_all_${LANG}.jsonl --reset-counts
 
-# 模式二：合并多个源文件（去重+统计求和），写出新文件
-# 合并后同时过滤低质量条目，直接生成可用的 hard_all
-python3 9_extract_errors.py --lang en \
---merge BAKUP/hard_all_en_gemma源.jsonl \
-BAKUP/hard_all_en_Qwen36源.jsonl \
---out BAKUP/hard_all_en_merged.jsonl
-# --min-pred 10 --min-error-rate 0.3
+# # 模式二：合并多个源文件（去重+统计求和），写出新文件
+# # 合并后同时过滤低质量条目，直接生成可用的 hard_all
+# python3 9_extract_errors.py --lang cn \
+# --min-error-rate 0.1 \
+# --merge \
+# BAKUP/20260429/hard_all_cn_gemma源_G.jsonl \
+# BAKUP/20260429/hard_all_cn_gemma源_Q.jsonl \
+# BAKUP/20260429/hard_all_cn_Qwen36源_G.jsonl \
+# BAKUP/20260429/hard_all_cn_Qwen36源_Q.jsonl \
+# --out BAKUP/hard_all_cn_merged.jsonl
+# # --min-pred 10 
+
+# python3 9_extract_errors.py --lang en \
+# --min-error-rate 0.1 \
+# --merge \
+# BAKUP/20260429/hard_all_en_gemma源_G.jsonl \
+# BAKUP/20260429/hard_all_en_gemma源_Q.jsonl \
+# BAKUP/20260429/hard_all_en_Qwen36源_G.jsonl \
+# BAKUP/20260429/hard_all_en_Qwen36源_Q.jsonl \
+# --out BAKUP/hard_all_en_merged.jsonl
+
 
 
 # # 9.1 LLM 审核 hard_all_{lang}.jsonl 句子级有效性（删除上下文等价 / 视觉不可辨条目）
@@ -145,16 +153,14 @@ BAKUP/hard_all_en_Qwen36源.jsonl \
 # python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --dry-run --verbose --limit 4
 # python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS --lang $LANG
 
-# # 9.2 渲染 hard_all_{lang}.jsonl → hn_render_{view}.json（单向，供人工标注）
-# #     输出到每个视频叶目录；hn_render 前缀表示渲染产物，区别于 hard_all 数据源
-# #     兼容单槽替换型（confusable/incompatibility）和完形填空型（__cloze__）
-# #     每条 pair 含 hard_key，标注完成后可按 key 写回 hard_all_{lang}.jsonl
-# #
-# #     渲染全量（覆盖已有文件）
-# python3 9_2_render_hard.py --lang $LANG
-# #     指定不同来源版本
-python3 9_2_render_hard.py --lang $LANG --input BAKUP/hard_all_en_gemma源.jsonl --dry-run
-# #     只渲染正面视角
-# python3 9_2_render_hard.py --lang $LANG --views front
-# #     删除所有渲染文件
-# python3 9_2_render_hard.py --lang $LANG --clean
+# 9.2 渲染 hard_all_{lang}.jsonl → hn_render_{view}.json（单向，供人工标注）
+# 输出到每个视频叶目录；hn_render 前缀表示渲染产物，区别于 hard_all 数据源
+# 兼容单槽替换型（confusable/incompatibility）和完形填空型（__cloze__）
+# 每条 pair 含 hard_key，标注完成后可按 key 写回 hard_all_{lang}.jsonl
+#
+# 渲染全量（覆盖已有文件）
+python3 9_2_render_hard.py --lang cn --input BAKUP/hard_all_cn_merged.jsonl #--dry-run #--views front
+python3 9_2_render_hard.py --lang en --input BAKUP/hard_all_en_merged.jsonl #--dry-run #--views front
+# 删除所有渲染文件
+# python3 9_2_render_hard.py --lang cn --clean
+# python3 9_2_render_hard.py --lang en --clean

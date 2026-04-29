@@ -6,7 +6,7 @@
   - 反向检索：每条记录含 hard_key（5-tuple 字符串），标注完成后可按 key 写回 hard_all.jsonl
   - 多来源兼容：source 字段区分 confusable_siblings / incompatibility / cloze 等来源
 
-输出文件命名 hn_render_{view}.json（区别于数据源文件，明确表达「渲染产物」身份）。
+输出文件命名 hn_render_{view}_{lang}.json（区别于数据源文件，明确表达「渲染产物」身份）。
 
 ── 两类 hard negative 的格式差异 ─────────────────────────────────────────────
 
@@ -56,7 +56,7 @@ from config import DATA_ROOT, LangPaths, augment_name
 from hard_utils import load_hard_all
 from ontology_utils import replace_slot, strip_slots
 
-RENDER_GLOB     = "hn_render_*.json"    # 渲染文件匹配模式，--clean 据此删除
+RENDER_GLOB     = "hn_render_*_*.json"  # 渲染文件匹配模式，--clean 据此删除
 CLOZE_SLOT_TAG  = "__cloze__"           # cloze 类 hard negative 的 replaced_slot 占位值
 
 
@@ -158,7 +158,7 @@ def render(hard_all_path: Path, views: list[str] | None, lang: str = 'cn') -> tu
         if not pairs:
             continue
 
-        dst = DATA_ROOT / video / f"hn_render_{view}.json"
+        dst = DATA_ROOT / video / f"hn_render_{view}_{lang}.json"
         dst.write_text(
             json.dumps({
                 "video":         video,
@@ -176,10 +176,16 @@ def render(hard_all_path: Path, views: list[str] | None, lang: str = 'cn') -> tu
     return n_files, n_pairs
 
 
-def clean(views: list[str] | None) -> int:
-    """删除所有 hn_render_{view}.json 渲染文件，返回删除数量。"""
-    patterns = ([f"hn_render_{v}.json" for v in views]
-                if views else [RENDER_GLOB])
+def clean(views: list[str] | None, lang: str | None = None) -> int:
+    """删除所有 hn_render_{view}_{lang}.json 渲染文件，返回删除数量。"""
+    if views and lang:
+        patterns = [f"hn_render_{v}_{lang}.json" for v in views]
+    elif views:
+        patterns = [f"hn_render_{v}_*.json" for v in views]
+    elif lang:
+        patterns = [f"hn_render_*_{lang}.json"]
+    else:
+        patterns = [RENDER_GLOB]
     n = 0
     for pat in patterns:
         for p in DATA_ROOT.rglob(pat):
@@ -260,7 +266,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.clean:
-        n = clean(args.views)
+        n = clean(args.views, args.lang)
         print(f"[clean] 已删除 {n} 个渲染文件")
         return
 
@@ -281,7 +287,7 @@ def main() -> None:
     n_files, n_pairs = render(hard_all_path, args.views, args.lang)
 
     print(f"\n[DONE]  渲染文件={n_files}  条目总数={n_pairs}")
-    print(f"输出:   {{DATA_ROOT}}/{{video}}/hn_render_{{view}}.json")
+    print(f"输出:   {{DATA_ROOT}}/{{video}}/hn_render_{{view}}_{args.lang}.json")
     print(f"反向检索: 每条 pair.hard_key = video|view|replaced_slot|orig|repl")
 
 
