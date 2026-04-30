@@ -9,7 +9,7 @@ set -euo pipefail
 
 source "$(dirname "$0")/../vllm_deploy/detect_ports.sh"
 ROUNDS="${ROUNDS:-10}"
-MODE="${MODE:-hard}" #confusable  hard
+MODE="${MODE:-confusable}" #confusable  hard
 THINK="${THINK:-1}"
 TOOLS="$(cd "$(dirname "$0")" && pwd)"
 BAKUP="$TOOLS/BAKUP"
