@@ -80,13 +80,13 @@ LANG="cn"                              # ← cn / en 切换语言
 # #     --limit N  限制文件数（调试）；--dry-run 只看 prompt 不调 VLM
 # python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --dry-run --limit 4
 # python3 8_3_cloze_eval.py --host $HOST --port $PORT -w $WORKERS --lang $LANG --limit 4
- python3 8_3_cloze_eval.py \
-    --host $HOST --port $PORT \
-    --lang $LANG  --mode hard \
-    --hard-src BAKUP/hard_all_${LANG}_merged.jsonl \
-    --save-table # 产出 cloze_table_hard_cn.jsonl
-    # --table cloze_table_hard_cn.jsonl 可复现
-    # --dry-run --limit 3
+#  python3 8_3_cloze_eval.py \
+#     --host $HOST --port $PORT \
+#     --lang $LANG  --mode hard \
+#     --hard-src BAKUP/hard_all_${LANG}_merged.jsonl \
+#     --save-table # 产出 cloze_table_hard_cn.jsonl
+#     # --table cloze_table_hard_cn.jsonl 可复现
+#     # --dry-run --limit 3
 
 # =======================================
 # # 8.1 分析混淆判断结果（--out 和 --stats 可省略，自动在 input 同目录同 stem 生成）
@@ -104,6 +104,8 @@ LANG="cn"                              # ← cn / en 切换语言
 # BAKUP/eval_results_v2_qwen3.6.jsonl \
 # --labels Gemma Qwen3.6
 
+python3 8_1_analyze.py --mode hard --input eval_results_cloze_hard_cn.jsonl
+python3 8_1_analyze.py --mode hard --input eval_results_cloze_hard_en.jsonl
 # =======================================
 # # 9. 从 eval_results_{lang}.jsonl 提取答错对，累加合入 hard_all_{lang}.jsonl
 # #    --from-eval  eval_results*.jsonl 文件或目录（必填，与 --merge 互斥）
