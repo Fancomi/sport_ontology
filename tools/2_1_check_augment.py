@@ -185,11 +185,13 @@ def process_one(aug_path: Path, client: LLMClient) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description='校验/修正 augment_*_cn.json 的 category_3_slotted_description')
     ap.add_argument('--host',    default='127.0.0.1')
-    ap.add_argument('--port',    default='8000',
+    ap.add_argument('--port',    default=None,
                     help='LLM 端口，逗号分隔多端口 (e.g. 8001,8002,...)')
     ap.add_argument('--backend', default='local', choices=['local', 'poe'])
     ap.add_argument('--workers', '-w', type=int, default=1,
                     help='并发 worker 数，建议与端口数一致')
+    ap.add_argument('--think', action='store_true', default=None,
+                    help='开启 LLM thinking 模式（默认关闭）')
     args = ap.parse_args()
 
     all_aug = sorted(DATA_ROOT.rglob('augment_*_cn.json'))
@@ -212,8 +214,9 @@ def main() -> None:
         print('全部已完成'); return
 
     try:
-        client = (LLMClient(backend='local', host=args.host, port=parse_ports(args.port))
-                  if args.backend == 'local' else LLMClient(backend='poe'))
+        client = (LLMClient(backend='local', host=args.host, port=parse_ports(args.port),
+                            think=args.think)
+                  if args.backend == 'local' else LLMClient(backend='poe', think=args.think))
         print(f'模型: {client.model}\n')
     except Exception as e:
         print(f'连接失败: {e}', file=sys.stderr); sys.exit(1)

@@ -8,16 +8,21 @@
 #
 # 全部轮次完成后：
 #   9.1→ LLM 审核 hard negative 句子级有效性
+#
+# 环境变量覆盖：PORT / WORKERS / THINK
+#   THINK=1 bash loop.sh   # 开启 thinking 模式
 
 set -euo pipefail
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
-HOST="127.0.0.1"
-PORT="8001,8002,8003,8004,8005,8006,8007,8008"
-WORKERS=8
 ROUNDS=58
-LANG="en"                              # ← cn / en 切换语言
-BAKUP_DIR="BAKUP/20260425_qwen3_6_en"
+LANG="cn"                              # ← cn / en 切换语言
+BAKUP_DIR="BAKUP/20260430_gemma_cn"
+# 手动覆盖示例：PORT="8001,8002" WORKERS=2 bash loop.sh
+source "$(dirname "$0")/../vllm_deploy/detect_ports.sh"
+THINK="${THINK:-1}"                    # 1=开启 thinking 模式
+THINK_FLAG=""
+if [[ "$THINK" == "1" ]]; then THINK_FLAG="--think"; fi
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,7 +31,6 @@ mkdir -p "$BAKUP_DIR"
 
 echo "════════════════════════════════════════════════════"
 echo "  Hard Negative Loop  ×${ROUNDS} rounds  [lang=${LANG}]"
-echo "  HOST=$HOST  PORT=$PORT  WORKERS=$WORKERS"
 echo "════════════════════════════════════════════════════"
 
 for i in $(seq 1 $ROUNDS); do
@@ -43,10 +47,11 @@ for i in $(seq 1 $ROUNDS); do
     # 8. VLM 评测 confusable（在线采样，读 eval_stats_{LANG}.json 加权；首轮均匀采样）
     echo "[8] VLM 评测 confusable（在线采样）..."
     python3 8_eval_confusable.py \
-        --host $HOST --port $PORT -w $WORKERS \
+        $VLM \
         --lang $LANG \
         --mode confusable \
-        --out "$ROUND_OUT"
+        --out "$ROUND_OUT" \
+        $THINK_FLAG
 
     # 8.1 分析：覆盖 eval_stats_{LANG}.json 供下一轮加权；同时备份到 BAKUP
     echo "[8.1] 分析结果..."
@@ -71,7 +76,7 @@ echo ""
 echo "════════════════════════════════════════════════════"
 echo "  9.1  LLM 审核 Hard Negative 句子级有效性  [lang=${LANG}]"
 echo "════════════════════════════════════════════════════"
-python3 9_1_clean_hard.py --host $HOST --port $PORT -w $WORKERS --lang $LANG
+python3 9_1_clean_hard.py $VLM --lang $LANG $THINK_FLAG
 
 echo ""
 echo "════════════════════════════════════════════════════"

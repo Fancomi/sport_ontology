@@ -36,17 +36,29 @@ def detect_server_info(client: OpenAI) -> tuple[str, str]:
 
 def make_extra_body(backend: str, model_id: str) -> dict:
     """为不同后端生成 extra_body。
-    vllm + Qwen3 系列：关闭思考模式，避免推理过程混入输出内容。
+    vllm + Qwen3 / Gemma4 系列：默认关闭思考模式，避免推理过程混入输出内容。
     """
-    if backend == 'vllm' and 'qwen' in model_id.lower():
+    mid = model_id.lower()
+    if backend == 'vllm' and ('qwen' in mid or 'gemma' in mid):
         return {"chat_template_kwargs": {"enable_thinking": False}}
     return {}
+
+
+def _with_think(eb: dict, think: bool | None) -> dict:
+    """在 extra_body 基础上覆盖 enable_thinking，think=None 时原样返回。"""
+    if think is None:
+        return eb
+    ctk = dict(eb.get("chat_template_kwargs") or {})
+    ctk["enable_thinking"] = think
+    return {**eb, "chat_template_kwargs": ctk}
 
 
 # ── 多端口工具 ────────────────────────────────────────────────────────────────
 
 def parse_ports(ports) -> list[int]:
-    """解析端口参数，支持 int / str(逗号分隔) / list。"""
+    """解析端口参数，支持 int / str(逗号分隔) / list。None 时报错提示用 detect_ports.sh 或手动传 --port。"""
+    if ports is None:
+        raise ValueError("未指定 --port，请通过 detect_ports.sh 自动探测或手动传入 --port 8001,8002,...")
     if isinstance(ports, list):
         return [int(p) for p in ports]
     return [int(p.strip()) for p in str(ports).split(',')]
@@ -93,7 +105,8 @@ def _probe_vlm_ports(host: str, ports: list[int]) -> dict:
     return results
 
 
-def build_vlm_clients(host: str, ports: list[int]) -> list[tuple]:
+def build_vlm_clients(host: str, ports: list[int],
+                      think: bool | None = None) -> list[tuple]:
     """构建 VLM (OpenAI) 客户端列表，每个元素为 (client, model_id, extra_body)。"""
     clients = []
     for port, r in sorted(_probe_vlm_ports(host, ports).items()):
@@ -101,6 +114,7 @@ def build_vlm_clients(host: str, ports: list[int]) -> list[tuple]:
             print(f'  VLM [{port}]: 连接失败 {r}')
         else:
             c, mid, eb = r
+            eb = _with_think(eb, think)
             print(f'  VLM [{port}]: {mid.split("/")[-1]}' + (f'  {eb}' if eb else ''))
             clients.append((c, mid, eb))
     return clients
@@ -111,13 +125,15 @@ def build_vlm_clients(host: str, ports: list[int]) -> list[tuple]:
 @dataclass
 class VLMEndpoint:
     """预序列化的 httpx VLM 端点，消除 Phase 2 中的 GIL 热点。"""
-    session: httpx.Client
-    url:     str
-    mod_b:   bytes   # json.dumps(model_id).encode()
-    ext_b:   bytes   # extra_body JSON 片段，b'' 表示无
+    session:   httpx.Client
+    url:       str
+    mod_b:     bytes   # json.dumps(model_id).encode()
+    ext_b:     bytes   # extra_body JSON 片段，b'' 表示无
+    max_tok_b: bytes   # max_tokens 覆盖，b'' 表示由调用方使用模块默认值
 
 
-def build_vlm_endpoints(host: str, ports: list[int]) -> list[VLMEndpoint]:
+def build_vlm_endpoints(host: str, ports: list[int],
+                        think: bool | None = None) -> list[VLMEndpoint]:
     """构建 VLMEndpoint 列表（raw httpx，绕过 OpenAI 客户端的 json.dumps 开销）。"""
     eps = []
     for port, r in sorted(_probe_vlm_ports(host, ports).items()):
@@ -125,13 +141,17 @@ def build_vlm_endpoints(host: str, ports: list[int]) -> list[VLMEndpoint]:
             print(f'  VLM [{port}]: 连接失败 {r}')
         else:
             _, mid, eb = r
+            eb = _with_think(eb, think)
             print(f'  VLM [{port}]: {mid.split("/")[-1]}' + (f'  {eb}' if eb else ''))
             ext_b = (json.dumps(eb, separators=(',', ':'))[1:-1].encode() if eb else b'')
+            # thinking 模式下 max_tokens 需容纳推理链，默认 4096
+            max_tok_b = b'4096' if think else b''
             eps.append(VLMEndpoint(
                 session=httpx.Client(timeout=120),
                 url=f'http://{host}:{port}/v1/chat/completions',
                 mod_b=json.dumps(mid).encode(),
                 ext_b=ext_b,
+                max_tok_b=max_tok_b,
             ))
     return eps
 
@@ -182,9 +202,11 @@ class LLMClient:
               poe   - api_key, model, extra_body
               local - host, port(s), model, max_tokens, temperature
                       port 支持 int / str(逗号分隔) / list，多端口自动轮询
+              think - bool | None，实例级 enable_thinking 默认值（None=不覆盖）
         """
         assert backend in ("poe", "local"), f"未知后端: {backend}"
         self.backend = backend
+        self.think   = kwargs.get("think", None)
 
         if backend == "poe":
             self.client    = OpenAI(
@@ -252,11 +274,17 @@ class LLMClient:
     # ── 核心调用 ──────────────────────────────────────────────────────────────
 
     def stream_call(self, messages: list, key: str,
-                    model: str = None, extra_body: dict = None) -> Optional[str]:
-        """POE 流式调用，通过 key 实时追踪接收字数"""
+                    model: str = None, extra_body: dict = None,
+                    think: bool = None) -> Optional[str]:
+        """POE 流式调用，通过 key 实时追踪接收字数
+        think: True/False 覆盖 enable_thinking；None 使用实例默认值 self.think。
+        """
         assert self.backend == "poe", "stream_call 仅支持 poe 后端"
-        model      = model or self.model
-        extra_body = extra_body if extra_body is not None else self.extra_body
+        model          = model or self.model
+        resolved_think = think if think is not None else self.think
+        extra_body     = _with_think(
+            extra_body if extra_body is not None else self.extra_body, resolved_think
+        )
         with _lock:
             _progress[key] = 0
         try:
@@ -280,18 +308,22 @@ class LLMClient:
                 _progress.pop(key, None)
 
     def chat(self, messages: list, max_tokens: int = None,
-             temperature: float = None) -> Optional[str]:
-        """非流式同步调用（local 后端主用，poe 也可用）"""
+             temperature: float = None, think: bool = None) -> Optional[str]:
+        """非流式同步调用（local 后端主用，poe 也可用）
+        think: True/False 覆盖 enable_thinking；None 使用实例默认值 self.think。
+        """
+        resolved_think = think if think is not None else self.think
         kwargs = dict(model=self.model, messages=messages, stream=False)
         if self.backend == "local":
             idx, c, eb = self._next_ep()
             kwargs["max_tokens"]  = max_tokens  or self.max_tokens
             kwargs["temperature"] = temperature or self.temperature
+            eb = _with_think(eb, resolved_think)
             if eb:
                 kwargs["extra_body"] = eb
         else:
             idx, c, eb = None, self.client, self.extra_body
-            kwargs["extra_body"] = eb
+            kwargs["extra_body"] = _with_think(eb, resolved_think)
         try:
             resp = c.chat.completions.create(**kwargs)
             return strip_thinking(resp.choices[0].message.content.strip()) or None

@@ -72,12 +72,13 @@ def call_vlm(img_bytes: bytes, prompt: str, ep: VLMEndpoint) -> str:
     content = img_bytes[:-1] + b',' + text_b + b']'
     body = (b'{"model":' + ep.mod_b +
             b',"messages":[{"role":"user","content":' + content + b'}]' +
-            b',"max_tokens":' + _MAX_B + b',"temperature":0.0' +
+            b',"max_tokens":' + (ep.max_tok_b or _MAX_B) + b',"temperature":0.0' +
             (b',' + ep.ext_b if ep.ext_b else b'') + b'}')
     try:
         r = ep.session.post(ep.url, content=body,
                             headers={"Content-Type": "application/json"})
-        return r.json()["choices"][0]["message"]["content"].strip().upper()
+        msg = r.json()["choices"][0]["message"]
+        return (msg.get("content") or "").strip().upper()
     except Exception as e:
         _log(f"  ✗ VLM: {e}")
         return ""
@@ -197,7 +198,7 @@ def main() -> None:
     pa.add_argument("--lang",     default="cn", choices=["cn", "en"])
     pa.add_argument("--mode",     choices=["confusable", "hard", "all"], default="all")
     pa.add_argument("--host",     default="127.0.0.1")
-    pa.add_argument("--port",     default="8000", help="逗号分隔多端口")
+    pa.add_argument("--port",     default=None, help="逗号分隔多端口")
     pa.add_argument("--fps",      type=float, default=FPS_DEFAULT)
     pa.add_argument("--max-side", type=int,   default=768, dest="max_side")
     pa.add_argument("--out",      default=None)
@@ -212,6 +213,8 @@ def main() -> None:
     pa.add_argument("--rounds", type=int, default=1,
                     help="hard 模式重复评测轮数（仅 --mode hard；Phase1 只跑一次，"
                          "Phase2 循环 N 轮内存累积，完成后一次 flush 避免大文件频繁写入）")
+    pa.add_argument("--think",  action="store_true", default=None,
+                    help="开启 VLM thinking 模式（默认关闭）")
     args = pa.parse_args()
 
     lp = LangPaths(args.lang)
@@ -226,7 +229,7 @@ def main() -> None:
 
     eps = []
     if not args.dry_run:
-        eps = build_vlm_endpoints(args.host, parse_ports(args.port))
+        eps = build_vlm_endpoints(args.host, parse_ports(args.port), think=args.think)
         if not eps:
             print(f"✗ 无法连接 {args.host}:{args.port}", file=sys.stderr)
             sys.exit(1)

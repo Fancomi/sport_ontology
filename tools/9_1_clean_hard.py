@@ -102,8 +102,10 @@ def main() -> None:
                         help="打印每条完整 SYSTEM+USER prompt（建议配合 --limit 使用）")
     parser.add_argument("--poe",     action="store_true")
     parser.add_argument("--host",    default="127.0.0.1")
-    parser.add_argument("--port",    default="8000")
+    parser.add_argument("--port",    default=None)
     parser.add_argument("--workers", "-w", type=int, default=1)
+    parser.add_argument("--think",   action="store_true", default=None,
+                        help="开启 LLM thinking 模式（默认关闭）")
     args = parser.parse_args()
 
     from config import LangPaths
@@ -120,7 +122,8 @@ def main() -> None:
     try:
         client = LLMClient(backend="poe" if args.poe else "local",
                            host=args.host,
-                           port=parse_ports(args.port) if not args.poe else 8000)
+                           port=parse_ports(args.port) if not args.poe else 8000,
+                           think=args.think)
         print(f"模型: {client.model}  后端: {client.backend}\n")
     except Exception as e:
         print(f"✗ 连接失败: {e}", file=sys.stderr)

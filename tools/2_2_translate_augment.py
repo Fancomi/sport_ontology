@@ -287,12 +287,14 @@ def process_one(meta_cn_path: Path, client: LLMClient | None,
 def main() -> None:
     parser = argparse.ArgumentParser(description='将 augment_*_cn.json 翻译为英文 augment_{view}_en.json')
     parser.add_argument('--host',              default='127.0.0.1')
-    parser.add_argument('--port',              default='8001',
+    parser.add_argument('--port',              default=None,
                         help='LLM 端口，逗号分隔多端口')
     parser.add_argument('--backend',           default='local', choices=['local', 'poe'])
     parser.add_argument('--check',             action='store_true',
                         help='翻译后启动 LLM QC 自校正循环（最多 12 轮）')
     parser.add_argument('--workers', '-w',     type=int, default=1)
+    parser.add_argument('--think',             action='store_true', default=None,
+                        help='开启 LLM thinking 模式（默认关闭）')
     parser.add_argument('--limit',             type=int, default=0,
                         help='只处理前 N 个动作（调试用，0=全部）')
     parser.add_argument('--dry-run',           action='store_true', dest='dry_run',
@@ -331,8 +333,9 @@ def main() -> None:
 
     try:
         client = None if args.dry_run else (
-            LLMClient(backend='local', host=args.host, port=parse_ports(args.port))
-            if args.backend == 'local' else LLMClient(backend='poe')
+            LLMClient(backend='local', host=args.host, port=parse_ports(args.port),
+                      think=args.think)
+            if args.backend == 'local' else LLMClient(backend='poe', think=args.think)
         )
         print(f'模型: {client.model if client else "N/A"}  '
               f'QC: {"on" if args.check else "off"}  '

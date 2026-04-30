@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>T1 · 图文配对提取</title>
+<style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+  --border: #30363d; --text: #e6edf3; --text2: #8b949e;
+  --blue: #58a6ff; --green: #3fb950; --orange: #f0883e;
+  --purple: #bc8cff; --red: #ff7b72; --yellow: #e3b341;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: hidden; }
+
+/* ── Landing ── */
+#landing {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; height: 100vh; gap: 20px;
+}
+#landing h1 {
+  font-size: 2rem; font-weight: 700;
+  background: linear-gradient(90deg, var(--green), var(--blue));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+#landing p { color: var(--text2); font-size: .92rem; max-width: 500px; text-align: center; line-height: 1.75; }
+.land-btn {
+  padding: 12px 32px; font-size: .95rem; font-weight: 600; border: none;
+  border-radius: 8px; cursor: pointer;
+  background: linear-gradient(135deg, var(--green), var(--blue)); color: #fff;
+  transition: transform .15s, box-shadow .15s;
+}
+.land-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(63,185,80,.3); }
+.land-hint { font-size: .78rem; color: var(--text2); }
+
+/* ── App ── */
+#app { display: none; flex-direction: column; height: 100vh; }
+
+/* topbar */
+.topbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg2); flex-shrink: 0;
+}
+.back-btn {
+  padding: 5px 12px; font-size: .8rem; border: 1px solid var(--border);
+  background: var(--bg3); color: var(--text2); border-radius: 5px; cursor: pointer;
+}
+.back-btn:hover { border-color: var(--blue); color: var(--blue); }
+.book-name {
+  font-weight: 700; font-size: .92rem; color: var(--text);
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pill {
+  font-size: .74rem; padding: 3px 10px; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 12px; color: var(--text2); white-space: nowrap;
+}
+.pill span { color: var(--green); font-weight: 700; }
+.import-btn {
+  padding: 6px 14px; font-size: .8rem; font-weight: 600;
+  border: 1px solid rgba(88,166,255,.35); background: rgba(88,166,255,.08);
+  color: var(--blue); border-radius: 6px; cursor: pointer; transition: all .15s;
+}
+.import-btn:hover { border-color: var(--blue); background: rgba(88,166,255,.18); }
+.save-btn {
+  padding: 6px 16px; font-size: .82rem; font-weight: 700; border: none;
+  border-radius: 6px; cursor: pointer;
+  background: linear-gradient(135deg, var(--green), #2ea043); color: #fff;
+}
+.save-btn:hover { opacity: .85; }
+
+/* restore bar */
+.restore-bar {
+  display: none; padding: 7px 16px; background: rgba(88,166,255,.07);
+  border-bottom: 1px solid rgba(88,166,255,.22); font-size: .82rem;
+  color: var(--blue); align-items: center; gap: 10px; flex-shrink: 0;
+}
+.restore-bar.show { display: flex; }
+.rbtn {
+  padding: 3px 12px; font-size: .78rem; border: 1px solid rgba(88,166,255,.4);
+  background: rgba(88,166,255,.12); color: var(--blue); border-radius: 5px; cursor: pointer;
+}
+.rbtn.dim { background: none; border-color: rgba(88,166,255,.18); color: var(--text2); }
+
+/* ── Append mode banner ── */
+.append-bar {
+  display: none; padding: 8px 16px; gap: 12px;
+  background: rgba(240,136,62,.1); border-bottom: 1px solid rgba(240,136,62,.35);
+  font-size: .84rem; color: var(--orange); align-items: center; flex-shrink: 0;
+}
+.append-bar.show { display: flex; }
+.append-bar strong { font-weight: 700; }
+.append-cancel-btn {
+  padding: 3px 12px; font-size: .78rem; font-weight: 600;
+  border: 1px solid rgba(240,136,62,.45); background: rgba(240,136,62,.12);
+  color: var(--orange); border-radius: 5px; cursor: pointer; margin-left: auto;
+}
+.append-cancel-btn:hover { background: rgba(240,136,62,.25); }
+
+/* ── Split ── */
+.split { display: flex; flex: 1; overflow: hidden; }
+.pane { display: flex; flex-direction: column; overflow: hidden; }
+.pane-left { width: 52%; border-right: 3px solid var(--border); }
+.pane-right { flex: 1; }
+.resizer { width: 5px; background: var(--border); cursor: col-resize; flex-shrink: 0; transition: background .15s; }
+.resizer:hover, .resizer.dragging { background: var(--blue); }
+
+.pane-header {
+  padding: 7px 14px; background: var(--bg2); border-bottom: 1px solid var(--border);
+  flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+}
+.pane-title { color: var(--text); font-size: .85rem; font-weight: 600; }
+.pane-hint { color: var(--text2); font-size: .72rem; }
+
+/* ── Left: MD scroller ── */
+#md-scroller { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 0 14px 40px; }
+#md-scroller::-webkit-scrollbar { width: 5px; }
+#md-scroller::-webkit-scrollbar-track { background: var(--bg2); }
+#md-scroller::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.md-chunk { font-size: .88rem; line-height: 1.78; color: var(--text); }
+.md-chunk h1 { font-size: 1.05rem; font-weight: 700; color: var(--blue); margin: 16px 0 6px; }
+.md-chunk h2 { font-size: .95rem; font-weight: 700; color: var(--blue); margin: 13px 0 5px; }
+.md-chunk h3 { font-size: .88rem; font-weight: 700; color: var(--purple); margin: 10px 0 4px; }
+.md-chunk p { margin: 3px 0; }
+.md-chunk .blank { height: 6px; }
+.chunk-sentinel { height: 1px; }
+
+/* image in MD flow */
+.img-flow {
+  position: relative; margin: 12px 0;
+  border-radius: 7px; overflow: hidden;
+  border: 2px solid transparent; transition: border-color .2s;
+}
+.img-flow.is-added { border-color: rgba(63,185,80,.5); }
+.img-flow.is-added::after {
+  content: ''; position: absolute; inset: 0;
+  background: rgba(63,185,80,.05); pointer-events: none;
+}
+/* in append mode: hovering shows orange tint */
+.append-mode-active .img-flow:hover { border-color: rgba(240,136,62,.6); }
+
+.flow-img {
+  width: 100%; height: auto; max-height: 480px;
+  object-fit: contain; background: var(--bg3);
+  display: block;
+}
+.flow-img.img-lazy { min-height: 60px; }
+
+.add-flow-btn {
+  position: absolute; bottom: 8px; right: 8px;
+  padding: 5px 13px; font-size: .8rem; font-weight: 700;
+  background: rgba(13,17,23,.72); color: #fff;
+  border: 1.5px solid rgba(255,255,255,.22);
+  border-radius: 6px; cursor: pointer;
+  backdrop-filter: blur(3px);
+  transition: background .15s, border-color .15s, transform .1s;
+  white-space: nowrap;
+}
+.add-flow-btn:hover { background: rgba(63,185,80,.85); border-color: var(--green); transform: scale(1.04); }
+.add-flow-btn.added { background: rgba(88,166,255,.7); border-color: var(--blue); }
+/* in append mode: button turns orange */
+.append-mode-active .add-flow-btn { background: rgba(240,136,62,.75); border-color: var(--orange); }
+.append-mode-active .add-flow-btn:hover { background: rgba(240,136,62,.95); transform: scale(1.04); }
+
+/* jump bar */
+.jump-bar {
+  padding: 5px 12px; background: var(--bg2); border-top: 1px solid var(--border);
+  flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+  font-size: .75rem; color: var(--text2);
+}
+.jump-bar input[type=range] { flex: 1; accent-color: var(--green); }
+.jump-label { white-space: nowrap; min-width: 36px; }
+
+/* ── Right: pair list ── */
+#pair-list { flex: 1; overflow-y: auto; padding: 10px 12px 50px; }
+#pair-list::-webkit-scrollbar { width: 5px; }
+#pair-list::-webkit-scrollbar-track { background: var(--bg2); }
+#pair-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.empty-hint {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; height: 100%; gap: 12px;
+  color: var(--text2); font-size: .88rem; text-align: center; padding: 20px;
+}
+.empty-arrow { font-size: 1.8rem; opacity: .35; }
+
+/* pair row: column layout (images strip on top, textarea below) */
+.pair-row {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px; margin-bottom: 10px;
+  transition: border-color .15s;
+}
+.pair-row.complete { border-color: rgba(63,185,80,.4); }
+/* target row in append mode */
+.pair-row.append-target {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 2px rgba(240,136,62,.2);
+}
+
+.pair-row-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.pair-num { font-size: .75rem; color: var(--text2); font-weight: 700; }
+
+/* append-to-row button */
+.append-row-btn {
+  padding: 3px 10px; font-size: .74rem; font-weight: 600;
+  border: 1px solid rgba(240,136,62,.35); background: rgba(240,136,62,.08);
+  color: var(--orange); border-radius: 5px; cursor: pointer; transition: all .12s;
+}
+.append-row-btn:hover { background: rgba(240,136,62,.2); border-color: var(--orange); }
+.append-row-btn.active {
+  background: rgba(240,136,62,.25); border-color: var(--orange);
+  box-shadow: 0 0 0 2px rgba(240,136,62,.15);
+}
+
+.del-btn {
+  padding: 3px 10px; font-size: .74rem;
+  border: 1px solid rgba(255,123,114,.3); background: rgba(255,123,114,.07);
+  color: var(--red); border-radius: 5px; cursor: pointer; transition: all .12s;
+  margin-left: auto;
+}
+.del-btn:hover { background: rgba(255,123,114,.2); border-color: var(--red); }
+
+/* horizontal image strip */
+.pair-imgs-strip {
+  display: flex; gap: 8px; overflow-x: auto;
+  padding: 2px 0 8px; align-items: flex-start;
+  min-height: 60px;
+}
+.pair-imgs-strip::-webkit-scrollbar { height: 4px; }
+.pair-imgs-strip::-webkit-scrollbar-track { background: var(--bg3); border-radius: 2px; }
+.pair-imgs-strip::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.pair-thumb-wrap { position: relative; flex-shrink: 0; }
+.pair-thumb {
+  height: 150px; width: auto; max-width: 200px;
+  object-fit: contain; background: var(--bg3);
+  border-radius: 5px; display: block;
+}
+/* ✕ button per thumbnail */
+.thumb-del-btn {
+  position: absolute; top: 3px; right: 3px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: rgba(0,0,0,.65); border: none; color: #fff;
+  font-size: .65rem; cursor: pointer; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .15s;
+}
+.pair-thumb-wrap:hover .thumb-del-btn { opacity: 1; }
+
+.pair-textarea {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text); border-radius: 5px; padding: 8px 10px;
+  font-size: .85rem; font-family: inherit; line-height: 1.65;
+  resize: vertical; min-height: 80px; transition: border-color .15s;
+}
+.pair-textarea:focus { outline: none; border-color: var(--blue); }
+.pair-textarea.has-text { border-color: rgba(63,185,80,.45); background: rgba(63,185,80,.04); }
+
+/* Toast */
+#toast {
+  position: fixed; bottom: 22px; left: 50%;
+  transform: translateX(-50%) translateY(50px);
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 20px; font-size: .85rem;
+  box-shadow: 0 4px 18px rgba(0,0,0,.5);
+  transition: transform .22s, opacity .22s; opacity: 0; z-index: 9999;
+}
+#toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+#toast.ok  { border-color: rgba(63,185,80,.5); color: var(--green); }
+#toast.err { border-color: rgba(255,123,114,.5); color: var(--red); }
+</style>
+</head>
+<body>
+
+<!-- Landing -->
+<div id="landing">
+  <h1>T1 · 图文配对提取</h1>
+  <p>
+    左侧展示书籍 MD 原文，点击图片上的 <strong style="color:var(--green)">＋ 添加</strong> 新建配对行，<br>
+    或点击已有行的 <strong style="color:var(--orange)">追加图片</strong> 将多张图合入同一行，<br>
+    再在右侧填写文本描述。标注自动缓存，下次打开可恢复。
+  </p>
+  <button class="land-btn" id="pick-folder-btn">选择书籍文件夹</button>
+  <p class="land-hint">文件夹内需含 .md 文件及 images/ 子目录</p>
+</div>
+
+<!-- App -->
+<div id="app">
+  <div class="topbar">
+    <button class="back-btn" id="back-btn">← 返回</button>
+    <div class="book-name" id="book-name"></div>
+    <div class="pill">配对行 <span id="pair-count">0</span></div>
+    <div class="pill">已填文本 <span id="filled-count">0</span></div>
+    <button class="import-btn" id="import-btn">导入已有标注</button>
+    <button class="save-btn" id="save-btn">下载 JSON</button>
+  </div>
+
+  <!-- restore bar -->
+  <div class="restore-bar" id="restore-bar">
+    <span id="restore-msg"></span>
+    <button class="rbtn" id="restore-yes">恢复</button>
+    <button class="rbtn dim" id="restore-no">忽略</button>
+  </div>
+
+  <!-- append mode banner -->
+  <div class="append-bar" id="append-bar">
+    <span>
+      追加模式：点击左侧任意图片的「＋ 添加」按钮，将该图追加到
+      <strong id="append-target-label">#?</strong>
+    </span>
+    <button class="append-cancel-btn" id="append-cancel">✕ 取消追加</button>
+  </div>
+
+  <div class="split" id="split">
+    <!-- Left: full MD viewer -->
+    <div class="pane pane-left" id="pane-left">
+      <div class="pane-header">
+        <span class="pane-title">MD 原文预览</span>
+        <span class="pane-hint" id="left-hint">点击图片下方按钮新建配对行</span>
+      </div>
+      <div id="md-scroller"></div>
+      <div class="jump-bar">
+        <span class="jump-label">位置</span>
+        <input type="range" id="jump-range" min="0" max="100" value="0">
+        <span class="jump-label" id="jump-pct">0%</span>
+      </div>
+    </div>
+
+    <div class="resizer" id="resizer"></div>
+
+    <!-- Right: pair editor -->
+    <div class="pane pane-right">
+      <div class="pane-header">
+        <span class="pane-title">图文配对区</span>
+        <span class="pane-hint">每行：一或多张图 + 文本描述</span>
+      </div>
+      <div id="pair-list">
+        <div class="empty-hint" id="empty-hint">
+          <span class="empty-arrow">←</span>
+          <span>从左侧点击图片上的 <strong>＋ 添加</strong> 新建配对行</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
+<input type="file" id="import-input" accept=".json" style="display:none">
+
+<script>
+// ── Constants ──
+const CHUNK_SIZE = 80;
+
+// ── State ──
+let mdLines = [], totalChunks = 0, renderedChunks = 0;
+let mdImageFiles = {}, blobCache = {};
+// pair: { id, images: [filename, ...], text }
+let pairs = [], pairIdSeq = 0;
+let addedFilenames = {};   // filename → add count
+let bookName = '';
+let pendingRestore = null;
+let appendTargetId = null; // pair.id receiving next appended image, or null
+
+// ── DOM ──
+const landing        = document.getElementById('landing');
+const app            = document.getElementById('app');
+const folderInput    = document.getElementById('folder-input');
+const importInput    = document.getElementById('import-input');
+const backBtn        = document.getElementById('back-btn');
+const bookNameEl     = document.getElementById('book-name');
+const pairCountEl    = document.getElementById('pair-count');
+const filledCountEl  = document.getElementById('filled-count');
+const importBtn      = document.getElementById('import-btn');
+const saveBtn        = document.getElementById('save-btn');
+const mdScroller     = document.getElementById('md-scroller');
+const jumpRange      = document.getElementById('jump-range');
+const jumpPctEl      = document.getElementById('jump-pct');
+const pairList       = document.getElementById('pair-list');
+const emptyHint      = document.getElementById('empty-hint');
+const restoreBar     = document.getElementById('restore-bar');
+const restoreMsg     = document.getElementById('restore-msg');
+const restoreYes     = document.getElementById('restore-yes');
+const restoreNo      = document.getElementById('restore-no');
+const appendBar      = document.getElementById('append-bar');
+const appendTargetLabel = document.getElementById('append-target-label');
+const appendCancel   = document.getElementById('append-cancel');
+const leftHint       = document.getElementById('left-hint');
+const toast          = document.getElementById('toast');
+const resizer        = document.getElementById('resizer');
+const paneLeft       = document.getElementById('pane-left');
+
+// ── Toast ──
+function showToast(msg, type = 'ok') {
+  toast.textContent = msg;
+  toast.className = 'show ' + type;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { toast.className = ''; }, 2400);
+}
+
+// ── Folder load ──
+document.getElementById('pick-folder-btn').addEventListener('click', () => folderInput.click());
+
+folderInput.addEventListener('change', async e => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const mdFile   = files.find(f => f.name.toLowerCase().endsWith('.md'));
+  const imgFiles = files.filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f.name));
+  if (!mdFile) { alert('未找到 .md 文件'); return; }
+
+  // Reset
+  exitAppendMode();
+  Object.values(blobCache).forEach(u => URL.revokeObjectURL(u));
+  mdImageFiles = {}; blobCache = {};
+  pairs = []; pairIdSeq = 0; addedFilenames = {};
+  mdScroller.removeEventListener('scroll', onMdScroll);
+  mdScroller.innerHTML = ''; renderedChunks = 0;
+  pairList.querySelectorAll('.pair-row').forEach(r => r.remove());
+  emptyHint.style.display = 'flex';
+  restoreBar.classList.remove('show');
+
+  imgFiles.forEach(f => { mdImageFiles[f.name] = f; });
+  bookName = mdFile.name.replace(/\.md$/i, '');
+  bookNameEl.textContent = bookName;
+
+  const text = await mdFile.text();
+  mdLines = text.split('\n');
+  totalChunks = Math.ceil(mdLines.length / CHUNK_SIZE);
+  jumpRange.value = 0; jumpPctEl.textContent = '0%';
+
+  renderToChunk(2);
+  mdScroller.addEventListener('scroll', onMdScroll, { passive: true });
+
+  landing.style.display = 'none';
+  app.style.display = 'flex';
+  checkAutoSave();
+  e.target.value = '';
+});
+
+// ── Auto-save ──
+function autoSave() {
+  if (!bookName) return;
+  try {
+    localStorage.setItem('t1_pairs_' + bookName, JSON.stringify({
+      pairs: pairs.map(p => ({ images: p.images, text: p.text }))
+    }));
+  } catch(e) {}
+}
+
+function checkAutoSave() {
+  try {
+    const raw = localStorage.getItem('t1_pairs_' + bookName);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!data.pairs || !data.pairs.length) return;
+    pendingRestore = data.pairs;
+    restoreMsg.textContent = `发现上次标注缓存（${data.pairs.length} 条配对），是否恢复？`;
+    restoreBar.classList.add('show');
+  } catch(e) {}
+}
+
+restoreYes.addEventListener('click', () => {
+  if (pendingRestore) { importPairsData(pendingRestore.map(p => ({ images: p.images || (p.image ? [p.image] : []), text: p.text || '' }))); pendingRestore = null; }
+  restoreBar.classList.remove('show');
+});
+restoreNo.addEventListener('click', () => { restoreBar.classList.remove('show'); pendingRestore = null; });
+
+// ── Lazy image loader ──
+const lazyObs = new IntersectionObserver(entries => {
+  for (const en of entries) {
+    if (en.isIntersecting) { setBlobSrc(en.target, en.target.dataset.src); lazyObs.unobserve(en.target); }
+  }
+}, { rootMargin: '350px' });
+
+function setBlobSrc(img, filename) {
+  if (!filename) return;
+  if (blobCache[filename]) { img.src = blobCache[filename]; return; }
+  const file = mdImageFiles[filename];
+  if (file) { blobCache[filename] = URL.createObjectURL(file); img.src = blobCache[filename]; }
+  else { img.style.minHeight = '40px'; img.style.background = 'rgba(255,123,114,.07)'; }
+}
+
+function getBlobSrc(filename) {
+  if (blobCache[filename]) return blobCache[filename];
+  const file = mdImageFiles[filename];
+  if (!file) return null;
+  blobCache[filename] = URL.createObjectURL(file);
+  return blobCache[filename];
+}
+
+// ── Clean MD text (strip LaTeX artifacts) ──
+function cleanText(raw) {
+  return raw
+    .replace(/\$\\bullet\$/g, '•')
+    .replace(/\$\\cdot\$/g, '·')
+    .replace(/\$\\times\$/g, '×')
+    .replace(/\$\\leq\$/g, '≤').replace(/\$\\geq\$/g, '≥')
+    .replace(/\$([^$\n]{1,200})\$/g, (_, inner) =>
+      inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}_^]/g, '').replace(/\s+/g, ' ').trim()
+    )
+    .replace(/\$\$/g, '')
+    .trim();
+}
+
+// ── Chunk rendering ──
+function renderChunk(chunkIdx) {
+  const start = chunkIdx * CHUNK_SIZE;
+  const end   = Math.min(start + CHUNK_SIZE, mdLines.length);
+
+  const div = document.createElement('div');
+  div.className = 'md-chunk';
+
+  // Sentinel — absolute position marker
+  const sentinel = document.createElement('div');
+  sentinel.className = 'chunk-sentinel';
+  sentinel.dataset.chunkIdx = chunkIdx;
+  div.appendChild(sentinel);
+
+  for (let i = start; i < end; i++) {
+    const raw = mdLines[i];
+
+    // Image line
+    const im = raw.trim().match(/^!\[\]\(([^)]+)\)/);
+    if (im) {
+      const filename = im[1].split('/').pop();
+      const cnt = addedFilenames[filename] || 0;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'img-flow' + (cnt > 0 ? ' is-added' : '');
+      wrapper.dataset.filename = filename;
+
+      const img = document.createElement('img');
+      img.className = 'flow-img img-lazy';
+      img.dataset.src = filename;
+      img.alt = '';
+      lazyObs.observe(img);
+
+      const btn = document.createElement('button');
+      btn.className = 'add-flow-btn' + (cnt > 0 ? ' added' : '');
+      btn.textContent = cnt > 0 ? `✓ 已添加 (${cnt})` : '＋ 添加';
+      btn.dataset.filename = filename;
+      btn.addEventListener('click', () => onAddBtnClick(filename));
+
+      wrapper.appendChild(img);
+      wrapper.appendChild(btn);
+      div.appendChild(wrapper);
+      continue;
+    }
+
+    const line = cleanText(raw);
+
+    // Heading
+    const hm = line.match(/^(#{1,3})\s+(.+)/);
+    if (hm) {
+      const h = document.createElement('h' + Math.min(3, hm[1].length));
+      h.textContent = hm[2].replace(/^#+\s*/, '');
+      div.appendChild(h);
+      continue;
+    }
+
+    if (!line) {
+      const blank = document.createElement('div'); blank.className = 'blank'; div.appendChild(blank);
+      continue;
+    }
+
+    const p = document.createElement('p');
+    p.textContent = line;
+    div.appendChild(p);
+  }
+
+  return div;
+}
+
+function renderToChunk(target) {
+  while (renderedChunks <= target && renderedChunks < totalChunks) {
+    mdScroller.appendChild(renderChunk(renderedChunks));
+    renderedChunks++;
+  }
+}
+
+// ── Progress: sentinel-based absolute position ──
+function getTopChunkIdx() {
+  const scrollerTop = mdScroller.getBoundingClientRect().top;
+  let best = 0;
+  for (const s of mdScroller.querySelectorAll('.chunk-sentinel')) {
+    if (s.getBoundingClientRect().top <= scrollerTop + 40) best = parseInt(s.dataset.chunkIdx);
+    else break;
+  }
+  return best;
+}
+
+function onMdScroll() {
+  if (mdScroller.scrollTop + mdScroller.clientHeight >= mdScroller.scrollHeight - 500) {
+    renderToChunk(renderedChunks + 1);
+  }
+  const top = getTopChunkIdx();
+  const pct = totalChunks > 1 ? Math.round(top / (totalChunks - 1) * 100) : 0;
+  jumpRange.value = pct;
+  jumpPctEl.textContent = pct + '%';
+}
+
+jumpRange.addEventListener('input', () => {
+  const pct = parseInt(jumpRange.value) / 100;
+  const target = Math.round(pct * (totalChunks - 1));
+  renderToChunk(target);
+  const s = mdScroller.querySelector(`.chunk-sentinel[data-chunk-idx="${target}"]`);
+  if (s) s.scrollIntoView({ block: 'start' });
+  jumpPctEl.textContent = jumpRange.value + '%';
+});
+
+// ── Append mode ──
+function enterAppendMode(pairId) {
+  // Remove highlight from previous target
+  if (appendTargetId !== null) {
+    const prev = pairList.querySelector(`[data-pair-id="${appendTargetId}"]`);
+    if (prev) { prev.classList.remove('append-target'); prev.querySelector('.append-row-btn')?.classList.remove('active'); }
+  }
+  appendTargetId = pairId;
+  const pair = pairs.find(p => p.id === pairId);
+  const num = pairs.indexOf(pair) + 1;
+  appendTargetLabel.textContent = `#${num}`;
+  appendBar.classList.add('show');
+  mdScroller.classList.add('append-mode-active');
+  leftHint.textContent = `追加模式激活 → 点击图片「＋ 添加」追加到 #${num}`;
+
+  const row = pairList.querySelector(`[data-pair-id="${pairId}"]`);
+  if (row) { row.classList.add('append-target'); row.querySelector('.append-row-btn')?.classList.add('active'); }
+}
+
+function exitAppendMode() {
+  if (appendTargetId !== null) {
+    const row = pairList.querySelector(`[data-pair-id="${appendTargetId}"]`);
+    if (row) { row.classList.remove('append-target'); row.querySelector('.append-row-btn')?.classList.remove('active'); }
+  }
+  appendTargetId = null;
+  appendBar.classList.remove('show');
+  mdScroller.classList.remove('append-mode-active');
+  leftHint.textContent = '点击图片下方按钮新建配对行';
+}
+
+appendCancel.addEventListener('click', exitAppendMode);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') exitAppendMode(); });
+
+// ── Image add button click handler ──
+function onAddBtnClick(filename) {
+  if (appendTargetId !== null) {
+    // Append to existing pair
+    appendImageToRow(appendTargetId, filename);
+    // Keep mode active for adding more images
+  } else {
+    // Create new pair
+    createPair(filename);
+  }
+}
+
+function createPair(filename) {
+  const id = ++pairIdSeq;
+  const pair = { id, images: [filename], text: '' };
+  pairs.push(pair);
+  markImageAdded(filename);
+
+  emptyHint.style.display = 'none';
+  pairList.appendChild(renderPairRow(pair));
+  pairList.scrollTop = pairList.scrollHeight;
+  refreshStats();
+  autoSave();
+  showToast('已新建配对行');
+}
+
+function appendImageToRow(pairId, filename) {
+  const pair = pairs.find(p => p.id === pairId);
+  if (!pair) return;
+  pair.images.push(filename);
+  markImageAdded(filename);
+
+  // Add thumb to the strip in DOM
+  const row = pairList.querySelector(`[data-pair-id="${pairId}"]`);
+  if (row) {
+    const strip = row.querySelector('.pair-imgs-strip');
+    if (strip) strip.appendChild(makeThumbEl(pair, filename, pair.images.length - 1));
+  }
+  refreshStats();
+  autoSave();
+  const num = pairs.indexOf(pair) + 1;
+  showToast(`已追加到 #${num}`);
+}
+
+// Mark image as added in left pane
+function markImageAdded(filename) {
+  addedFilenames[filename] = (addedFilenames[filename] || 0) + 1;
+  const cnt = addedFilenames[filename];
+  mdScroller.querySelectorAll(`.add-flow-btn[data-filename="${CSS.escape(filename)}"]`).forEach(btn => {
+    btn.textContent = `✓ 已添加 (${cnt})`;
+    btn.classList.add('added');
+    btn.closest('.img-flow')?.classList.add('is-added');
+  });
+}
+
+// ── Build thumb element for pair row ──
+function makeThumbEl(pair, filename, imgIdx) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pair-thumb-wrap';
+
+  const img = document.createElement('img');
+  img.className = 'pair-thumb';
+  img.alt = '';
+  const src = getBlobSrc(filename);
+  if (src) img.src = src;
+  wrap.appendChild(img);
+
+  const xBtn = document.createElement('button');
+  xBtn.className = 'thumb-del-btn';
+  xBtn.title = '从本行移除此图';
+  xBtn.textContent = '✕';
+  xBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    pair.images.splice(pair.images.indexOf(filename), 1);
+    wrap.remove();
+    if (pair.images.length === 0) {
+      // Remove the whole row
+      pairs = pairs.filter(p => p.id !== pair.id);
+      pairList.querySelector(`[data-pair-id="${pair.id}"]`)?.remove();
+      renumberPairs();
+      if (pairs.length === 0) emptyHint.style.display = 'flex';
+    }
+    refreshStats();
+    autoSave();
+  });
+  wrap.appendChild(xBtn);
+  return wrap;
+}
+
+// ── Render pair row ──
+function renderPairRow(pair) {
+  const row = document.createElement('div');
+  row.className = 'pair-row' + (pair.text.trim() ? ' complete' : '');
+  row.dataset.pairId = pair.id;
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'pair-row-header';
+
+  const numEl = document.createElement('span');
+  numEl.className = 'pair-num';
+  // Fix: parentheses ensure numeric addition before string concat
+  numEl.textContent = '#' + (pairs.indexOf(pair) + 1);
+
+  const appendBtn = document.createElement('button');
+  appendBtn.className = 'append-row-btn';
+  appendBtn.textContent = '＋ 追加图片';
+  appendBtn.title = '激活追加模式，下一次点击左侧图片将加入本行';
+  appendBtn.addEventListener('click', () => {
+    if (appendTargetId === pair.id) { exitAppendMode(); }
+    else { enterAppendMode(pair.id); }
+  });
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'del-btn';
+  delBtn.textContent = '删除';
+  delBtn.addEventListener('click', () => {
+    if (appendTargetId === pair.id) exitAppendMode();
+    pairs = pairs.filter(p => p.id !== pair.id);
+    row.remove();
+    renumberPairs();
+    refreshStats();
+    autoSave();
+    if (pairs.length === 0) emptyHint.style.display = 'flex';
+  });
+
+  header.appendChild(numEl);
+  header.appendChild(appendBtn);
+  header.appendChild(delBtn);
+
+  // Image strip (horizontal)
+  const strip = document.createElement('div');
+  strip.className = 'pair-imgs-strip';
+  pair.images.forEach((fn, idx) => strip.appendChild(makeThumbEl(pair, fn, idx)));
+
+  // Textarea
+  const ta = document.createElement('textarea');
+  ta.className = 'pair-textarea' + (pair.text.trim() ? ' has-text' : '');
+  ta.value = pair.text;
+  ta.placeholder = '填入图像对应的文本描述…';
+  ta.addEventListener('input', () => {
+    pair.text = ta.value;
+    ta.classList.toggle('has-text', !!ta.value.trim());
+    row.classList.toggle('complete', !!ta.value.trim());
+    refreshStats();
+    autoSave();
+  });
+
+  row.appendChild(header);
+  row.appendChild(strip);
+  row.appendChild(ta);
+  return row;
+}
+
+function renumberPairs() {
+  let i = 1;
+  pairList.querySelectorAll('.pair-row').forEach(row => {
+    const n = row.querySelector('.pair-num');
+    if (n) n.textContent = '#' + i++;
+  });
+  // Update append banner if active
+  if (appendTargetId !== null) {
+    const pair = pairs.find(p => p.id === appendTargetId);
+    if (pair) appendTargetLabel.textContent = '#' + (pairs.indexOf(pair) + 1);
+  }
+}
+
+function refreshStats() {
+  pairCountEl.textContent  = pairs.length;
+  filledCountEl.textContent = pairs.filter(p => p.text.trim()).length;
+}
+
+// ── Import ──
+importBtn.addEventListener('click', () => importInput.click());
+importInput.addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    const arr = Array.isArray(data) ? data : (data.pairs || []);
+    if (!arr.length) throw new Error('未找到配对数据');
+    importPairsData(arr.map(p => ({
+      // backward compat: old format used single 'image', new uses 'images' array
+      images: p.images || (p.image ? [p.image] : []),
+      text: p.text || p.description || ''
+    })));
+    showToast(`已导入 ${arr.length} 条配对`);
+  } catch (err) {
+    showToast('导入失败：' + err.message, 'err');
+  }
+  e.target.value = '';
+});
+
+function importPairsData(savedPairs) {
+  for (const p of savedPairs) {
+    if (!p.images || !p.images.length) continue;
+    const id = ++pairIdSeq;
+    pairs.push({ id, images: p.images, text: p.text || '' });
+    p.images.forEach(fn => { addedFilenames[fn] = (addedFilenames[fn] || 0) + 1; });
+  }
+  pairList.querySelectorAll('.pair-row').forEach(r => r.remove());
+  emptyHint.style.display = pairs.length === 0 ? 'flex' : 'none';
+  pairs.forEach(p => pairList.appendChild(renderPairRow(p)));
+  renumberPairs();
+  refreshStats();
+  // Update any already-rendered left-pane buttons
+  Object.entries(addedFilenames).forEach(([fn, cnt]) => {
+    mdScroller.querySelectorAll(`.add-flow-btn[data-filename="${CSS.escape(fn)}"]`).forEach(btn => {
+      btn.textContent = `✓ 已添加 (${cnt})`;
+      btn.classList.add('added');
+      btn.closest('.img-flow')?.classList.add('is-added');
+    });
+  });
+}
+
+// ── Save ──
+saveBtn.addEventListener('click', () => {
+  const output = {
+    bookName,
+    savedAt: new Date().toISOString(),
+    totalPairs: pairs.length,
+    filledPairs: pairs.filter(p => p.text.trim()).length,
+    pairs: pairs.map((p, i) => ({
+      order: i + 1,
+      images: p.images,
+      text: p.text,
+    }))
+  };
+  const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `pairs_${bookName.slice(0, 40).replace(/[/\\:*?"<>|]/g, '_')}_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast(`已下载 ${pairs.length} 条配对`);
+});
+
+// ── Back ──
+backBtn.addEventListener('click', () => {
+  exitAppendMode();
+  Object.values(blobCache).forEach(u => URL.revokeObjectURL(u));
+  blobCache = {}; mdImageFiles = {};
+  mdScroller.removeEventListener('scroll', onMdScroll);
+  mdScroller.innerHTML = '';
+  pairList.querySelectorAll('.pair-row').forEach(r => r.remove());
+  emptyHint.style.display = 'flex';
+  restoreBar.classList.remove('show');
+  app.style.display = 'none';
+  landing.style.display = 'flex';
+});
+
+// ── Resizer ──
+let resizing = false;
+resizer.addEventListener('mousedown', e => { resizing = true; resizer.classList.add('dragging'); e.preventDefault(); });
+document.addEventListener('mousemove', e => {
+  if (!resizing) return;
+  const rect = document.getElementById('split').getBoundingClientRect();
+  const pct = Math.max(25, Math.min(75, (e.clientX - rect.left) / rect.width * 100));
+  paneLeft.style.width = pct + '%';
+});
+document.addEventListener('mouseup', () => { resizing = false; resizer.classList.remove('dragging'); });
+</script>
+</body>
+</html>

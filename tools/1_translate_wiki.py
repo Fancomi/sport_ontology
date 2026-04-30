@@ -161,10 +161,12 @@ def translate_one(path: Path, tmpl: str, client: LLMClient,
 def main() -> None:
     ap = argparse.ArgumentParser(description='批量翻译 wiki_videos metadata.json')
     ap.add_argument('--host', default='127.0.0.1')
-    ap.add_argument('--port', default='8000',
+    ap.add_argument('--port', default=None,
                     help='LLM 端口，逗号分隔多端口 (e.g. 8001,8002,...)')
     ap.add_argument('--workers', '-w', type=int, default=1,
                     help='并发 worker 数，建议与端口数一致')
+    ap.add_argument('--think', action='store_true', default=None,
+                    help='开启 LLM thinking 模式（默认关闭）')
     args = ap.parse_args()
 
     all_files  = sorted(DATA_ROOT.rglob('metadata.json'))
@@ -182,7 +184,8 @@ def main() -> None:
         print('全部已完成'); return
 
     try:
-        client = LLMClient(backend='local', host=args.host, port=parse_ports(args.port))
+        client = LLMClient(backend='local', host=args.host, port=parse_ports(args.port),
+                           think=args.think)
         print(f'模型: {client.model}\n')
     except Exception as e:
         print(f'连接失败 {args.host}:{args.port}: {e}', file=sys.stderr); sys.exit(1)

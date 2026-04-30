@@ -175,7 +175,8 @@ def prebuild_cache(root: Path, fps: float = FPS_DEFAULT,
 # ── VLM 推理（Demo） ──────────────────────────────────────────────────────────
 
 def describe_video(video_path: Path, host: str = "127.0.0.1", port: int = 8000,
-                   fps: float = FPS_DEFAULT, max_side: int = MAX_SIDE_DEFAULT) -> str:
+                   fps: float = FPS_DEFAULT, max_side: int = MAX_SIDE_DEFAULT,
+                   think: bool = None) -> str:
     with Timer("describe_video", show=False) as t_all:
         # Step 1: 加载/提取帧
         print(f"[Step 1] 加载帧  fps={fps}  max_side={max_side}", flush=True)
@@ -208,10 +209,13 @@ def describe_video(video_path: Path, host: str = "127.0.0.1", port: int = 8000,
         # Step 3: VLM 推理
         print("[Step 3] VLM 推理...", flush=True)
         with Timer("step3", show=False) as t3:
+            extra_body = ({"chat_template_kwargs": {"enable_thinking": think}}
+                          if think is not None else None)
             resp = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": content}],
                 max_tokens=1024, temperature=0.3,
+                **({"extra_body": extra_body} if extra_body else {}),
             )
         usage = resp.usage
         if usage:

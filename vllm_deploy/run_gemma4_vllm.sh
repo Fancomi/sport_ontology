@@ -36,8 +36,9 @@ for i in $(seq 0 5); do
         --gpu-memory-utilization 0.90 \
         --dtype bfloat16 \
         --kv-cache-dtype fp8 \
-        --max-model-len 32768 \
+        --max-model-len 65535 \
         --max-num-seqs 1 \
+        --reasoning-parser gemma4 \
         --enable-chunked-prefill \
         --enable-prefix-caching \
         --uvicorn-log-level warning \

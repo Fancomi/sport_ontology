@@ -176,7 +176,7 @@ def _any_cache_missing(meta_paths: list[Path], max_side: int) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(description='批量扩写 muscle_wiki 视频描述')
     parser.add_argument('--host',          default='127.0.0.1')
-    parser.add_argument('--port',          default='8001',
+    parser.add_argument('--port',          default=None,
                         help='VLM 端口，逗号分隔多端口 (e.g. 8001,8002,...,8008)')
     parser.add_argument('--fps',           type=float, default=FPS_DEFAULT)
     parser.add_argument('--max-side',      type=int,   default=MAX_SIDE_DEFAULT, dest='max_side')
@@ -190,6 +190,8 @@ def main() -> None:
     parser.add_argument('--check',         action='store_true',
                         help='P1后启动LLM质检自校正循环（最多3轮），复用 --port 端口')
     parser.add_argument('--check-backend', default='local', choices=['local', 'poe'], dest='check_backend')
+    parser.add_argument('--think',         action='store_true', default=None,
+                        help='开启 VLM/LLM thinking 模式（默认关闭）')
     args = parser.parse_args()
 
     all_meta = sorted(DATA_ROOT.rglob('metadata_cn.json'))
@@ -209,7 +211,7 @@ def main() -> None:
 
     # ── 构建 VLM 客户端列表 ───────────────────────────────────────────────────
     ports   = parse_ports(args.port)
-    clients = build_vlm_clients(args.host, ports)
+    clients = build_vlm_clients(args.host, ports, think=args.think)
     if not clients:
         print('错误: 无可用 VLM 端口', file=sys.stderr)
         sys.exit(1)
@@ -218,8 +220,9 @@ def main() -> None:
     check_clients = []
     if args.check:
         try:
-            cc = (LLMClient(backend='local', host=args.host, port=parse_ports(args.port))
-                  if args.check_backend == 'local' else LLMClient(backend='poe'))
+            cc = (LLMClient(backend='local', host=args.host, port=parse_ports(args.port),
+                            think=args.think)
+                  if args.check_backend == 'local' else LLMClient(backend='poe', think=args.think))
             check_clients = [cc]
             print(f'  质检: {cc.model.split("/")[-1]} ({len(parse_ports(args.port))} 端口)')
         except Exception as e:

@@ -13,6 +13,7 @@ __pycache__/
 *BAKUP*
 *.DS_Store
 .claudian
+books/datas/
 
 # Distribution / packaging
 .Python

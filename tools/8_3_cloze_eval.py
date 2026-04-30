@@ -297,12 +297,13 @@ def call_vlm(img_bytes: bytes, prompt: str, ep: VLMEndpoint) -> str:
     content = img_bytes[:-1] + b',' + text_b + b']'
     body    = (b'{"model":' + ep.mod_b +
                b',"messages":[{"role":"user","content":' + content + b'}]' +
-               b',"max_tokens":' + _MAX_B + b',"temperature":0.0' +
+               b',"max_tokens":' + (ep.max_tok_b or _MAX_B) + b',"temperature":0.0' +
                (b',' + ep.ext_b if ep.ext_b else b'') + b'}')
     try:
         r = ep.session.post(ep.url, content=body,
                             headers={"Content-Type": "application/json"})
-        return r.json()["choices"][0]["message"]["content"].strip()
+        msg = r.json()["choices"][0]["message"]
+        return (msg.get("content") or "").strip()
     except Exception as e:
         print(f"  ✗ VLM: {e}")
         return ""
@@ -406,7 +407,7 @@ def main() -> None:
     parser.add_argument("--lang",        default="cn", choices=["cn", "en"])
     parser.add_argument("--mode",        choices=["confusable", "hard", "all"], default="confusable")
     parser.add_argument("--host",        default="127.0.0.1")
-    parser.add_argument("--port",        default="8000", help="逗号分隔多端口")
+    parser.add_argument("--port",        default=None, help="逗号分隔多端口")
     parser.add_argument("--fps",         type=float, default=FPS_DEFAULT)
     parser.add_argument("--max-side",    type=int,   default=768, dest="max_side")
     parser.add_argument("--out",         default=None,
@@ -426,6 +427,8 @@ def main() -> None:
     parser.add_argument("--dry-run",     action="store_true", dest="dry_run")
     parser.add_argument("--seed",        type=int,   default=42)
     parser.add_argument("--workers",     "-w", type=int, default=1)
+    parser.add_argument("--think",       action="store_true", default=None,
+                        help="开启 VLM thinking 模式（默认关闭）")
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -457,7 +460,7 @@ def main() -> None:
     eps: list[VLMEndpoint] = []
     model_name = "unknown"
     if not args.dry_run:
-        eps = build_vlm_endpoints(args.host, parse_ports(args.port))
+        eps = build_vlm_endpoints(args.host, parse_ports(args.port), think=args.think)
         if not eps:
             print(f"✗ 无法连接 {args.host}:{args.port}", file=sys.stderr)
             sys.exit(1)
