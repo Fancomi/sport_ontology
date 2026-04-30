@@ -361,13 +361,13 @@ def flush_hard_all(records: list[dict], model_name: str,
         key = (r["video"], r["view"], r["replaced_slot"], r["original_value"], r["new_value"])
         if key not in hist:
             continue
-        hist[key]["pred_count"]  = hist[key].get("pred_count", 0) + 1
-        hist[key].setdefault("pred_by_model", {})[model_name] = \
-            hist[key]["pred_by_model"].get(model_name, 0) + 1
+        hist[key]["pred_count"] = hist[key].get("pred_count", 0) + 1
+        pbm = hist[key].setdefault("pred_by_model", {})
+        pbm[model_name] = pbm.get(model_name, 0) + 1
         if not r["is_correct"]:
             hist[key]["error_count"] = hist[key].get("error_count", 0) + 1
-            hist[key].setdefault("error_by_model", {})[model_name] = \
-                hist[key]["error_by_model"].get(model_name, 0) + 1
+            ebm = hist[key].setdefault("error_by_model", {})
+            ebm[model_name] = ebm.get(model_name, 0) + 1
     save_hard_all(hist, lang, path)
 
 
