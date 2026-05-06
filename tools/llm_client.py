@@ -144,8 +144,8 @@ def build_vlm_endpoints(host: str, ports: list[int],
             eb = _with_think(eb, think)
             print(f'  VLM [{port}]: {mid.split("/")[-1]}' + (f'  {eb}' if eb else ''))
             ext_b = (json.dumps(eb, separators=(',', ':'))[1:-1].encode() if eb else b'')
-            # thinking 模式下 max_tokens 需容纳推理链，默认 4096
-            max_tok_b = b'4096' if think else b''
+            # thinking 模式下 max_tokens 需容纳推理链，默认 16384
+            max_tok_b = b'16384' if think else b''
             eps.append(VLMEndpoint(
                 session=httpx.Client(timeout=120),
                 url=f'http://{host}:{port}/v1/chat/completions',
