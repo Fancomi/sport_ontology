@@ -1,8 +1,8 @@
 # source /root/paddlejob/workspace/env_run/penghaotian/envs/vllm19/bin/activate
 
 # ── 统一配置 ──────────────────────────────────────────────────────────────────
-# 手动覆盖示例：PORT="8001,8002" WORKERS=2 bash run.sh
-source "$(dirname "$0")/../vllm_deploy/detect_ports.sh"
+THINK=0  # 0=关闭 thinking，1=开启（质量↑，速度↓）
+source "$(dirname "$0")/../vllm_deploy/detect_ports.sh" # 这里会将THINK转化到THINK_FLAG
 # ─────────────────────────────────────────────────────────────────────────────
 
 # T1 自动图文配对：书籍 MD → pairs_*.json（与 pair_extractor.html 格式完全兼容）
@@ -10,18 +10,14 @@ source "$(dirname "$0")/../vllm_deploy/detect_ports.sh"
 # 可用 pair_extractor.html「导入已有标注」按钮载入校对
 
 # ── 单本书 ────────────────────────────────────────────────────────────────────
+# python T1_auto_pair.py --book datas/施瓦辛格健身全书 $VLM $THINK_FLAG
 
-# 处理指定书籍目录（路径相对于 datas/，或填绝对路径）
-# python T1_auto_pair.py --book datas/施瓦辛格健身全书 $VLM
+# ── 内置 datas/ 全量 ──────────────────────────────────────────────────────────
+# python T1_auto_pair.py --all $VLM $THINK_FLAG
 
-# ── 全量处理 ──────────────────────────────────────────────────────────────────
+# ── 外部目录全量（669 本书等大批量场景）─────────────────────────────────────────
+# # shellcheck disable=SC2086
+# python T1_auto_pair.py --dir /root/paddlejob/workspace/env_run/penghaotian/datas/book_md $VLM $THINK_FLAG
 
-# 处理 datas/ 下所有书籍（顺序执行，每本完成后立即保存）
-# python T1_auto_pair.py --all $VLM
-
-# ── 调试 / 快速验证 ───────────────────────────────────────────────────────────
-
-# 如果 VLM 尚未启动，可先用此命令验证端口是否可达
-# curl http://$HOST:${PORT%%,*}/v1/models
-
-python T1_auto_pair.py --book datas/施瓦辛格健身全书 $VLM
+# 加 --text-merge 可用文本重合度合并（替代 VLM 视觉合并，速度更快）：
+python T1_auto_pair.py --dir /root/paddlejob/workspace/env_run/penghaotian/datas/book_md $VLM $THINK_FLAG --text-merge

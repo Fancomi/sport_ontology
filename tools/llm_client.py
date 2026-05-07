@@ -240,7 +240,10 @@ class LLMClient:
                             raise RuntimeError('no model')
                         if not detected_model:
                             detected_model = mid
-                        eb = kwargs.get("extra_body") or make_extra_body(bk, detected_model or mid)
+                        eb = _with_think(
+                            kwargs.get("extra_body") or make_extra_body(bk, detected_model or mid),
+                            self.think
+                        )
                         self._endpoints.append((c, eb))
                         if eb:
                             print(f"  [LLMClient] {host}:{port} {bk}/{(detected_model or mid).split('/')[-1]}"
@@ -326,10 +329,18 @@ class LLMClient:
             kwargs["extra_body"] = _with_think(eb, resolved_think)
         try:
             resp = c.chat.completions.create(**kwargs)
-            return strip_thinking(resp.choices[0].message.content.strip()) or None
+            choice = resp.choices[0]
+            if choice.finish_reason == 'length':
+                used = kwargs.get("max_tokens") or self.max_tokens
+                raise RuntimeError(
+                    f"Token 预算耗尽 (finish_reason=length, max_tokens={used})，"
+                    f"请增大 max_tokens 或缩短输入。"
+                )
+            content = choice.message.content
+            return strip_thinking(content.strip()) or None if content else None
         except Exception as e:
             print(f"\n✗ chat失败: {e}")
-            return None
+            raise
         finally:
             if idx is not None:
                 self._release_ep(idx)

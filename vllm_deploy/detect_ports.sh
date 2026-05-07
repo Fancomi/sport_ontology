@@ -27,6 +27,9 @@ if [[ -z "${PORT:-}" ]]; then
 fi
 
 WORKERS="${WORKERS:-$(echo "$PORT" | tr ',' '\n' | wc -l)}"
+THINK="${THINK:-0}"
+THINK_FLAG=""
+[[ "$THINK" == "1" ]] && THINK_FLAG="--think"
 VLM="--host $HOST --port $PORT -w $WORKERS"
 
-echo "  HOST=$HOST  PORT=$PORT  WORKERS=$WORKERS"
+echo "  HOST=$HOST  PORT=$PORT  WORKERS=$WORKERS  THINK=$THINK"

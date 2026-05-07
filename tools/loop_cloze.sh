@@ -9,15 +9,11 @@ set -euo pipefail
 
 source "$(dirname "$0")/../vllm_deploy/detect_ports.sh"
 ROUNDS="${ROUNDS:-10}"
-MODE="${MODE:-confusable}" #confusable  hard
-THINK="${THINK:-1}"
+MODE="${MODE:-confusable}"             # confusable | hard
 TOOLS="$(cd "$(dirname "$0")" && pwd)"
 BAKUP="$TOOLS/BAKUP"
 CN_SRC="${CN_SRC:-$BAKUP/hard_all_cn_merged.jsonl}"
 EN_SRC="${EN_SRC:-$BAKUP/hard_all_en_merged.jsonl}"
-
-THINK_FLAG=""
-if [[ "$THINK" == "1" ]]; then THINK_FLAG="--think"; fi
 
 echo "════ loop_cloze  mode=$MODE  rounds=$ROUNDS  workers=$WORKERS  think=$THINK ════"
 [[ "$MODE" == "hard" ]] && echo "  cn: $CN_SRC  en: $EN_SRC" || true

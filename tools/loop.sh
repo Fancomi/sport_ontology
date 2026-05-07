@@ -18,11 +18,8 @@ set -euo pipefail
 ROUNDS=58
 LANG="cn"                              # ← cn / en 切换语言
 BAKUP_DIR="BAKUP/20260430_gemma_cn"
-# 手动覆盖示例：PORT="8001,8002" WORKERS=2 bash loop.sh
+# 手动覆盖示例：PORT="8001,8002" WORKERS=2 THINK=1 bash loop.sh
 source "$(dirname "$0")/../vllm_deploy/detect_ports.sh"
-THINK="${THINK:-1}"                    # 1=开启 thinking 模式
-THINK_FLAG=""
-if [[ "$THINK" == "1" ]]; then THINK_FLAG="--think"; fi
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
