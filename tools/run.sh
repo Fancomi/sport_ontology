@@ -3,6 +3,7 @@
 
 # ── 统一配置 ──────────────────────────────────────────────────────────────────
 LANG="cn"                              # ← cn / en 切换语言
+THINK=0
 # 手动覆盖示例：PORT="8001,8002" WORKERS=2 bash run.sh
 source "$(dirname "$0")/../vllm_deploy/detect_ports.sh"
 # ─────────────────────────────────────────────────────────────────────────────
@@ -102,8 +103,8 @@ source "$(dirname "$0")/../vllm_deploy/detect_ports.sh"
 # BAKUP/eval_results_v2_qwen3.6.jsonl \
 # --labels Gemma Qwen3.6
 
-# python3 8_1_analyze.py --mode hard --input eval_results_cloze_hard_cn.jsonl
-# python3 8_1_analyze.py --mode hard --input eval_results_cloze_hard_en.jsonl
+# python3 8_1_analyze.py --mode hard --input eval_results_cloze_cn.jsonl
+# python3 8_1_analyze.py --mode hard --input eval_results_cloze_en.jsonl
 # =======================================
 # # 9. 从 eval_results_{lang}.jsonl 提取答错对，累加合入 hard_all_{lang}.jsonl
 # #    --from-eval  eval_results*.jsonl 文件或目录（必填，与 --merge 互斥）
@@ -154,11 +155,21 @@ source "$(dirname "$0")/../vllm_deploy/detect_ports.sh"
 # --out BAKUP/hard_all_en_merged.jsonl
 
 
-
+# =======================================
 # # 9.1 LLM 审核 hard_all_{lang}.jsonl 句子级有效性（删除上下文等价 / 视觉不可辨条目）
 # #     --dry-run 只看判断结果，不写文件；--verbose 打印完整 prompt（配合 --limit）
 # python3 9_1_clean_hard.py $VLM --lang $LANG --dry-run --verbose --limit 4
 # python3 9_1_clean_hard.py $VLM --lang $LANG
+# # 指定输入文件（完形填空评测结果）
+for i in $(seq 1 10); do
+    python3 9_1_clean_hard.py $VLM --lang cn --input BAKUP/hard_all_cn_merged.jsonl --output BAKUP/hard_all_cn_merged.jsonl
+    python3 9_1_clean_hard.py $VLM --lang en --input BAKUP/hard_all_en_merged.jsonl --output BAKUP/hard_all_en_merged.jsonl
+    python3 9_1_clean_hard.py $VLM --lang cn --input eval_results_cloze_cn.jsonl  --output eval_results_cloze_cn.jsonl
+    python3 9_1_clean_hard.py $VLM --lang en --input eval_results_cloze_en.jsonl  --output eval_results_cloze_en.jsonl
+done
+
+
+
 
 # 9.2 渲染 hard_all_{lang}.jsonl → hn_render_{view}.json（单向，供人工标注）
 # 输出到每个视频叶目录；hn_render 前缀表示渲染产物，区别于 hard_all 数据源

@@ -193,6 +193,25 @@ body { background: var(--bg); color: var(--text);
   border-radius: 8px; padding: 10px; margin-bottom: 10px;
   transition: border-color .15s;
 }
+
+/* locate button in pair header */
+.locate-btn {
+  padding: 3px 9px; font-size: .72rem; font-weight: 600;
+  border: 1px solid rgba(88,166,255,.3); background: rgba(88,166,255,.07);
+  color: var(--blue); border-radius: 5px; cursor: pointer; transition: all .12s;
+  white-space: nowrap;
+}
+.locate-btn:hover { background: rgba(88,166,255,.2); border-color: var(--blue); }
+
+/* flash highlight when jumping from right panel */
+@keyframes locateFlash {
+  0%   { box-shadow: 0 0 0 3px rgba(88,166,255,.7); border-color: var(--blue); }
+  60%  { box-shadow: 0 0 0 6px rgba(88,166,255,.35); border-color: var(--blue); }
+  100% { box-shadow: none; border-color: transparent; }
+}
+.img-flow.locate-highlight {
+  animation: locateFlash 1.4s ease-out forwards;
+}
 .pair-row.complete { border-color: rgba(63,185,80,.4); }
 /* target row in append mode */
 .pair-row.append-target {
@@ -750,6 +769,13 @@ function renderPairRow(pair) {
   // Fix: parentheses ensure numeric addition before string concat
   numEl.textContent = '#' + (pairs.indexOf(pair) + 1);
 
+  // Locate button: scroll left pane to first image of this pair
+  const locateBtn = document.createElement('button');
+  locateBtn.className = 'locate-btn';
+  locateBtn.title = '在左侧定位到此行第一张图片';
+  locateBtn.textContent = '⌖ 定位';
+  locateBtn.addEventListener('click', () => locatePairInMd(pair));
+
   const appendBtn = document.createElement('button');
   appendBtn.className = 'append-row-btn';
   appendBtn.textContent = '＋ 追加图片';
@@ -773,6 +799,7 @@ function renderPairRow(pair) {
   });
 
   header.appendChild(numEl);
+  header.appendChild(locateBtn);
   header.appendChild(appendBtn);
   header.appendChild(delBtn);
 
@@ -798,6 +825,44 @@ function renderPairRow(pair) {
   row.appendChild(strip);
   row.appendChild(ta);
   return row;
+}
+
+// ── Locate pair images in left MD pane ──
+function locatePairInMd(pair) {
+  if (!pair.images.length) return;
+  const filename = pair.images[0];
+
+  // Find the line index so we know exactly which chunk to render
+  let targetLineIdx = -1;
+  for (let i = 0; i < mdLines.length; i++) {
+    const im = mdLines[i].trim().match(/^!\[\]\(([^)]+)\)/);
+    if (im && im[1].split('/').pop() === filename) { targetLineIdx = i; break; }
+  }
+
+  if (targetLineIdx !== -1) {
+    const chunkIdx = Math.floor(targetLineIdx / CHUNK_SIZE);
+    renderToChunk(chunkIdx);
+  }
+
+  // Wait one frame for the browser to finish layout after DOM insertion,
+  // then jump with an instant scrollTop assignment (no smooth animation that
+  // fights against layout changes and causes multi-page drift).
+  requestAnimationFrame(() => {
+    const el = mdScroller.querySelector(`.img-flow[data-filename="${CSS.escape(filename)}"]`);
+    if (!el) { showToast('左侧未渲染到该图片位置', 'err'); return; }
+
+    const scrollerRect = mdScroller.getBoundingClientRect();
+    const elRect       = el.getBoundingClientRect();
+    // Center the element vertically in the scroller
+    const offset = elRect.top - scrollerRect.top - (mdScroller.clientHeight / 2) + (el.offsetHeight / 2);
+    mdScroller.scrollTop = Math.max(0, mdScroller.scrollTop + offset);
+
+    // Flash highlight
+    el.classList.remove('locate-highlight');
+    void el.offsetWidth; // force reflow to restart animation
+    el.classList.add('locate-highlight');
+    el.addEventListener('animationend', () => el.classList.remove('locate-highlight'), { once: true });
+  });
 }
 
 function renumberPairs() {
@@ -840,13 +905,23 @@ importInput.addEventListener('change', async e => {
 });
 
 function importPairsData(savedPairs) {
+  // Clear existing data
+  exitAppendMode();
+  pairs = []; pairIdSeq = 0; addedFilenames = {};
+  // Reset left-pane image add-button states
+  mdScroller.querySelectorAll('.add-flow-btn').forEach(btn => {
+    btn.textContent = '＋ 添加';
+    btn.classList.remove('added');
+    btn.closest('.img-flow')?.classList.remove('is-added');
+  });
+  pairList.querySelectorAll('.pair-row').forEach(r => r.remove());
+
   for (const p of savedPairs) {
     if (!p.images || !p.images.length) continue;
     const id = ++pairIdSeq;
     pairs.push({ id, images: p.images, text: p.text || '' });
     p.images.forEach(fn => { addedFilenames[fn] = (addedFilenames[fn] || 0) + 1; });
   }
-  pairList.querySelectorAll('.pair-row').forEach(r => r.remove());
   emptyHint.style.display = pairs.length === 0 ? 'flex' : 'none';
   pairs.forEach(p => pairList.appendChild(renderPairRow(p)));
   renumberPairs();

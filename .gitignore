@@ -1,3 +1,6 @@
+# Core dumps
+core.*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -14,6 +17,8 @@ __pycache__/
 *.DS_Store
 .claudian
 books/datas/
+books/data/
+tools/9_1_progress.json
 
 # Distribution / packaging
 .Python

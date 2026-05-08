@@ -30,6 +30,6 @@ WORKERS="${WORKERS:-$(echo "$PORT" | tr ',' '\n' | wc -l)}"
 THINK="${THINK:-0}"
 THINK_FLAG=""
 [[ "$THINK" == "1" ]] && THINK_FLAG="--think"
-VLM="--host $HOST --port $PORT -w $WORKERS"
+VLM="--host $HOST --port $PORT -w $WORKERS $THINK_FLAG"
 
 echo "  HOST=$HOST  PORT=$PORT  WORKERS=$WORKERS  THINK=$THINK"

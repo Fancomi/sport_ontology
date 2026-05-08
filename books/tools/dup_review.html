@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dup Review · 重复书籍审核</title>
+<style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+  --border: #30363d; --text: #e6edf3; --text2: #8b949e;
+  --blue: #58a6ff; --green: #3fb950; --orange: #f0883e;
+  --red: #ff7b72; --yellow: #e3b341;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: hidden; }
+
+/* ── Landing ── */
+#landing {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; height: 100vh; gap: 20px;
+}
+#landing h1 {
+  font-size: 2rem; font-weight: 700;
+  background: linear-gradient(90deg, var(--orange), var(--yellow));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+#landing p { color: var(--text2); font-size: .9rem; max-width: 480px; text-align: center; line-height: 1.7; }
+.land-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 28px 32px; width: 100%; max-width: 460px; display: flex; flex-direction: column; gap: 14px;
+}
+.file-row { display: flex; flex-direction: column; gap: 6px; }
+.file-row label { font-size: .8rem; color: var(--text2); }
+.file-row input[type=file] {
+  font-size: .82rem; color: var(--text); background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; cursor: pointer; width: 100%;
+}
+.file-row input[type=file]::file-selector-button {
+  background: var(--bg3); color: var(--blue); border: 1px solid var(--border);
+  border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: .78rem; margin-right: 8px;
+}
+.pick-row { display: flex; align-items: center; gap: 10px; }
+.pick-btn-sm {
+  padding: 7px 14px; font-size: .82rem; font-weight: 600; border: 1px solid var(--border);
+  background: var(--bg3); color: var(--blue); border-radius: 6px; cursor: pointer;
+  flex-shrink: 0; transition: border-color .15s;
+}
+.pick-btn-sm:hover { border-color: var(--blue); }
+.pick-status { font-size: .78rem; color: var(--text2); }
+.pick-status.ok { color: var(--green); }
+.land-btn {
+  padding: 10px 0; font-size: .92rem; font-weight: 600; border: none;
+  border-radius: 8px; cursor: pointer; width: 100%; margin-top: 4px;
+  background: linear-gradient(135deg, var(--orange), var(--yellow)); color: #0d1117;
+  transition: opacity .15s;
+}
+.land-btn:hover { opacity: .85; }
+.land-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+/* ── Review ── */
+#review { display: none; flex-direction: column; height: 100vh; }
+.topbar {
+  display: flex; align-items: center; gap: 10px; padding: 8px 16px;
+  border-bottom: 1px solid var(--border); background: var(--bg2); flex-shrink: 0;
+}
+.topbar-title { font-weight: 700; font-size: .88rem; color: var(--text); white-space: nowrap; }
+.progress-wrap { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.progress-track { flex: 1; height: 4px; background: var(--bg3); border-radius: 2px; }
+.progress-fill { height: 100%; background: var(--orange); border-radius: 2px; transition: width .3s; }
+.progress-label { font-size: .78rem; color: var(--text2); white-space: nowrap; }
+.topbar-btn {
+  padding: 5px 12px; font-size: .78rem; border: 1px solid var(--border);
+  background: var(--bg3); color: var(--text2); border-radius: 5px; cursor: pointer; white-space: nowrap;
+}
+.topbar-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+/* ── Columns ── */
+.cols-wrap { display: flex; flex: 1; overflow: hidden; }
+.col { flex: 1; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid var(--border); min-width: 0; }
+.col:last-child { border-right: none; }
+
+.col-header {
+  padding: 9px 14px; background: var(--bg2); border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.col-header-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.col-book-name { font-size: .86rem; font-weight: 600; color: var(--text); word-break: break-all; line-height: 1.3; flex: 1; }
+.col-meta { font-size: .74rem; color: var(--text2); margin-top: 3px; display: flex; align-items: center; gap: 8px; }
+.scan-badge {
+  font-size: .68rem; font-weight: 600; padding: 2px 7px; border-radius: 10px; border: 1px solid; white-space: nowrap;
+}
+.scan-badge-scan { background: rgba(240,136,62,.12); color: var(--orange); border-color: rgba(240,136,62,.35); }
+.scan-badge-dig  { background: rgba(88,166,255,.12);  color: var(--blue);   border-color: rgba(88,166,255,.35); }
+.scan-badge-unk  { background: rgba(139,148,158,.12); color: var(--text2);  border-color: rgba(139,148,158,.35); }
+.col-notfound { font-size: .72rem; color: var(--red); margin-top: 2px; }
+
+.col-pairs {
+  flex: 1; overflow-y: auto; padding: 8px;
+  /* block container — cards stack and overflow naturally, no flex-shrink compression */
+}
+.col-pairs::-webkit-scrollbar { width: 5px; }
+.col-pairs::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Pair card */
+.pair-card {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+  display: flex; flex-direction: column;
+  margin-bottom: 7px;
+}
+.pair-imgs {
+  display: flex; gap: 3px; padding: 5px 5px 0 5px;
+  /* No explicit height — the fixed-px images determine it.
+     Scrollbar appears below images and adds height, never subtracts from image area. */
+  overflow-x: auto; overflow-y: visible;
+  background: var(--bg2);
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+.pair-imgs::-webkit-scrollbar { height: 5px; }
+.pair-imgs::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.pair-imgs img {
+  flex: 0 0 auto;          /* don't shrink */
+  height: 155px;           /* fixed px — independent of container/scrollbar */
+  width: auto; max-width: 280px;
+  object-fit: contain; border-radius: 3px; display: block; background: var(--bg3);
+}
+.pair-text {
+  font-size: .72rem; color: var(--text2); padding: 7px 8px; line-height: 1.55;
+  border-top: 1px solid var(--border);
+  white-space: pre-wrap; word-break: break-all;
+}
+.pair-more { font-size: .72rem; color: var(--text2); padding: 4px 8px; text-align: center; font-style: italic; }
+.pair-placeholder {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  color: var(--text2); font-size: .72rem; min-height: 60px;
+}
+.col-loading { padding: 20px; text-align: center; color: var(--text2); font-size: .8rem; }
+.col-no-data { padding: 20px; text-align: center; color: var(--text2); font-size: .8rem; }
+
+.col-footer {
+  flex-shrink: 0; padding: 9px 12px; background: var(--bg2); border-top: 1px solid var(--border);
+}
+.pick-btn {
+  width: 100%; padding: 8px; font-size: .86rem; font-weight: 700; border: none;
+  border-radius: 6px; cursor: pointer; transition: opacity .15s, transform .1s;
+  background: linear-gradient(135deg, var(--green), #2ea043); color: #fff;
+}
+.pick-btn:hover { opacity: .85; transform: translateY(-1px); }
+.pick-btn:active { transform: translateY(0); }
+
+/* Middle divider */
+.info-bar {
+  flex-shrink: 0; width: 2px; background: var(--border); position: relative;
+  display: flex; align-items: center; justify-content: center;
+}
+.info-badge {
+  position: absolute; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 5px 8px; font-size: .7rem; color: var(--text2);
+  z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 2px; white-space: nowrap;
+}
+
+.bottom-bar {
+  flex-shrink: 0; padding: 8px 16px; background: var(--bg2); border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+}
+.skip-btn {
+  padding: 6px 18px; font-size: .82rem; border: 1px solid var(--border);
+  background: transparent; color: var(--text2); border-radius: 6px; cursor: pointer;
+}
+.skip-btn:hover { border-color: var(--yellow); color: var(--yellow); }
+.key-hint { font-size: .72rem; color: var(--text2); }
+
+/* ── Done ── */
+#done {
+  display: none; flex-direction: column; align-items: center;
+  justify-content: center; height: 100vh; gap: 20px;
+}
+#done h1 {
+  font-size: 1.8rem; font-weight: 700;
+  background: linear-gradient(90deg, var(--green), var(--blue));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.summary-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 24px 28px; min-width: 320px;
+}
+.summary-card h3 { font-size: .82rem; color: var(--text2); margin-bottom: 14px; text-transform: uppercase; letter-spacing: .06em; }
+.summary-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .88rem;
+}
+.summary-row:last-child { border-bottom: none; }
+.num-green { color: var(--green); font-weight: 700; }
+.num-red   { color: var(--red);   font-weight: 700; }
+.num-blue  { color: var(--blue);  font-weight: 700; }
+.done-btns { display: flex; gap: 10px; }
+.done-btn {
+  padding: 9px 22px; font-size: .88rem; font-weight: 600; border: none;
+  border-radius: 7px; cursor: pointer; transition: opacity .15s;
+}
+.done-btn:hover { opacity: .85; }
+.done-btn-primary { background: linear-gradient(135deg, var(--green), var(--blue)); color: #fff; }
+.done-btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text2); }
+
+/* ── Toast ── */
+#toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 18px; font-size: .82rem; color: var(--text);
+  opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 9999;
+  max-width: 420px; text-align: center;
+}
+#toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- ── Landing ── -->
+<div id="landing">
+  <h1>Dup Review</h1>
+  <p>重复书籍对逐一审核，选择保留哪一本，级联去重自动传播</p>
+  <div class="land-card">
+    <div class="file-row">
+      <label>dup.csv — 重复对列表</label>
+      <input type="file" id="dupCsvInput" accept=".csv">
+    </div>
+    <div class="file-row">
+      <label>stats.csv — 全量书籍统计</label>
+      <input type="file" id="statsCsvInput" accept=".csv">
+    </div>
+    <div class="file-row">
+      <label>书籍根目录</label>
+      <div class="pick-row">
+        <button class="pick-btn-sm" onclick="pickDir()">选择目录…</button>
+        <span class="pick-status" id="dirStatus">未选择</span>
+      </div>
+    </div>
+    <div class="file-row">
+      <label>HTTP 模式（可选）— 用于访问文件名末尾含点/空格的目录</label>
+      <input type="text" id="httpUrlInput" placeholder="http://localhost:8765"
+             style="padding:7px 10px;background:var(--bg3);border:1px solid var(--border);
+                    border-radius:6px;color:var(--text);font-size:.82rem;width:100%;outline:none;">
+      <div id="httpCmd" style="font-size:.72rem;color:var(--text2);display:none;margin-top:2px">
+        在书籍根目录运行：<code id="httpCmdText" style="color:var(--yellow);user-select:all"></code>
+      </div>
+    </div>
+    <button class="land-btn" id="startBtn" disabled onclick="startReview()">开始审核</button>
+  </div>
+  <p style="font-size:.75rem;color:var(--text2)">键盘：← 保留左侧 &nbsp;→ 保留右侧 &nbsp;S 跳过(删除两者)</p>
+</div>
+
+<!-- ── Review ── -->
+<div id="review">
+  <div class="topbar">
+    <span class="topbar-title">Dup Review</span>
+    <div class="progress-wrap">
+      <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+      <span class="progress-label" id="progressLabel">0 / 0</span>
+    </div>
+    <button class="topbar-btn" onclick="skipPair()">跳过(删) S</button>
+    <button class="topbar-btn" onclick="exportCSV()">导出 CSV</button>
+    <button class="topbar-btn" onclick="finishReview()">完成</button>
+  </div>
+
+  <div class="cols-wrap">
+    <!-- Left -->
+    <div class="col">
+      <div class="col-header">
+        <div class="col-header-top">
+          <div class="col-book-name" id="nameLeft">—</div>
+          <span class="scan-badge scan-badge-unk" id="scanLeft">—</span>
+        </div>
+        <div class="col-meta" id="metaLeft">—</div>
+        <div class="col-notfound" id="notfoundLeft"></div>
+      </div>
+      <div class="col-pairs" id="pairsLeft"><div class="col-loading">加载中…</div></div>
+      <div class="col-footer">
+        <button class="pick-btn" onclick="pickSide('left')">← 保留左侧</button>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="info-bar">
+      <div class="info-badge">
+        <span id="maxovVal" style="color:var(--orange);font-weight:700">—</span>
+        <span>MaxOverlap</span>
+        <span id="interVal" style="color:var(--blue)">—</span>
+        <span>共同图像</span>
+        <span id="containsVal" style="color:var(--yellow);font-size:.65rem">—</span>
+      </div>
+    </div>
+
+    <!-- Right -->
+    <div class="col">
+      <div class="col-header">
+        <div class="col-header-top">
+          <div class="col-book-name" id="nameRight">—</div>
+          <span class="scan-badge scan-badge-unk" id="scanRight">—</span>
+        </div>
+        <div class="col-meta" id="metaRight">—</div>
+        <div class="col-notfound" id="notfoundRight"></div>
+      </div>
+      <div class="col-pairs" id="pairsRight"><div class="col-loading">加载中…</div></div>
+      <div class="col-footer">
+        <button class="pick-btn" onclick="pickSide('right')">保留右侧 →</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <button class="skip-btn" onclick="skipPair()">跳过(删) S</button>
+    <span class="key-hint">← / → 选择 &nbsp;&nbsp; S 跳过(删两者)</span>
+  </div>
+</div>
+
+<!-- ── Done ── -->
+<div id="done">
+  <h1>审核完成</h1>
+  <div class="summary-card">
+    <h3>统计结果</h3>
+    <div class="summary-row"><span>全部书籍</span>    <span class="num-blue"  id="doneTotal">—</span></div>
+    <div class="summary-row"><span>保留</span>        <span class="num-green" id="doneKeep">—</span></div>
+    <div class="summary-row"><span>删除（合并）</span><span class="num-red"   id="doneDel">—</span></div>
+    <div class="summary-row"><span>已审对数</span>    <span id="donePairs">—</span></div>
+    <div class="summary-row"><span>跳过对数</span>    <span id="doneSkipped">—</span></div>
+  </div>
+  <div class="done-btns">
+    <button class="done-btn done-btn-primary" onclick="exportCSV()">导出 dup_review.csv</button>
+    <button class="done-btn done-btn-outline" onclick="goBack()">返回继续审核</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// State
+// ══════════════════════════════════════════════════════════════════════════════
+let dupPairs  = [];
+let allBooks  = [];
+let statsMap  = {};
+
+let rootHandle = null;   // FileSystemDirectoryHandle — no pre-index; use getDirectoryHandle on demand
+
+// HTTP mode — fallback for dirs with names ending in '.' or ' ' that Chrome FS API rejects
+let httpMode    = false;
+let httpBaseURL = '';
+
+// Blob URLs for current pair only — revoked before next pair
+let activeBlobUrls = [];
+
+// Union-Find for cascade dedup
+const ufParent   = {};
+const deletedSet = new Set();   // UF roots marked as "delete both" (from skip)
+
+function find(x) {
+  if (ufParent[x] === undefined) return x;
+  return (ufParent[x] = find(ufParent[x]));
+}
+function union(winner, loser) {
+  const rw = find(winner), rl = find(loser);
+  if (rw !== rl) ufParent[rl] = rw;
+}
+
+let queueIdx    = 0;
+let reviewedCnt = 0;
+let skippedCnt  = 0;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// On-demand book handle lookup — avoids entries() truncation bug
+// ══════════════════════════════════════════════════════════════════════════════
+// Cache to avoid repeated getDirectoryHandle calls for the same name
+const bookHandleCache = new Map();
+
+async function getBookHandle(bookName) {
+  if (!bookName || !rootHandle) return null;
+  // Cache hit — includes bad-name dirs pre-populated via entries() in pickDir()
+  if (bookHandleCache.has(bookName)) return bookHandleCache.get(bookName);
+  // Cache miss: try getDirectoryHandle (works for valid names; throws for trailing dot/space)
+  for (const name of [bookName, bookName.normalize('NFC'), bookName.trim(), bookName.trim().normalize('NFC')]) {
+    try {
+      const h = await rootHandle.getDirectoryHandle(name);
+      bookHandleCache.set(bookName, h); return h;
+    } catch { }
+  }
+  bookHandleCache.set(bookName, null);
+  return null;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CSV helpers
+// ══════════════════════════════════════════════════════════════════════════════
+function parseCSVRow(line) {
+  const res = []; let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+    else if (c === ',' && !inQ) { res.push(cur); cur = ''; }
+    else cur += c;
+  }
+  res.push(cur); return res;
+}
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  const headers = parseCSVRow(lines[0]).map(h => h.trim());
+  return lines.slice(1).filter(l => l.trim()).map(line => {
+    const vals = parseCSVRow(line); const row = {};
+    headers.forEach((h, i) => { row[h] = (vals[i] ?? '').trim(); });
+    return row;
+  });
+}
+function csvEscape(v) {
+  v = String(v ?? '');
+  if (v.includes(',') || v.includes('"') || v.includes('\n') || v.includes('\r'))
+    return '"' + v.replace(/"/g, '""') + '"';
+  return v;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Inputs
+// ══════════════════════════════════════════════════════════════════════════════
+let _dup = false, _stats = false, _dir = false;
+function checkReady() { document.getElementById('startBtn').disabled = !(_dup && _stats && _dir); }
+
+document.getElementById('dupCsvInput').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  dupPairs = parseCSV(await f.text());
+  _dup = true; checkReady();
+  showToast(`dup.csv 已加载，共 ${dupPairs.length} 对`);
+});
+
+document.getElementById('statsCsvInput').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  allBooks = parseCSV(await f.text());
+  statsMap = {};
+  allBooks.forEach(r => { statsMap[r.book] = r; });
+  // Auto-detect book root path for HTTP mode command hint
+  const firstFile = allBooks.find(r => r.file)?.file;
+  if (firstFile) {
+    const bookRoot = firstFile.split('/').slice(0, -2).join('/');
+    document.getElementById('httpCmdText').textContent =
+      `python -m http.server 8765 --directory ${bookRoot}`;
+    document.getElementById('httpCmd').style.display = 'block';
+  }
+  _stats = true; checkReady();
+  showToast(`stats.csv 已加载，共 ${allBooks.length} 本书`);
+});
+
+document.getElementById('httpUrlInput').addEventListener('input', e => {
+  const v = e.target.value.trim().replace(/\/$/, '');
+  httpMode    = v.length > 0;
+  httpBaseURL = v;
+});
+
+async function pickDir() {
+  if (!window.showDirectoryPicker) { showToast('需要 Chrome/Edge 浏览器'); return; }
+  try {
+    rootHandle = await window.showDirectoryPicker({ mode: 'read' });
+    bookHandleCache.clear();
+    const st = document.getElementById('dirStatus');
+    st.textContent = `已选择：${rootHandle.name}，正在扫描子目录…`;
+    st.className = 'pick-status';
+    // Pre-populate cache by iterating entries() — this is the ONLY way to get handles
+    // for directories whose names end with '.' or ' ' (Chrome rejects them in getDirectoryHandle).
+    // entries() returns OS-level handles without name validation, so bad-name dirs work fine here.
+    // Note: Chrome truncates entries() at ~607 for large dirs; good-name dirs in the tail are
+    // still reachable via getDirectoryHandle() fallback below; only bad-name+tail dirs are truly lost.
+    let scanned = 0;
+    for await (const [name, h] of rootHandle.entries()) {
+      if (h.kind === 'directory') { bookHandleCache.set(name, h); scanned++; }
+    }
+    st.textContent = `已选择：${rootHandle.name}（已扫描 ${scanned} 个子目录）`;
+    st.className = 'pick-status ok';
+    _dir = true; checkReady();
+  } catch (e) {
+    if (e.name !== 'AbortError') showToast('目录选择失败: ' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Start
+// ══════════════════════════════════════════════════════════════════════════════
+function startReview() {
+  queueIdx = 0; reviewedCnt = 0; skippedCnt = 0;
+  for (const k in ufParent) delete ufParent[k];
+  deletedSet.clear();
+  document.getElementById('landing').style.display = 'none';
+  document.getElementById('review').style.display  = 'flex';
+  setupScrollSync();
+  showPair();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Review
+// ══════════════════════════════════════════════════════════════════════════════
+function getNextPair() {
+  while (queueIdx < dupPairs.length) {
+    const p = dupPairs[queueIdx];
+    const ca = find(p.book_a), cb = find(p.book_b);
+    if (ca === cb) { queueIdx++; continue; }
+    return { p, ca, cb };
+  }
+  return null;
+}
+
+async function showPair() {
+  updateProgress();
+  const next = getNextPair();
+  if (!next) { finishReview(); return; }
+  const { p, ca, cb } = next;
+
+  const sa = statsMap[ca] || statsMap[p.book_a] || { pairs: '?' };
+  const sb = statsMap[cb] || statsMap[p.book_b] || { pairs: '?' };
+
+  document.getElementById('nameLeft').textContent  = ca;
+  document.getElementById('nameRight').textContent = cb;
+  document.getElementById('metaLeft').textContent  =
+    `${sa.pairs} 对` + (ca !== p.book_a ? `  ·  级联自 ${p.book_a}` : '');
+  document.getElementById('metaRight').textContent =
+    `${sb.pairs} 对` + (cb !== p.book_b ? `  ·  级联自 ${p.book_b}` : '');
+  // dup.csv new format: max_overlap + contains (falls back to jaccard for old format)
+  const maxov = p.max_overlap ?? p.jaccard ?? 0;
+  document.getElementById('maxovVal').textContent    = parseFloat(maxov).toFixed(3);
+  document.getElementById('interVal').textContent    = p.inter ?? '?';
+  document.getElementById('containsVal').textContent = p.contains ?? '';
+  document.getElementById('notfoundLeft').textContent  = '';
+  document.getElementById('notfoundRight').textContent = '';
+
+  revokeActive();
+
+  // Render both columns concurrently
+  await Promise.all([
+    renderBookColumn('pairsLeft',  'scanLeft',  'notfoundLeft',  ca),
+    renderBookColumn('pairsRight', 'scanRight', 'notfoundRight', cb),
+  ]);
+}
+
+function revokeActive() {
+  for (const url of activeBlobUrls) URL.revokeObjectURL(url);
+  activeBlobUrls = [];
+}
+
+// Scan/digital heuristic from average file size (KB)
+function classifyScan(avgKB) {
+  if (avgKB <= 0)   return { label: '未知', cls: 'scan-badge-unk' };
+  if (avgKB > 400)  return { label: '扫描版', cls: 'scan-badge-scan' };
+  if (avgKB < 120)  return { label: '电子版', cls: 'scan-badge-dig' };
+  return { label: '未知', cls: 'scan-badge-unk' };
+}
+
+async function renderBookColumn(pairsId, scanId, notfoundId, bookName) {
+  const container = document.getElementById(pairsId);
+  container.innerHTML = '<div class="col-loading">加载中…</div>';
+
+  // ── Step 1: resolve canonical statsRow (may differ from bookName after Union-Find cascade) ──
+  const statsRow = statsMap[bookName] || statsMap[find(bookName)];
+
+  // ── Step 2: get book directory handle ──
+  const handle = await getBookHandle(bookName);
+  if (!handle && !httpMode) {
+    // Check if this is a known bad-name book (trailing dot/space)
+    const hint = (bookName !== bookName.trim() || /\.$/.test(bookName))
+      ? '（文件名末尾含点/空格，Chrome 无法访问此目录）'
+      : '';
+    container.innerHTML = `<div class="col-no-data">未在目录中找到「${bookName}」${hint}</div>`;
+    document.getElementById(notfoundId).textContent = `⚠ 未在根目录找到「${bookName}」${hint}`;
+    return;
+  }
+  if (!handle && httpMode && (!statsRow || !statsRow.file)) {
+    container.innerHTML = `<div class="col-no-data">「${bookName}」无 stats 记录，HTTP 模式无法加载</div>`;
+    document.getElementById(notfoundId).textContent = `⚠ 无 stats 记录「${bookName}」`;
+    return;
+  }
+
+  // ── Step 3: get images directory ──
+  let imagesHandle = null;
+  if (handle) {
+    for (const candidate of ['images', 'image', 'imgs']) {
+      try { imagesHandle = await handle.getDirectoryHandle(candidate); break; } catch { }
+    }
+  }
+
+  // ── Step 4: load pairs JSON — use statsRow.file to get exact filename, no entries() scan ──
+  let pairsData = [];
+  if (statsRow && statsRow.file) {
+    // Extract JSON filename from the full path stored in stats.csv
+    const jsonFileName = statsRow.file.split('/').pop();
+    // Try recaption_ variant first, then the pairs_ file from stats
+    const candidates = [
+      jsonFileName.replace(/^pairs_/, 'recaption_'),
+      jsonFileName,
+    ];
+    if (handle) {
+      for (const fname of candidates) {
+        try {
+          const fh = await handle.getFileHandle(fname);
+          const d = JSON.parse(await (await fh.getFile()).text());
+          pairsData = d.pairs || [];
+          break;
+        } catch { }
+      }
+    } else {
+      // HTTP fallback for bad-name directories
+      for (const fname of candidates) {
+        try {
+          const url = `${httpBaseURL}/${encodeURIComponent(bookName)}/${fname}`;
+          const resp = await fetch(url);
+          if (resp.ok) { pairsData = (await resp.json()).pairs || []; break; }
+        } catch { }
+      }
+    }
+  } else if (handle) {
+    // Fallback: iterate directory entries (book has no stats row)
+    for await (const [fname, fh] of handle.entries()) {
+      if (fh.kind !== 'file') continue;
+      if (/^recaption_.*\.json$/i.test(fname)) {
+        try { pairsData = JSON.parse(await (await fh.getFile()).text()).pairs || []; break; } catch { }
+      } else if (/^pairs_.*\.json$/i.test(fname)) {
+        try { pairsData = JSON.parse(await (await fh.getFile()).text()).pairs || []; } catch { }
+      }
+    }
+  }
+
+  // Sample file sizes (first 5 images) for scan detection
+  let avgKB = 0;
+  if (imagesHandle) {
+    const sizes = [];
+    for await (const [, fh] of imagesHandle.entries()) {
+      if (fh.kind === 'file') {
+        const f = await fh.getFile();
+        sizes.push(f.size / 1024);
+        if (sizes.length >= 5) break;
+      }
+    }
+    if (sizes.length > 0) avgKB = sizes.reduce((a, b) => a + b) / sizes.length;
+  }
+
+  // Update scan badge
+  const sc = classifyScan(avgKB);
+  const scanEl = document.getElementById(scanId);
+  scanEl.textContent = sc.label + (avgKB > 0 ? ` ~${Math.round(avgKB)}KB` : '');
+  scanEl.className = 'scan-badge ' + sc.cls;
+
+  // Render ALL pair cards (no limit — scroll sync keeps columns in step)
+  container.innerHTML = '';
+
+  if (pairsData.length === 0) {
+    container.innerHTML = '<div class="col-no-data">未找到图文对（无 pairs/recaption JSON）</div>';
+    return;
+  }
+
+  for (const pair of pairsData) {
+    const card = document.createElement('div');
+    card.className = 'pair-card';
+
+    const imgRow = document.createElement('div');
+    imgRow.className = 'pair-imgs';
+
+    const imgs = (pair.images || []).slice(0, 3);
+    let loadedAny = false;
+    for (const fname of imgs) {
+      if (handle && imagesHandle) {
+        try {
+          const fh = await imagesHandle.getFileHandle(fname);
+          const file = await fh.getFile();
+          const url = URL.createObjectURL(file);
+          activeBlobUrls.push(url);
+          const img = document.createElement('img');
+          img.src = url; img.alt = fname; img.loading = 'lazy';
+          imgRow.appendChild(img);
+          loadedAny = true;
+        } catch { /* file missing */ }
+      } else if (httpMode) {
+        const img = document.createElement('img');
+        img.src = `${httpBaseURL}/${encodeURIComponent(bookName)}/images/${fname}`;
+        img.alt = fname; img.loading = 'lazy';
+        imgRow.appendChild(img);
+        loadedAny = true;
+      }
+    }
+    if (!loadedAny) {
+      const ph = document.createElement('div');
+      ph.className = 'pair-placeholder';
+      ph.textContent = imgs.length ? `图片未找到 (${imgs[0]})` : '无图片';
+      imgRow.appendChild(ph);
+    }
+    card.appendChild(imgRow);
+
+    const text = (pair.text || pair.caption || '').trim();
+    if (text) {
+      const td = document.createElement('div');
+      td.className = 'pair-text'; td.textContent = text;
+      card.appendChild(td);
+    }
+    container.appendChild(card);
+  }
+}
+
+async function pickSide(side) {
+  const next = getNextPair(); if (!next) return;
+  const winner = side === 'left' ? next.ca : next.cb;
+  const loser  = side === 'left' ? next.cb : next.ca;
+  union(winner, loser);
+  deletedSet.delete(find(winner));   // win overrides any prior skip-delete on this group
+  reviewedCnt++; queueIdx++;
+  showToast(`✓ 保留「${winner}」`);
+  await showPair();
+}
+
+async function skipPair() {
+  const next = getNextPair(); if (!next) return;
+  const { ca, cb } = next;
+  union(ca, cb);
+  deletedSet.add(find(ca));   // mark merged group as deleted
+  skippedCnt++; queueIdx++;
+  showToast(`✗ 跳过，「${ca}」+「${cb}」均删除`);
+  await showPair();
+}
+
+function updateProgress() {
+  const total = dupPairs.length;
+  const pct   = total > 0 ? Math.round(queueIdx / total * 100) : 100;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressLabel').textContent = `${queueIdx} / ${total}`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Finish / Export
+// ══════════════════════════════════════════════════════════════════════════════
+function isKept(b)   { return find(b.book) === b.book && !deletedSet.has(b.book); }
+function isDeleted(b){ return !isKept(b); }
+
+function finishReview() {
+  revokeActive();
+  const kept = allBooks.filter(isKept).length;
+  const del  = allBooks.length - kept;
+  document.getElementById('review').style.display = 'none';
+  document.getElementById('done').style.display   = 'flex';
+  document.getElementById('doneTotal').textContent    = allBooks.length;
+  document.getElementById('doneKeep').textContent     = kept;
+  document.getElementById('doneDel').textContent      = del;
+  document.getElementById('donePairs').textContent    = reviewedCnt;
+  document.getElementById('doneSkipped').textContent  = skippedCnt;
+}
+function goBack() {
+  document.getElementById('done').style.display   = 'none';
+  document.getElementById('review').style.display = 'flex';
+  showPair();
+}
+function exportCSV() {
+  const keeps = allBooks.filter(isKept);
+  const dels  = allBooks.filter(isDeleted);
+  const lines = [];
+  for (const r of keeps) lines.push([r.book, r.pairs, r.file, 'keep'].map(csvEscape).join(','));
+  lines.push('');
+  for (const r of dels)  lines.push([r.book, r.pairs, r.file, 'delete'].map(csvEscape).join(','));
+  const blob = new Blob(['book,pairs,file,status\n' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'dup_review.csv' });
+  a.click(); URL.revokeObjectURL(a.href);
+  showToast(`已导出（保留 ${keeps.length}，删除 ${dels.length}）`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Scroll sync — both columns scroll together
+// ══════════════════════════════════════════════════════════════════════════════
+function setupScrollSync() {
+  const L = document.getElementById('pairsLeft');
+  const R = document.getElementById('pairsRight');
+  let syncing = false;
+  L.addEventListener('scroll', () => {
+    if (syncing) return; syncing = true; R.scrollTop = L.scrollTop; syncing = false;
+  });
+  R.addEventListener('scroll', () => {
+    if (syncing) return; syncing = true; L.scrollTop = R.scrollTop; syncing = false;
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Toast + keyboard
+// ══════════════════════════════════════════════════════════════════════════════
+let _toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+document.addEventListener('keydown', e => {
+  if (document.getElementById('review').style.display !== 'flex') return;
+  if (e.key === 'ArrowLeft')               pickSide('left');
+  else if (e.key === 'ArrowRight')         pickSide('right');
+  else if (e.key === 's' || e.key === 'S') skipPair();
+});
+</script>
+</body>
+</html>
