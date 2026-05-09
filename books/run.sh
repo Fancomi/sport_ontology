@@ -46,7 +46,7 @@ source "$(dirname "$0")/../vllm_deploy/detect_ports.sh" # 这里会将THINK转�
 python build_dataset.py \
 --src /root/paddlejob/workspace/env_run/penghaotian/datas/book_md \
 --out /root/paddlejob/workspace/env_run/penghaotian/datas/book_20260508_clean/annotations \
---allowlist books/data/book_review_remain_20260508_185423.csv \
+--allowlist data/book_review_remain_20260508_185423.csv \
 --source recaption \
 --val-ratio 0.10 \
 --size 768 \
