@@ -162,10 +162,10 @@ source "$(dirname "$0")/../vllm_deploy/detect_ports.sh"
 # python3 9_1_clean_hard.py $VLM --lang $LANG
 # # 指定输入文件（完形填空评测结果）
 for i in $(seq 1 10); do
-    python3 9_1_clean_hard.py $VLM --lang cn --input BAKUP/hard_all_cn_merged.jsonl --output BAKUP/hard_all_cn_merged.jsonl
+    python3 9_1_clean_hard.py $VLM --lang cn --input BAKUP/eval_results_cloze_cn.jsonl  --output eval_results_cloze_cn.jsonl
+    python3 9_1_clean_hard.py $VLM --lang en --input BAKUP/eval_results_cloze_en.jsonl  --output eval_results_cloze_en.jsonl
     python3 9_1_clean_hard.py $VLM --lang en --input BAKUP/hard_all_en_merged.jsonl --output BAKUP/hard_all_en_merged.jsonl
-    python3 9_1_clean_hard.py $VLM --lang cn --input eval_results_cloze_cn.jsonl  --output eval_results_cloze_cn.jsonl
-    python3 9_1_clean_hard.py $VLM --lang en --input eval_results_cloze_en.jsonl  --output eval_results_cloze_en.jsonl
+    python3 9_1_clean_hard.py $VLM --lang cn --input BAKUP/hard_all_cn_merged.jsonl --output BAKUP/hard_all_cn_merged.jsonl
 done
 
 
