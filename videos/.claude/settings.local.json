@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(yt-dlp --version)",
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)",
+      "Bash(export PATH=\"/Users/penghaotian/Library/Python/3.9/bin:$PATH\")",
+      "Bash(export http_proxy=http://127.0.0.1:7890)",
+      "Bash(export https_proxy=http://127.0.0.1:7890)",
+      "Bash(python3 -c ':*)",
+      "Bash(brew list:*)",
+      "Read(//opt/homebrew/bin/**)",
+      "Bash(/opt/homebrew/bin/python3.11 --version)",
+      "Bash(/opt/homebrew/bin/python3.11 -m pip install -U \"yt-dlp @ https://github.com/yt-dlp/yt-dlp/archive/master.tar.gz\")",
+      "Bash(/opt/homebrew/bin/python3.11 -m pip install -U yt-dlp)",
+      "Bash(/opt/homebrew/bin/python3.11 -m pip install --proxy http://127.0.0.1:7890 -U yt-dlp)",
+      "Bash(/opt/homebrew/bin/python3.11 -c ':*)"
+    ]
+  }
+}
