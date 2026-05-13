@@ -19,6 +19,9 @@ __pycache__/
 books/datas/
 books/data/
 tools/9_1_progress.json
+videos/downloads
+videos/logs
+videos/results
 
 # Distribution / packaging
 .Python

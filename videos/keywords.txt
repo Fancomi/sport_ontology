@@ -8,119 +8,358 @@ bench press workout
 overhead press
 bicep curl exercise
 tricep workout
-shoulder press exercise
-chest workout
-pull ups exercise
-push ups workout
-kettlebell workout
-power clean exercise
-muscle up tutorial
-strength training routine
-weight training beginner
-bodybuilding workout
-powerlifting training
+lat pulldown form
+cable row exercise
+chest fly
+shoulder press
+leg press
+hack squat
+romanian deadlift
+sumo deadlift
+front squat
+goblet squat
+bulgarian split squat
+hip thrust
+calf raise
+preacher curl
+hammer curl
+skull crusher
+close grip bench press
+incline bench press
+decline bench press
+military press
+arnold press
+lateral raise
+front raise
+rear delt fly
+face pull
+upright row
+shrug exercise
+farmer walk
+rack pull
+pendlay row
+t-bar row
+seated row
+single arm dumbbell row
+chest dip
+weighted pull up
+chin up
+muscle up
+landmine press
+floor press
+pause squat
+box squat
+good morning exercise
+barbell curl
+concentration curl
+wrist curl
+leg curl
+leg extension
+sissy squat
 
 # === 有氧 / Cardio ===
 HIIT workout
-cardio exercise routine
 jumping jacks workout
 burpees exercise
-mountain climbers workout
-high knees exercise
 jump rope workout
-box jump exercise
-sprint interval training
 tabata workout
-cardio kickboxing
-aerobics exercise
+mountain climbers exercise
+high knees exercise
+running workout
+sprint training
+cycling workout
+rowing machine
+stair climber workout
+elliptical workout
+box jump
+tuck jump
+skipping exercise
+shadow boxing cardio
+kickboxing workout
+jump squat
+lateral shuffle
+bear crawl
+frog jump
+seal jack
+speed skater exercise
+plyo push up
+broad jump
+depth jump
+agility ladder
+shuttle run
+battle ropes workout
 
 # === 瑜伽/拉伸 / Yoga & Stretching ===
 yoga flow routine
 stretching exercises
 flexibility workout
-yoga for beginners
-dynamic stretching
 foam rolling routine
-mobility exercises
-yoga poses tutorial
-morning stretch routine
-recovery stretching
+yoga for beginners
+vinyasa yoga
+power yoga
+ashtanga yoga
+hatha yoga
+yin yoga
+yoga sun salutation
+warrior pose yoga
+downward dog
+cobra pose
+pigeon pose
+child's pose yoga
+tree pose balance
+chair pose yoga
+triangle pose
+cat cow stretch
+hip opener stretch
+hamstring stretch
+quad stretch
+shoulder stretch
+chest opener
+spinal twist
+forward fold
+bridge pose
+corpse pose
+seated forward bend
+standing balance pose
+yoga for back pain
+yoga for flexibility
+morning yoga routine
+bedtime yoga
+restorative yoga
 
 # === 功能性训练 / Functional Training ===
 crossfit workout
-functional fitness
 resistance band exercises
 bodyweight workout
-calisthenics training
 TRX exercises
 battle rope workout
+kettlebell workout
 medicine ball exercises
-plyo exercises
-agility training drills
-core stability exercises
+plyometric training
+core workout
+stability ball exercise
+bosu ball workout
+sandbag workout
+sled push exercise
+tire flip workout
+wall ball
+box step up
+pistol squat tutorial
+handstand push up
+ring dip
+rope climb exercise
+turkish get up
+clean and press
+power clean
+snatch exercise
+thruster exercise
+man maker exercise
+devil press
+bear complex
 
 # === 专项部位 / Targeted Muscle Groups ===
 abs workout
 leg day workout
-arm workout routine
-back exercises
 glute workout
-calf raises exercise
-hip thrust exercise
 lat pulldown form
 hamstring exercises
-quad exercises
-oblique workout
-forearm exercises
+chest workout
+back workout
+arm workout
+shoulder workout
+forearm workout
+neck exercises
+trap workout
+oblique exercises
+lower back exercise
+inner thigh workout
+outer thigh workout
+hip flexor exercise
+adductor exercise
+abductor exercise
+serratus exercise
+quad workout
+bicep peak workout
+tricep long head
+rear delt exercise
+upper chest workout
+lower chest workout
+v taper workout
+six pack abs
+love handles workout
+muffin top exercise
 
 # === 动作演示 / Exercise Demonstrations ===
 exercise form tutorial
 proper workout technique
 gym exercise demonstration
 fitness how to
-workout instruction video
-exercise guide short
-quick workout demo
-single exercise tutorial
+exercise tutorial for beginners
+workout form check
+common exercise mistakes
+perfect push up form
+proper squat technique
+deadlift form guide
+bench press technique
+how to do pull ups
+proper plank form
+correct lunge technique
+kettlebell swing form
+barbell row technique
 
 # === 短时健身 / Short Workouts ===
 1 minute workout
 2 minute exercise
 3 minute workout
 quick home workout
-short gym workout
-fast exercise routine
-no equipment workout short
 office workout quick
-standing workout short
+5 minute workout
+10 minute workout
+15 minute full body
+quick fat burn
+express workout
+micro workout
+no equipment quick workout
+apartment friendly workout
+silent workout
+low impact quick workout
+standing workout
+chair workout
+desk exercise
+lunch break workout
 
-# === 健身器材 / Equipment-based ===
+# === 健身器材 / Equipment-Based ===
 cable machine exercises
 smith machine workout
 leg press exercise
 rowing machine technique
-elliptical workout
-treadmill HIIT
-pull up bar exercises
-dip station workout
-lat machine exercise
+pull up bar workout
+dip station exercises
+ab roller workout
+resistance band workout
+suspension trainer workout
+power rack exercises
+lat machine
+pec deck exercise
+hack squat machine
+seated calf machine
+preacher bench
+adjustable bench exercises
+gymnastic rings workout
+parallette exercises
+weight plate exercises
 
 # === 运动场景 / Sports Fitness ===
 athletic training exercises
 sports conditioning
 plyometric training
 speed training drills
-explosive workout
-balance exercises
-coordination drills
-warmup routine
-cooldown stretches
+agility training
+vertical jump training
+basketball training
+soccer training drills
+tennis fitness
+swimming dryland
+golf fitness
+martial arts conditioning
+boxing training
+muay thai workout
+wrestling conditioning
+football training
+sprinter workout
+distance runner training
+climbing training
 
 # === 特定人群 / Specific Demographics ===
 beginner gym workout
 senior fitness exercises
 home workout no equipment
-apartment friendly workout
-gym workout for women
-workout for men
 student quick workout
+prenatal workout
+postpartum exercise
+wheelchair workout
+kids fitness
+teen workout
+over 50 fitness
+joint friendly workout
+low impact exercise
+plus size workout
+injury recovery exercise
+physical therapy exercises
+
+# === 健身挑战 / Fitness Challenges ===
+100 push ups challenge
+30 day fitness challenge
+plank challenge
+squat challenge
+pull up challenge
+burpee challenge
+ab challenge
+wall sit challenge
+jump rope challenge
+handstand challenge
+
+# === 健美/体态 / Bodybuilding & Physique ===
+bodybuilding workout
+posing practice
+competition prep
+bulk workout
+cut workout
+lean muscle workout
+hypertrophy training
+strength program
+powerlifting training
+strongman workout
+calisthenics routine
+street workout
+gymnastic strength training
+muscle building
+body recomposition
+
+# === 恢复/热身 / Recovery & Warmup ===
+dynamic warmup
+static stretching
+cooldown routine
+mobility exercises
+joint mobility
+active recovery
+myofascial release
+lacrosse ball massage
+trigger point therapy
+band pull apart warmup
+hip circle warmup
+ankle mobility
+thoracic mobility
+shoulder warmup
+pre workout activation
+
+# === 户外运动 / Outdoor Sports ===
+outdoor workout
+park workout
+calisthenics park
+street workout bars
+hiking training
+trail running
+obstacle course training
+parkour tutorial
+rock climbing training
+surfing fitness
+skateboard fitness
+snowboard fitness training
+
+# === 格斗训练 / Combat Sports ===
+boxing technique
+kickboxing combo
+MMA workout
+jiu jitsu drill
+karate kata
+taekwondo kicks
+wing chun
+krav maga training
+self defense workout
+heavy bag workout
+speed bag training
+focus mitt drill
+slip and counter boxing
+footwork drill boxing
+shadowboxing routine

@@ -4,8 +4,11 @@ import json
 import logging
 from pathlib import Path
 
-# === 代理（环境变量 YDL_PROXY 可覆盖，设空则不用）===
-PROXY = os.environ.get("YDL_PROXY", "http://127.0.0.1:7890")
+# === 代理 ===
+# YouTube 代理 (用于 yt-dlp 搜索/频道爬取)
+PROXY = os.environ.get("YT_PROXY", "http://agent.baidu.com:8188")
+# GitHub/S3 代理 (用于下载数据集)
+GITHUB_PROXY = os.environ.get("GITHUB_PROXY", "http://njxg-banqian20230721-sousuo00230.njxg:3231/")
 if PROXY:
     os.environ["http_proxy"] = PROXY
     os.environ["https_proxy"] = PROXY
@@ -20,15 +23,21 @@ SEARCH_RESULTS = RESULTS_DIR / "search_results.jsonl"
 SEARCH_PROGRESS = RESULTS_DIR / "search_progress.txt"
 DOWNLOAD_ARCHIVE = RESULTS_DIR / "downloaded.txt"
 FAILED_FILE = RESULTS_DIR / "failed_downloads.jsonl"
+CHANNEL_VIDEOS_FILE = RESULTS_DIR / "channel_videos.jsonl"
+DATASET_IDS_FILE = RESULTS_DIR / "dataset_ids.jsonl"
+ALL_IDS_FILE = RESULTS_DIR / "all_video_ids.jsonl"
+CHANNELS_FILE = RESULTS_DIR / "channels.txt"
+CRAWL_PROGRESS_FILE = RESULTS_DIR / "crawl_progress.txt"
+DATASETS_DIR = BASE / "datasets"
 
 # === 搜索参数 ===
-SEARCH_LIMIT = 200
-SEARCH_WORKERS = 3
-SEARCH_SLEEP = (3, 6)
+SEARCH_LIMIT = 400
+SEARCH_WORKERS = 30
+SEARCH_SLEEP = (0, 0)
 
 # === 过滤参数 ===
-MAX_DURATION = 300
-MIN_DURATION = 10
+MAX_DURATION = 600
+MIN_DURATION = 30
 MIN_VIEWS = 100
 
 # === 下载参数 ===
@@ -51,7 +60,7 @@ TITLE_BLACKLIST = [
 
 # === 公共工具 ===
 def init_dirs():
-    for d in (RESULTS_DIR, DOWNLOADS_DIR, LOGS_DIR):
+    for d in (RESULTS_DIR, DOWNLOADS_DIR, LOGS_DIR, DATASETS_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 
