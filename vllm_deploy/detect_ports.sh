@@ -11,7 +11,7 @@
 # 覆盖示例（在 source 前设置环境变量）：
 #   PORT="8001,8002" bash run.sh        # 指定端口，WORKERS 自动=2，跳过探测
 #   PORT="8003" WORKERS=1 bash run.sh   # 完全手动
-
+unset http_proxy https_proxy
 HOST="${HOST:-127.0.0.1}"
 
 if [[ -z "${PORT:-}" ]]; then

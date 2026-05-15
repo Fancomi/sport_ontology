@@ -29,7 +29,7 @@ else
 fi
 MODEL=$SHM_MODEL
 
-for i in $(seq 0 5); do
+for i in $(seq 0 7); do
     PORT=$((8001 + i))
     # VLLM_PORT 指定内部端口扫描起点，每实例间隔 20，避免 race condition
     VLLM_PORT=$((20000 + i * 20)) CUDA_VISIBLE_DEVICES=$i vllm serve $MODEL \
