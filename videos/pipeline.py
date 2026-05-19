@@ -116,10 +116,10 @@ def _release_proxy(proxy):
 
 
 def _mark_bot(proxy):
-    """冷却 15 分钟"""
+    """冷却 5 分钟"""
     with _proxy_lock:
-        _proxy_cooldown[proxy] = time.time() + 900
-    logger.warning(f"[代理] {proxy.split('//')[1]} 被封, 冷却15min")
+        _proxy_cooldown[proxy] = time.time() + 300
+    logger.warning(f"[代理] {proxy.split('//')[1]} 被封, 冷却5min")
 
 
 # ==================== 下载 ====================
