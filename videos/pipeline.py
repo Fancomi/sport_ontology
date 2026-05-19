@@ -182,13 +182,12 @@ def run_download(workers, total_shards, shard_id):
             logger.warning(f"[下载] 磁盘不足 {DISK_LIMIT_GB}GB, 停止")
             break
 
-        # 全代理冷却时等待
+        # 全代理冷却 → 退出, 由 shell 循环重启 (重启后连接更新鲜效率更高)
         now = time.time()
         alive = [p for p in PROXY_POOL if _proxy_cooldown.get(p, 0) < now]
         if not alive:
-            wait = min(_proxy_cooldown.values()) - now + 5
-            logger.info(f"[下载] 全代理冷却, 等 {wait:.0f}s...")
-            time.sleep(max(wait, 10))
+            logger.info(f"[下载] 全代理冷却, 退出等重启 (本轮成功:{ok})")
+            return
 
         batch = pending[batch_start:batch_start + BATCH]
         with ThreadPoolExecutor(max_workers=workers) as pool:
