@@ -45,6 +45,7 @@ def _fetch_oembed(video_id):
 
 def run_enrich():
     """批量补全 meta"""
+    blacklist = config.load_blacklist()
     all_items = config.read_jsonl(config.ALL_IDS)
     done_ids = config.read_lines(config.ENRICH_PROGRESS)
 
@@ -52,7 +53,9 @@ def run_enrich():
         t, c, l = item.get("title", ""), item.get("channel", ""), item.get("label", "")
         return not (t and c and t != l)
 
-    pending = [r for r in all_items if needs_it(r) and r["video_id"] not in done_ids]
+    pending = [r for r in all_items
+               if needs_it(r) and r["video_id"] not in done_ids
+               and r["video_id"] not in blacklist]
     logger.info(f"补全: 总 {len(all_items)} | 需补全 {len(pending)}")
     if not pending:
         return
@@ -72,9 +75,7 @@ def run_enrich():
                 config.append_jsonl(config.ENRICHED, [meta])
                 valid += 1
             else:
-                with _lock:
-                    with open(config.INVALID_IDS, "a") as f:
-                        f.write(vid + "\n")
+                config.append_blacklist(vid)
                 invalid += 1
             config.append_line(config.ENRICH_PROGRESS, vid)
             if i % 1000 == 0:
@@ -86,6 +87,7 @@ def run_enrich():
 
 def run_merge():
     """合并所有来源，按 video_id 去重"""
+    blacklist = config.load_blacklist()
     sources = [
         ("keyword_search", config.SEARCH_RESULTS),
         ("channel_crawl", config.CHANNEL_VIDEOS),
@@ -101,24 +103,24 @@ def run_merge():
     seen, unique = set(), []
     for item in all_items:
         vid = item.get("video_id")
-        if vid and vid not in seen:
+        if vid and vid not in seen and vid not in blacklist:
             seen.add(vid)
             unique.append(item)
 
     with open(config.ALL_IDS, "w", encoding="utf-8") as f:
         for item in unique:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
-    logger.info(f"合并: {len(all_items)} → 去重后 {len(unique)}")
+    logger.info(f"合并: {len(all_items)} → 去重后 {len(unique)} (黑名单过滤 {len(blacklist)})")
 
 
 # ==================== 清洗 ====================
 
 def run_clean():
     """基于 meta 信息清洗过滤"""
+    blacklist = config.load_blacklist()
     all_items = config.read_jsonl(config.ALL_IDS)
     enriched = {r["video_id"]: r for r in config.read_jsonl(config.ENRICHED)}
-    invalid = config.read_lines(config.INVALID_IDS)
-    logger.info(f"清洗: 总 {len(all_items)} | enriched {len(enriched)} | invalid {len(invalid)}")
+    logger.info(f"清洗: 总 {len(all_items)} | enriched {len(enriched)} | blacklist {len(blacklist)}")
 
     # 合并 enriched meta
     merged = {}
@@ -138,15 +140,15 @@ def run_clean():
     stats = Counter()
     clean = []
     for vid, item in merged.items():
-        if vid in invalid:
-            stats["invalid"] += 1
+        if vid in blacklist:
+            stats["blacklisted"] += 1
             continue
         title = (item.get("title") or "").lower()
         if not title:
             stats["no_title"] += 1
             continue
         if any(w in title for w in config.TITLE_BLACKLIST):
-            stats["blacklist"] += 1
+            stats["title_blacklist"] += 1
             continue
         dur = item.get("duration")
         if dur is not None and (dur < config.MIN_DURATION or dur > config.MAX_DURATION):
@@ -158,7 +160,6 @@ def run_clean():
             continue
         clean.append(item)
 
-    # 保存
     with open(config.CLEAN, "w", encoding="utf-8") as f:
         for item in clean:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
@@ -167,12 +168,10 @@ def run_clean():
     for k, v in stats.most_common():
         logger.info(f"  过滤 {k}: {v}")
 
-    # 统计
     src = Counter(r.get("source", "?") for r in clean)
     ch = Counter(r.get("channel", "?") for r in clean)
     logger.info(f"来源: {dict(src.most_common())}")
-    logger.info(f"频道数: {len(ch)} | 中位数贡献: {sorted(ch.values())[len(ch)//2]}")
-    logger.info(f"输出: {config.CLEAN}")
+    logger.info(f"频道数: {len(ch)} | 输出: {config.CLEAN}")
 
 
 # ==================== 入口 ====================
@@ -190,7 +189,7 @@ if __name__ == "__main__":
     elif cmd == "all":
         run_merge()
         run_enrich()
-        run_merge()  # enrich 后再 merge 一次确保 all_ids 最新
+        run_merge()
         run_clean()
     else:
         print("用法: python3 process.py [enrich|merge|clean|all]")

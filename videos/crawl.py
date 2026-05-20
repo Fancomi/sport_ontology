@@ -5,16 +5,13 @@
   python3 crawl.py channels    # 频道爬取
   python3 crawl.py diverse     # 多样性搜索
   python3 crawl.py datasets    # 公开数据集
-  python3 crawl.py discover    # 频道发现
-  python3 crawl.py all         # 全部 (先 discover → 并行其余)
+  python3 crawl.py all         # 全部
 """
 import sys
 import csv
-import time
 import random
 import threading
 import urllib.request
-from datetime import datetime
 from urllib.parse import quote_plus
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,55 +22,36 @@ import config
 logger = config.get_logger(__name__, "crawl.log")
 _lock = threading.Lock()
 
-# === 多语言关键词 (多样性搜索用) ===
-DIVERSE_KEYWORDS = [
-    "workout", "exercise", "fitness", "gym training", "home workout",
-    "HIIT", "yoga", "stretching", "bodyweight", "dumbbell",
-    "kettlebell", "resistance band", "pull up", "push up", "squat",
-    "deadlift", "plank", "burpees", "cardio", "abs",
-    "full body workout", "upper body", "lower body", "core workout",
-    "flexibility", "mobility", "warmup routine", "cooldown",
-    "calisthenics", "crossfit", "pilates", "boxing workout",
-    "jump rope", "running form", "cycling workout", "rowing",
-    "muscle up", "handstand", "parkour", "athletic training",
-    "barbell exercise", "cable machine workout", "TRX workout",
-    "medicine ball", "battle ropes", "gymnastic rings",
-    "bicep workout", "tricep exercise", "shoulder workout",
-    "chest exercise", "back workout", "glute exercise",
-    "hamstring workout", "quad exercise", "calf workout",
-    "strength training", "hypertrophy workout", "endurance training",
-    "powerlifting", "functional fitness", "circuit training",
-    "plyometric", "isometric exercise", "tabata",
-    "boxing training", "kickboxing", "MMA workout",
-    "martial arts training", "karate", "taekwondo",
-    "basketball training", "soccer fitness", "swimming dryland",
-    "beginner workout", "advanced exercise", "senior fitness",
-    "outdoor workout", "no equipment", "morning routine workout",
-    "健身教程", "居家锻炼", "腹肌训练", "减脂运动", "力量训练",
-    "哑铃训练", "瑜伽入门", "拉伸放松", "HIIT燃脂", "徒手健身",
-    "引体向上教学", "深蹲教程", "硬拉教学", "核心训练", "跳绳减肥",
-    "肩部训练", "自重训练", "增肌计划", "体态矫正",
-    "rutina de ejercicios", "entrenamiento en casa", "abdominales",
-    "sentadillas", "entrenamiento HIIT", "estiramientos",
-    "筋トレ", "自宅トレーニング", "ヨガ", "ストレッチ", "腹筋トレーニング",
-    "홈트레이닝", "운동 루틴", "스트레칭", "복근운동", "전신운동",
-    "treino em casa", "musculação", "treino funcional",
-    "Training zuhause", "Fitness Übungen", "Ganzkörper Training",
-    "musculation maison", "exercice fitness", "entraînement",
-    "ออกกำลังกาย", "tập gym tại nhà", "latihan di rumah",
-    "тренировка дома", "фитнес", "تمارين رياضية",
+# === SP参数 (YouTube 搜索过滤器编码) ===
+SP_PARAMS = [
+    "EgIYAQ%3D%3D",       # 短视频
+    "EgIYAw%3D%3D",       # 长视频
+    "CAISAhAB",           # 按相关性排序
+    "CAMSAhAB",           # 按评分排序
+    "EgIIAQ%253D%253D",   # 直播
+    "",                    # 默认
 ]
 
-DIVERSE_SP = ["EgIYAQ%3D%3D", "EgIYAw%3D%3D", "CAISAhAB", "CAMSAhAB", "EgIIAQ%253D%253D", ""]
-DIVERSE_MODIFIERS = ["short", "tutorial", "for beginners", "at home", "no equipment",
-                     "advanced", "routine", "challenge", "tips", "proper form",
-                     "quick", "easy", "intense", "simple", "best"]
+# === 搜索修饰词 ===
+SEARCH_SUFFIXES = [
+    "", "tutorial", "form", "short", "quick", "at home",
+    "beginner", "no equipment", "demo", "challenge",
+    "workout", "exercise", "routine", "training",
+]
+
+DIVERSE_MODIFIERS = [
+    "short", "tutorial", "for beginners", "at home", "no equipment",
+    "advanced", "routine", "challenge", "tips", "proper form",
+    "quick", "easy", "intense", "simple", "best",
+    "full body", "at gym", "home", "outdoor",
+]
 
 PLAYLIST_QUERIES = [
     "workout playlist", "fitness routine playlist", "yoga playlist",
     "HIIT workout series", "beginner workout playlist", "calisthenics compilation",
     "strength training playlist", "fat burning playlist",
     "健身合集", "运动教程合集", "筋トレ プレイリスト", "홈트 플레이리스트",
+    "rutina ejercicios playlist", "treino completo playlist",
 ]
 
 # Kinetics 数据集 URL
@@ -88,36 +66,53 @@ KINETICS_URLS = {
 }
 
 
+def _load_keywords():
+    """从统一关键词文件加载"""
+    with open(config.KEYWORDS_FILE, "r", encoding="utf-8") as f:
+        return [l.strip() for l in f if l.strip() and not l.startswith("#")]
+
+
+def _is_valid_entry(e, seen_ids, blacklist):
+    """通用条目校验: 去重 + 黑名单 + 时长 + 标题黑名单"""
+    if not e or not e.get("id"):
+        return None
+    vid = e["id"]
+    if vid in blacklist:
+        return None
+    with _lock:
+        if vid in seen_ids:
+            return None
+        seen_ids.add(vid)
+    dur = e.get("duration") or 0
+    if dur < config.MIN_DURATION or dur > config.MAX_DURATION:
+        return None
+    title = (e.get("title") or "").lower()
+    if any(w in title for w in config.TITLE_BLACKLIST):
+        return None
+    return vid
+
+
 # ==================== 关键词搜索 ====================
 
-def _search_one(keyword, seen_ids):
-    """搜索单个关键词"""
-    url = f"https://www.youtube.com/results?search_query={quote_plus(keyword)}&sp=EgIYAQ%3D%3D"
+def _search_one(keyword, sp, seen_ids, blacklist):
+    """搜索单个关键词+SP组合"""
+    url = f"https://www.youtube.com/results?search_query={quote_plus(keyword)}&sp={sp}"
     opts = {**config.YDL_BASE, "extract_flat": "in_playlist"}
     results = []
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             for e in (info.get("entries") or []):
-                if not e or not e.get("id"):
-                    continue
-                vid = e["id"]
-                with _lock:
-                    if vid in seen_ids:
-                        continue
-                    seen_ids.add(vid)
-                dur = e.get("duration") or 0
-                if dur < config.MIN_DURATION or dur > config.MAX_DURATION:
-                    continue
-                title = (e.get("title") or "").lower()
-                if any(w in title for w in config.TITLE_BLACKLIST):
+                vid = _is_valid_entry(e, seen_ids, blacklist)
+                if not vid:
                     continue
                 results.append({
                     "video_id": vid, "title": e.get("title"),
                     "url": f"https://www.youtube.com/watch?v={vid}",
-                    "duration": dur, "channel": e.get("channel") or e.get("uploader"),
-                    "view_count": e.get("view_count"), "keyword": keyword,
-                    "source": "keyword_search",
+                    "duration": e.get("duration") or 0,
+                    "channel": e.get("channel") or e.get("uploader"),
+                    "view_count": e.get("view_count"),
+                    "keyword": keyword, "source": "keyword_search",
                 })
     except Exception:
         pass
@@ -125,39 +120,47 @@ def _search_one(keyword, seen_ids):
 
 
 def run_search():
-    """关键词搜索主流程"""
-    with open(config.KEYWORDS_FILE, "r", encoding="utf-8") as f:
-        base_kws = [l.strip() for l in f if l.strip() and not l.startswith("#")]
-    suffixes = ["", "tutorial", "form", "short", "quick", "at home",
-                "beginner", "no equipment", "demo", "challenge"]
-    keywords = sorted({f"{kw} {s}".strip() for kw in base_kws for s in suffixes})
+    """关键词搜索主流程 (关键词 × 后缀 × SP参数)"""
+    base_kws = _load_keywords()
+    # 关键词 × 后缀扩展
+    keywords = sorted({f"{kw} {s}".strip() for kw in base_kws for s in SEARCH_SUFFIXES})
     logger.info(f"搜索: 基础 {len(base_kws)} → 扩展 {len(keywords)}")
 
+    blacklist = config.load_blacklist()
     seen_ids = {r["video_id"] for r in config.read_jsonl(config.SEARCH_RESULTS)}
     done = config.read_lines(config.SEARCH_PROGRESS)
-    pending = [kw for kw in keywords if kw not in done]
-    logger.info(f"已有: {len(seen_ids)} | 待搜索: {len(pending)}")
-    if not pending:
+
+    # 生成任务: 每个关键词只搜两个SP (默认+短视频)，避免过度请求
+    tasks = []
+    for kw in keywords:
+        for sp in [SP_PARAMS[0], SP_PARAMS[-1]]:
+            key = f"{kw}|{sp}"
+            if key not in done:
+                tasks.append((kw, sp, key))
+    random.shuffle(tasks)
+    logger.info(f"已有: {len(seen_ids)} | 待搜索: {len(tasks)}")
+    if not tasks:
         return
 
     total = 0
     with ThreadPoolExecutor(max_workers=config.SEARCH_WORKERS) as pool:
-        futs = {pool.submit(_search_one, kw, seen_ids): kw for kw in pending}
+        futs = {pool.submit(_search_one, kw, sp, seen_ids, blacklist): key
+                for kw, sp, key in tasks}
         for i, fut in enumerate(as_completed(futs), 1):
-            kw = futs[fut]
+            key = futs[fut]
             results = fut.result() or []
             if results:
                 config.append_jsonl(config.SEARCH_RESULTS, results)
                 total += len(results)
-            config.append_line(config.SEARCH_PROGRESS, kw)
-            if i % 100 == 0:
-                logger.info(f"搜索 [{i}/{len(pending)}] 累计新增: {total}")
+            config.append_line(config.SEARCH_PROGRESS, key)
+            if i % 200 == 0:
+                logger.info(f"搜索 [{i}/{len(tasks)}] 累计新增: {total}")
     logger.info(f"搜索完成! 新增: {total}")
 
 
 # ==================== 频道爬取 ====================
 
-def _crawl_one(channel, seen_ids):
+def _crawl_one(channel, seen_ids, blacklist):
     """爬取单个频道"""
     clean = channel.replace(" ", "")
     urls = [f"https://www.youtube.com/@{clean}/videos",
@@ -165,7 +168,8 @@ def _crawl_one(channel, seen_ids):
     if channel.startswith("UC") or channel.startswith("@"):
         urls.insert(0, f"https://www.youtube.com/{channel}/videos")
 
-    opts = {**config.YDL_BASE, "extract_flat": "in_playlist"}
+    opts = {**config.YDL_BASE, "extract_flat": "in_playlist",
+            "playlistend": config.MAX_PER_CHANNEL_CRAWL}
     results = []
     for url in urls:
         try:
@@ -174,21 +178,16 @@ def _crawl_one(channel, seen_ids):
                 if not info:
                     continue
                 for e in (info.get("entries") or []):
-                    if not e or not e.get("id"):
-                        continue
-                    vid = e["id"]
-                    with _lock:
-                        if vid in seen_ids:
-                            continue
-                        seen_ids.add(vid)
-                    dur = e.get("duration") or 0
-                    if dur < config.MIN_DURATION or dur > config.MAX_DURATION:
+                    vid = _is_valid_entry(e, seen_ids, blacklist)
+                    if not vid:
                         continue
                     results.append({
                         "video_id": vid, "title": e.get("title"),
                         "url": f"https://www.youtube.com/watch?v={vid}",
-                        "duration": dur, "channel": channel,
-                        "view_count": e.get("view_count"), "source": "channel_crawl",
+                        "duration": e.get("duration") or 0,
+                        "channel": channel,
+                        "view_count": e.get("view_count"),
+                        "source": "channel_crawl",
                     })
                     if len(results) >= config.MAX_PER_CHANNEL_CRAWL:
                         break
@@ -200,16 +199,18 @@ def _crawl_one(channel, seen_ids):
 
 def run_channels():
     """频道爬取主流程"""
-    # 发现频道
+    # 从已有搜索结果 + 种子文件发现频道
     channels = set()
-    for r in config.read_jsonl(config.SEARCH_RESULTS):
-        if r.get("channel"):
-            channels.add(r["channel"].strip())
+    for src in [config.SEARCH_RESULTS, config.DIVERSE_VIDEOS]:
+        for r in config.read_jsonl(src):
+            if r.get("channel"):
+                channels.add(r["channel"].strip())
     if config.CHANNELS_SEED.exists():
         with open(config.CHANNELS_SEED, "r", encoding="utf-8") as f:
             channels |= {l.strip() for l in f if l.strip() and not l.startswith("#")}
     channels = sorted(channels)
 
+    blacklist = config.load_blacklist()
     seen_ids = {r["video_id"] for r in config.read_jsonl(config.SEARCH_RESULTS)}
     seen_ids |= {r["video_id"] for r in config.read_jsonl(config.CHANNEL_VIDEOS)}
     done = config.read_lines(config.CRAWL_PROGRESS)
@@ -220,7 +221,7 @@ def run_channels():
 
     total = 0
     with ThreadPoolExecutor(max_workers=config.CRAWL_WORKERS) as pool:
-        futs = {pool.submit(_crawl_one, ch, seen_ids): ch for ch in pending}
+        futs = {pool.submit(_crawl_one, ch, seen_ids, blacklist): ch for ch in pending}
         for i, fut in enumerate(as_completed(futs), 1):
             ch = futs[fut]
             results = fut.result() or []
@@ -235,7 +236,7 @@ def run_channels():
 
 # ==================== 多样性搜索 ====================
 
-def _diverse_search(query, sp, seen_ids, ch_counts):
+def _diverse_search(query, sp, seen_ids, blacklist, ch_counts):
     """多样性搜索 (频道配额限制)"""
     url = f"https://www.youtube.com/results?search_query={quote_plus(query)}&sp={sp}"
     opts = {**config.YDL_BASE, "extract_flat": "in_playlist"}
@@ -246,7 +247,10 @@ def _diverse_search(query, sp, seen_ids, ch_counts):
             for e in (info.get("entries") or []):
                 if not e or not e.get("id"):
                     continue
-                vid, ch = e["id"], e.get("channel") or e.get("uploader") or "unknown"
+                vid = e["id"]
+                ch = e.get("channel") or e.get("uploader") or "unknown"
+                if vid in blacklist:
+                    continue
                 with _lock:
                     if vid in seen_ids:
                         continue
@@ -272,25 +276,23 @@ def _diverse_search(query, sp, seen_ids, ch_counts):
 
 
 def run_diverse():
-    """多样性搜索主流程 — 使用 ontology 扩展的 6615 英文关键词"""
-    # 从 keywords_en.txt 加载 (ontology 扩展)
-    en_file = config.BASE / "keywords_en.txt"
-    if en_file.exists():
-        with open(en_file) as f:
-            all_kws = [l.strip() for l in f if l.strip()]
-    else:
-        all_kws = DIVERSE_KEYWORDS
+    """多样性搜索主流程 — 使用统一关键词 × 全部SP × modifier"""
+    all_kws = _load_keywords()
     logger.info(f"多样性: 加载 {len(all_kws)} 个关键词")
 
-    # 生成任务: 每词 × 3 个 SP 参数 (不做修饰词扩展，词量已足够大)
+    # 生成任务: 关键词 × SP × modifier
     tasks = []
     for kw in all_kws:
-        for sp in DIVERSE_SP[:3]:  # 只用前 3 个 SP 控制总量
+        for sp in SP_PARAMS:
             tasks.append((kw, sp))
+        # 每个关键词额外加3个随机modifier (控制总量不膨胀10x)
+        for mod in random.sample(DIVERSE_MODIFIERS, min(3, len(DIVERSE_MODIFIERS))):
+            tasks.append((f"{kw} {mod}", SP_PARAMS[0]))
     for pq in PLAYLIST_QUERIES:
         tasks.append((pq, "EgIQAw%3D%3D"))
     random.shuffle(tasks)
 
+    blacklist = config.load_blacklist()
     seen_ids = {r["video_id"] for r in config.read_jsonl(config.DIVERSE_VIDEOS)}
     ch_counts = defaultdict(int)
     done = config.read_lines(config.DIVERSE_PROGRESS)
@@ -301,7 +303,8 @@ def run_diverse():
 
     total = 0
     with ThreadPoolExecutor(max_workers=config.DIVERSE_WORKERS) as pool:
-        futs = {pool.submit(_diverse_search, kw, sp, seen_ids, ch_counts): (kw, sp) for kw, sp in pending}
+        futs = {pool.submit(_diverse_search, kw, sp, seen_ids, blacklist, ch_counts): (kw, sp)
+                for kw, sp in pending}
         for i, fut in enumerate(as_completed(futs), 1):
             kw, sp = futs[fut]
             results = fut.result() or []
@@ -309,7 +312,7 @@ def run_diverse():
                 config.append_jsonl(config.DIVERSE_VIDEOS, results)
                 total += len(results)
             config.append_line(config.DIVERSE_PROGRESS, f"{kw}|{sp}")
-            if i % 100 == 0:
+            if i % 200 == 0:
                 logger.info(f"多样性 [{i}/{len(pending)}] 累计: {total}, 频道: {len(ch_counts)}")
     logger.info(f"多样性搜索完成! 新增: {total}, 频道: {len(ch_counts)}")
 
@@ -323,12 +326,12 @@ def _download_file(url, path):
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     data = opener.open(req, timeout=120).read()
     path.write_bytes(data)
-    return data
 
 
 def run_datasets():
     """下载 Kinetics CSV 全量提取 video_id"""
     config.init_dirs()
+    blacklist = config.load_blacklist()
     all_ids = set()
     for name, url in KINETICS_URLS.items():
         path = config.DATASETS_DIR / f"{name}.csv"
@@ -343,10 +346,9 @@ def run_datasets():
             reader = csv.DictReader(f)
             for row in reader:
                 vid = row.get("youtube_id", "").strip()
-                if vid:
+                if vid and vid not in blacklist:
                     all_ids.add((vid, row.get("label", "")))
 
-    # 去重已有
     existing = {r["video_id"] for r in config.read_jsonl(config.DATASET_IDS)}
     new_items = [{"video_id": vid, "title": label, "label": label,
                   "source": "kinetics"} for vid, label in all_ids if vid not in existing]

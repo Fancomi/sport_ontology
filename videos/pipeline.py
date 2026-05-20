@@ -1,7 +1,6 @@
 """阶段二: 视频下载 (纯下载, 多机多进程并行)
 
-启动时自动从各机同步 dl_progress + invalid_ids, 确保不重复下载。
-下载完成后单独运行 VLM 筛选。
+启动时自动从各机同步 dl_progress + blacklist, 确保不重复下载。
 
 用法:
   python3 pipeline.py --dl-workers 15 --total-shards 3 --shard-id 0
@@ -27,11 +26,11 @@ _spec.loader.exec_module(config)
 logger = config.get_logger(__name__, "pipeline.log")
 
 # === 路径 ===
-DATA_DIR = Path("/root/paddlejob/workspace/env_run/penghaotian/datas/videos")
-FILTERED = DATA_DIR / "filtered.jsonl"
+DATA_DIR = config.DATA_DIR
+FILTERED = config.FILTERED
 VIDEOS_DIR = DATA_DIR / "videos"
 DL_PROGRESS = DATA_DIR / "dl_progress.txt"
-INVALID_FILE = DATA_DIR / "invalid_ids.txt"
+BLACKLIST = config.BLACKLIST
 DISK_LIMIT_GB = 500
 
 # === 所有机器地址 (HTTP 文件服务) ===
@@ -49,7 +48,7 @@ PROXY_POOL = [
     "http://agent.baidu.com:8188",
     "http://agent.baidu.com:8891",
 ]
-MAX_PER_PROXY = 3  # 每代理最大并发
+MAX_PER_PROXY = 3
 _proxy_cooldown = {}
 _proxy_semaphores = {p: threading.Semaphore(MAX_PER_PROXY) for p in PROXY_POOL}
 _proxy_lock = threading.Lock()
@@ -58,34 +57,37 @@ _proxy_lock = threading.Lock()
 # ==================== 跨机同步 ====================
 
 def sync_from_peers():
-    """从所有机器拉取 dl_progress 和 invalid_ids, 合并到本地"""
+    """从所有机器拉取 dl_progress 和 blacklist, 合并到本地"""
     all_done = set()
-    all_invalid = set()
+    all_bl = set()
 
     for peer in PEERS:
-        for fname, target in [("dl_progress.txt", all_done), ("invalid_ids.txt", all_invalid)]:
+        for fname, target in [("dl_progress.txt", all_done), ("blacklist.txt", all_bl)]:
             try:
                 url = f"{peer}/{fname}"
                 data = urllib.request.urlopen(url, timeout=10).read().decode()
-                ids = {l.strip() for l in data.splitlines() if l.strip()}
-                target |= ids
+                target |= {l.strip() for l in data.splitlines() if l.strip()}
             except Exception:
                 pass
 
     # 合并本地
     local_done = config.read_lines(DL_PROGRESS)
-    local_invalid = config.read_lines(INVALID_FILE)
+    local_bl = config.load_blacklist()
     merged_done = local_done | all_done
-    merged_invalid = local_invalid | all_invalid
+    merged_bl = local_bl | all_bl
 
-    # 写回
+    # 写回 dl_progress
     with open(DL_PROGRESS, "w") as f:
         f.write("\n".join(sorted(merged_done)) + "\n")
-    with open(INVALID_FILE, "w") as f:
-        f.write("\n".join(sorted(merged_invalid)) + "\n")
 
-    logger.info(f"[同步] 本地:{len(local_done)} + 远程 → 合并:{len(merged_done)} done, {len(merged_invalid)} invalid")
-    return merged_done, merged_invalid
+    # 写回 blacklist (通过 config 函数追加新增部分)
+    new_bl = merged_bl - local_bl
+    if new_bl:
+        config.append_blacklist(new_bl)
+
+    logger.info(f"[同步] done: {len(local_done)}→{len(merged_done)} | "
+                f"blacklist: {len(local_bl)}→{len(merged_bl)}")
+    return merged_done, merged_bl
 
 
 # ==================== 代理管理 ====================
@@ -97,26 +99,22 @@ def _pick_proxy(vid):
         alive = [p for p in PROXY_POOL if _proxy_cooldown.get(p, 0) < now]
     if not alive:
         alive = PROXY_POOL
-    # 按 hash 选, 但如果该代理信号量满则轮到下一个
     idx = hash(vid) % len(alive)
     for _ in range(len(alive)):
         p = alive[idx % len(alive)]
         if _proxy_semaphores[p].acquire(blocking=False):
             return p
         idx += 1
-    # 全满则阻塞等第一个可用的
     p = alive[hash(vid) % len(alive)]
     _proxy_semaphores[p].acquire()
     return p
 
 
 def _release_proxy(proxy):
-    """释放代理并发槽"""
     _proxy_semaphores[proxy].release()
 
 
 def _mark_bot(proxy):
-    """冷却 5 分钟"""
     with _proxy_lock:
         _proxy_cooldown[proxy] = time.time() + 300
     logger.warning(f"[代理] {proxy.split('//')[1]} 被封, 冷却5min")
@@ -145,9 +143,13 @@ def download_one(item, out_dir):
                 return True, False
             return False, False
     except Exception as e:
-        if "bot" in str(e).lower() or "Sign in" in str(e):
+        msg = str(e).lower()
+        if "bot" in msg or "sign in" in msg:
             _mark_bot(proxy)
             return False, True
+        # 视频不可用 → 加入黑名单
+        if any(k in msg for k in ("unavailable", "removed", "private", "not exist")):
+            config.append_blacklist(vid)
         return False, False
     finally:
         _release_proxy(proxy)
@@ -157,14 +159,13 @@ def run_download(workers, total_shards, shard_id):
     """主下载循环"""
     VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 启动时同步
-    done, invalid = sync_from_peers()
+    done, blacklist = sync_from_peers()
 
     # 加载待下载列表并分片
     items = [json.loads(l) for l in open(FILTERED)]
     pending = [r for r in items
                if r["video_id"] not in done
-               and r["video_id"] not in invalid
+               and r["video_id"] not in blacklist
                and hash(r["video_id"]) % total_shards == shard_id]
     random.shuffle(pending)
     logger.info(f"[下载] 分片:{shard_id}/{total_shards} 待下:{len(pending)} workers:{workers}")
@@ -177,12 +178,10 @@ def run_download(workers, total_shards, shard_id):
     BATCH = 100
 
     for batch_start in range(0, len(pending), BATCH):
-        # 磁盘检查
         if disk_free_gb() < DISK_LIMIT_GB:
             logger.warning(f"[下载] 磁盘不足 {DISK_LIMIT_GB}GB, 停止")
             break
 
-        # 全代理冷却 → 退出, 由 shell 循环重启 (重启后连接更新鲜效率更高)
         now = time.time()
         alive = [p for p in PROXY_POOL if _proxy_cooldown.get(p, 0) < now]
         if not alive:
@@ -215,6 +214,34 @@ def disk_free_gb():
     return st.f_bavail * st.f_frsize / (1024**3)
 
 
+# ==================== 清理黑名单视频 ====================
+
+def run_cleanup():
+    """同步黑名单后，删除已下载的黑名单视频 + 从 dl_progress 中移除"""
+    _, blacklist = sync_from_peers()
+    if not blacklist:
+        logger.info("[cleanup] 黑名单为空，无需清理")
+        return
+
+    # 扫描已下载视频
+    deleted = 0
+    for f in VIDEOS_DIR.iterdir():
+        vid = f.stem
+        if vid in blacklist:
+            f.unlink()
+            deleted += 1
+
+    # 从 dl_progress 中剔除黑名单
+    if DL_PROGRESS.exists():
+        done = config.read_lines(DL_PROGRESS)
+        clean_done = done - blacklist
+        if len(clean_done) < len(done):
+            with open(DL_PROGRESS, "w") as f:
+                f.write("\n".join(sorted(clean_done)) + "\n")
+
+    logger.info(f"[cleanup] 删除视频: {deleted} | dl_progress 剔除: {len(blacklist & config.read_lines(DL_PROGRESS)) if DL_PROGRESS.exists() else 0}")
+
+
 # ==================== 入口 ====================
 
 if __name__ == "__main__":
@@ -222,8 +249,13 @@ if __name__ == "__main__":
     parser.add_argument("--dl-workers", type=int, default=15)
     parser.add_argument("--total-shards", type=int, default=1)
     parser.add_argument("--shard-id", type=int, default=0)
+    parser.add_argument("--cleanup", action="store_true", help="同步黑名单并删除已下载的黑名单视频")
     args = parser.parse_args()
 
     config.init_dirs()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    run_download(args.dl_workers, args.total_shards, args.shard_id)
+
+    if args.cleanup:
+        run_cleanup()
+    else:
+        run_download(args.dl_workers, args.total_shards, args.shard_id)

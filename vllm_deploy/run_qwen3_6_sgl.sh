@@ -29,15 +29,28 @@ done
 echo "配置: PORT_START=$PORT_START, NUM_INSTANCES=$NUM_INSTANCES, GPU_START=$GPU_START"
 
 MODEL=/root/paddlejob/workspace/env_run/penghaotian/models/Qwen3.6-35B-A3B-FP8
+SHM_MODEL=/dev/shm/models/$(basename $MODEL)
+
+if [ ! -d "$SHM_MODEL" ]; then
+    echo "首次启动：拷贝模型到 /dev/shm（约 35GB，仅需一次）..."
+    mkdir -p /dev/shm/models
+    cp -r $MODEL $SHM_MODEL
+    echo "拷贝完成 → $SHM_MODEL"
+else
+    echo "模型已在 /dev/shm，跳过拷贝"
+fi
+MODEL=$SHM_MODEL
 
 for i in $(seq 0 $((NUM_INSTANCES - 1))); do
     PORT=$((PORT_START + i))
     GPU=$((GPU_START + i))
+    DIST_PORT=$((29500 + i))
 
     SGLANG_ENABLE_SPEC_V2=1 CUDA_VISIBLE_DEVICES=$GPU \
     python -m sglang.launch_server \
         --model-path $MODEL \
         --port $PORT \
+        --dist-init-addr 127.0.0.1:$DIST_PORT \
         --tp-size 1 \
         --mem-fraction-static 0.8 \
         --context-length 16384 \
@@ -50,7 +63,7 @@ for i in $(seq 0 $((NUM_INSTANCES - 1))); do
         --skip-server-warmup \
         --trust-remote-code &
 
-    echo "  GPU $GPU → port $PORT (pid $!)"
+    echo "  GPU $GPU → port $PORT, dist_port=$DIST_PORT (pid $!)"
 done
 
 echo "全部 sglang qwen3.6-fp8 实例已启动，等待中... (Ctrl+C 停止全部)"

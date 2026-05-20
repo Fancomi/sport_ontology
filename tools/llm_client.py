@@ -16,7 +16,7 @@ from openai import OpenAI
 def detect_server_info(client: OpenAI) -> tuple[str, str]:
     """检测服务端类型和模型 ID。
     返回 (backend_type, model_id)
-      backend_type: 'vllm' | 'llama.cpp' | 'unknown'
+      backend_type: 'vllm' | 'sglang' | 'llama.cpp' | 'unknown'
     """
     try:
         models = client.models.list().data
@@ -27,6 +27,8 @@ def detect_server_info(client: OpenAI) -> tuple[str, str]:
         model_id = m.id
         if 'vllm' in owned_by:
             return 'vllm', model_id
+        if 'sglang' in owned_by or 'srt' in owned_by:
+            return 'sglang', model_id
         if 'llama' in owned_by:
             return 'llama.cpp', model_id
         return 'unknown', model_id
@@ -36,10 +38,11 @@ def detect_server_info(client: OpenAI) -> tuple[str, str]:
 
 def make_extra_body(backend: str, model_id: str) -> dict:
     """为不同后端生成 extra_body。
-    vllm + Qwen3 / Gemma4 系列：默认关闭思考模式，避免推理过程混入输出内容。
+    vllm/sglang + Qwen3 / Gemma4 系列：默认关闭思考模式，避免推理过程混入输出内容。
+    两种后端均使用 chat_template_kwargs.enable_thinking 控制。
     """
     mid = model_id.lower()
-    if backend == 'vllm' and ('qwen' in mid or 'gemma' in mid):
+    if backend in ('vllm', 'sglang', 'unknown') and ('qwen' in mid or 'gemma' in mid):
         return {"chat_template_kwargs": {"enable_thinking": False}}
     return {}
 
