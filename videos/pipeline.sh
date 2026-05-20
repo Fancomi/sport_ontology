@@ -22,6 +22,6 @@ echo "══════ 阶段二: 视频下载 (shard ${RANK}/${TOTAL}) ══
 
 while true; do
     python3 pipeline.py --dl-workers 15 --total-shards "$TOTAL" --shard-id "$RANK"
-    echo "$(date '+%H:%M') 进程退出, 5分钟后重启..."
+    echo "$(date '+%H:%M') 进程退出, 15分钟后重启..."
     sleep 900
 done

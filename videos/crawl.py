@@ -272,18 +272,21 @@ def _diverse_search(query, sp, seen_ids, ch_counts):
 
 
 def run_diverse():
-    """多样性搜索主流程"""
-    # 生成任务
+    """多样性搜索主流程 — 使用 ontology 扩展的 6615 英文关键词"""
+    # 从 keywords_en.txt 加载 (ontology 扩展)
+    en_file = config.BASE / "keywords_en.txt"
+    if en_file.exists():
+        with open(en_file) as f:
+            all_kws = [l.strip() for l in f if l.strip()]
+    else:
+        all_kws = DIVERSE_KEYWORDS
+    logger.info(f"多样性: 加载 {len(all_kws)} 个关键词")
+
+    # 生成任务: 每词 × 3 个 SP 参数 (不做修饰词扩展，词量已足够大)
     tasks = []
-    for kw in DIVERSE_KEYWORDS:
-        for sp in DIVERSE_SP:
+    for kw in all_kws:
+        for sp in DIVERSE_SP[:3]:  # 只用前 3 个 SP 控制总量
             tasks.append((kw, sp))
-    en_kws = [k for k in DIVERSE_KEYWORDS if all(ord(c) < 128 for c in k)]
-    for kw in en_kws:
-        for mod in DIVERSE_MODIFIERS:
-            if mod not in kw.lower():
-                for sp in DIVERSE_SP[:3]:
-                    tasks.append((f"{kw} {mod}", sp))
     for pq in PLAYLIST_QUERIES:
         tasks.append((pq, "EgIQAw%3D%3D"))
     random.shuffle(tasks)
