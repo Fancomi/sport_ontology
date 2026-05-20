@@ -1,15 +1,35 @@
 #!/bin/bash
-# Qwen3.6-35B-A3B-FP8 — 8×单卡并行，GPU 0-7 → port 8001-8008
+# Qwen3.6-35B-A3B-FP8 — N×单卡并行
 # 35B fp8 ≈ 35GB，单卡 80GB 容纳，KV cache 空间充裕
-#
-# [旧] BF16 TP=2 配置（4实例）:
-# MODEL=/root/paddlejob/workspace/env_run/penghaotian/models/Qwen3.6-35B-A3B
-# for i in $(seq 0 3); do
-#     GPUS="$((i * 2)),$((i * 2 + 1))"
-#     VLLM_PORT=$((20000 + i * 20)) CUDA_VISIBLE_DEVICES=$GPUS vllm serve $MODEL \
-#         --tensor-parallel-size 2 --enable-expert-parallel \
-#         --dtype bfloat16 --kv-cache-dtype fp8 ...
-# done
+
+# bash run_qwen3_6_vllm.sh -p 8003 -v 23000 -g 6 -n 1
+usage() {
+    echo "用法: bash $0 [选项]"
+    echo "  -p, --port PORT_START        API 端口起始值 (默认 8001)"
+    echo "  -v, --vllm-port VLLM_PORT    vLLM 内部端口起始值 (默认 20000)"
+    echo "  -n, --num NUM_INSTANCES      启动实例数量 (默认 6)"
+    echo "  -g, --gpu GPU_START          CUDA_VISIBLE_DEVICES 起始编号 (默认 0)"
+    echo "  -h, --help                   显示帮助"
+    exit 0
+}
+
+PORT_START=8001
+VLLM_PORT_START=20000
+NUM_INSTANCES=6
+GPU_START=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -p|--port)       PORT_START="$2";      shift 2 ;;
+        -v|--vllm-port)  VLLM_PORT_START="$2"; shift 2 ;;
+        -n|--num)        NUM_INSTANCES="$2";   shift 2 ;;
+        -g|--gpu)        GPU_START="$2";       shift 2 ;;
+        -h|--help)       usage ;;
+        *) echo "未知参数: $1"; usage ;;
+    esac
+done
+
+echo "配置: PORT_START=$PORT_START, VLLM_PORT_START=$VLLM_PORT_START, NUM_INSTANCES=$NUM_INSTANCES, GPU_START=$GPU_START"
 
 unset PYTHONPATH
 export VLLM_ENABLE_CUDA_COMPATIBILITY=1
@@ -38,10 +58,10 @@ else
 fi
 MODEL=$SHM_MODEL
 
-for i in $(seq 0 5); do
-    PORT=$((8001 + i))
+for i in $(seq 0 $((NUM_INSTANCES - 1))); do
+    PORT=$((PORT_START + i))
     # VLLM_PORT 指定内部端口扫描起点，每实例间隔 20，避免 race condition
-    VLLM_PORT=$((20000 + i * 20)) CUDA_VISIBLE_DEVICES=$i vllm serve $MODEL \
+    VLLM_PORT=$((VLLM_PORT_START + i * 20)) CUDA_VISIBLE_DEVICES=$((GPU_START + i)) vllm serve $MODEL \
         --gpu-memory-utilization 0.90 \
         --dtype bfloat16 \
         --kv-cache-dtype fp8 \
@@ -57,7 +77,7 @@ for i in $(seq 0 5); do
         --reasoning-parser qwen3 \
         --port $PORT &
         
-    echo "  GPU $i → port $PORT, VLLM_PORT=$((20000 + i * 20)) (pid $!)"
+    echo "  GPU $((GPU_START + i)) → port $PORT, VLLM_PORT=$((VLLM_PORT_START + i * 20)) (pid $!)"
 done
 
 echo "全部 qwen3.6-fp8 实例已启动，等待中... (Ctrl+C 停止全部)"

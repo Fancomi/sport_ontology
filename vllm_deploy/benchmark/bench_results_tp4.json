@@ -1,0 +1,434 @@
+[
+  {
+    "case": "text_short",
+    "think": false,
+    "bs": 1,
+    "tps": 71.9,
+    "avg_lat": 264,
+    "total_tok": 19,
+    "errors": 0
+  },
+  {
+    "case": "text_short",
+    "think": false,
+    "bs": 8,
+    "tps": 242.3,
+    "avg_lat": 622,
+    "total_tok": 152,
+    "errors": 0
+  },
+  {
+    "case": "text_short",
+    "think": false,
+    "bs": 16,
+    "tps": 559.2,
+    "avg_lat": 531,
+    "total_tok": 304,
+    "errors": 0
+  },
+  {
+    "case": "text_short",
+    "think": false,
+    "bs": 32,
+    "tps": 633.0,
+    "avg_lat": 798,
+    "total_tok": 608,
+    "errors": 0
+  },
+  {
+    "case": "text_short",
+    "think": false,
+    "bs": 48,
+    "tps": 738.9,
+    "avg_lat": 1192,
+    "total_tok": 912,
+    "errors": 0
+  },
+  {
+    "case": "text_short",
+    "think": false,
+    "bs": 64,
+    "tps": 1561.3,
+    "avg_lat": 553,
+    "total_tok": 1216,
+    "errors": 0
+  },
+  {
+    "case": "text_short",
+    "think": true,
+    "bs": 1,
+    "tps": 194.1,
+    "avg_lat": 1236,
+    "total_tok": 240,
+    "errors": 0
+  },
+  {
+    "case": "text_short",
+    "think": true,
+    "bs": 8,
+    "tps": 1005.1,
+    "avg_lat": 1894,
+    "total_tok": 1920,
+    "errors": 0
+  },
+  {
+    "case": "text_short",
+    "think": true,
+    "bs": 16,
+    "tps": 1972.3,
+    "avg_lat": 1928,
+    "total_tok": 3840,
+    "errors": 0
+  },
+  {
+    "case": "text_short",
+    "think": true,
+    "bs": 32,
+    "tps": 3295.8,
+    "avg_lat": 2277,
+    "total_tok": 7680,
+    "errors": 0
+  },
+  {
+    "case": "text_short",
+    "think": true,
+    "bs": 48,
+    "tps": 4089.4,
+    "avg_lat": 2727,
+    "total_tok": 11520,
+    "errors": 0
+  },
+  {
+    "case": "text_short",
+    "think": true,
+    "bs": 64,
+    "tps": 3417.2,
+    "avg_lat": 3161,
+    "total_tok": 15360,
+    "errors": 0
+  },
+  {
+    "case": "text_long",
+    "think": false,
+    "bs": 1,
+    "tps": 133.9,
+    "avg_lat": 7264,
+    "total_tok": 973,
+    "errors": 0
+  },
+  {
+    "case": "text_long",
+    "think": false,
+    "bs": 8,
+    "tps": 1653.7,
+    "avg_lat": 3600,
+    "total_tok": 6779,
+    "errors": 0
+  },
+  {
+    "case": "text_long",
+    "think": false,
+    "bs": 16,
+    "tps": 2964.1,
+    "avg_lat": 4539,
+    "total_tok": 14885,
+    "errors": 0
+  },
+  {
+    "case": "text_long",
+    "think": false,
+    "bs": 32,
+    "tps": 4852.3,
+    "avg_lat": 5192,
+    "total_tok": 28515,
+    "errors": 0
+  },
+  {
+    "case": "text_long",
+    "think": false,
+    "bs": 48,
+    "tps": 6302.6,
+    "avg_lat": 6840,
+    "total_tok": 46658,
+    "errors": 0
+  },
+  {
+    "case": "text_long",
+    "think": false,
+    "bs": 64,
+    "tps": 4724.0,
+    "avg_lat": 9033,
+    "total_tok": 60135,
+    "errors": 0
+  },
+  {
+    "case": "text_long",
+    "think": true,
+    "bs": 1,
+    "tps": 406.1,
+    "avg_lat": 10086,
+    "total_tok": 4096,
+    "errors": 0
+  },
+  {
+    "case": "text_long",
+    "think": true,
+    "bs": 8,
+    "tps": 2408.5,
+    "avg_lat": 11983,
+    "total_tok": 30899,
+    "errors": 0
+  },
+  {
+    "case": "text_long",
+    "think": true,
+    "bs": 16,
+    "tps": 4202.3,
+    "avg_lat": 14770,
+    "total_tok": 64691,
+    "errors": 0
+  },
+  {
+    "case": "text_long",
+    "think": true,
+    "bs": 32,
+    "tps": 7059.3,
+    "avg_lat": 17719,
+    "total_tok": 129519,
+    "errors": 0
+  },
+  {
+    "case": "text_long",
+    "think": true,
+    "bs": 48,
+    "tps": 8296.7,
+    "avg_lat": 21864,
+    "total_tok": 193397,
+    "errors": 0
+  },
+  {
+    "case": "text_long",
+    "think": true,
+    "bs": 64,
+    "tps": 6762.1,
+    "avg_lat": 26357,
+    "total_tok": 257804,
+    "errors": 0
+  },
+  {
+    "case": "video_short",
+    "think": false,
+    "bs": 1,
+    "tps": 42.0,
+    "avg_lat": 166,
+    "total_tok": 7,
+    "errors": 0
+  },
+  {
+    "case": "video_short",
+    "think": false,
+    "bs": 8,
+    "tps": 150.1,
+    "avg_lat": 368,
+    "total_tok": 56,
+    "errors": 0
+  },
+  {
+    "case": "video_short",
+    "think": false,
+    "bs": 16,
+    "tps": 201.9,
+    "avg_lat": 541,
+    "total_tok": 112,
+    "errors": 0
+  },
+  {
+    "case": "video_short",
+    "think": false,
+    "bs": 32,
+    "tps": 250.4,
+    "avg_lat": 818,
+    "total_tok": 212,
+    "errors": 0
+  },
+  {
+    "case": "video_short",
+    "think": false,
+    "bs": 48,
+    "tps": 307.5,
+    "avg_lat": 1046,
+    "total_tok": 336,
+    "errors": 0
+  },
+  {
+    "case": "video_short",
+    "think": false,
+    "bs": 64,
+    "tps": 285.7,
+    "avg_lat": 1260,
+    "total_tok": 428,
+    "errors": 0
+  },
+  {
+    "case": "video_short",
+    "think": true,
+    "bs": 1,
+    "tps": 262.8,
+    "avg_lat": 612,
+    "total_tok": 161,
+    "errors": 0
+  },
+  {
+    "case": "video_short",
+    "think": true,
+    "bs": 8,
+    "tps": 1543.5,
+    "avg_lat": 877,
+    "total_tok": 1447,
+    "errors": 0
+  },
+  {
+    "case": "video_short",
+    "think": true,
+    "bs": 16,
+    "tps": 2115.3,
+    "avg_lat": 1316,
+    "total_tok": 2915,
+    "errors": 0
+  },
+  {
+    "case": "video_short",
+    "think": true,
+    "bs": 32,
+    "tps": 3300.0,
+    "avg_lat": 1605,
+    "total_tok": 5683,
+    "errors": 0
+  },
+  {
+    "case": "video_short",
+    "think": true,
+    "bs": 48,
+    "tps": 3493.3,
+    "avg_lat": 2275,
+    "total_tok": 8491,
+    "errors": 0
+  },
+  {
+    "case": "video_short",
+    "think": true,
+    "bs": 64,
+    "tps": 3488.7,
+    "avg_lat": 2492,
+    "total_tok": 11279,
+    "errors": 0
+  },
+  {
+    "case": "video_long",
+    "think": false,
+    "bs": 1,
+    "tps": 305.0,
+    "avg_lat": 3357,
+    "total_tok": 1024,
+    "errors": 0
+  },
+  {
+    "case": "video_long",
+    "think": false,
+    "bs": 8,
+    "tps": 1903.8,
+    "avg_lat": 4189,
+    "total_tok": 8192,
+    "errors": 0
+  },
+  {
+    "case": "video_long",
+    "think": false,
+    "bs": 16,
+    "tps": 3267.4,
+    "avg_lat": 4880,
+    "total_tok": 16384,
+    "errors": 0
+  },
+  {
+    "case": "video_long",
+    "think": false,
+    "bs": 32,
+    "tps": 5125.1,
+    "avg_lat": 6183,
+    "total_tok": 32768,
+    "errors": 0
+  },
+  {
+    "case": "video_long",
+    "think": false,
+    "bs": 48,
+    "tps": 6096.2,
+    "avg_lat": 7869,
+    "total_tok": 49152,
+    "errors": 0
+  },
+  {
+    "case": "video_long",
+    "think": false,
+    "bs": 64,
+    "tps": 4957.2,
+    "avg_lat": 9567,
+    "total_tok": 65536,
+    "errors": 0
+  },
+  {
+    "case": "video_long",
+    "think": true,
+    "bs": 1,
+    "tps": 339.5,
+    "avg_lat": 5669,
+    "total_tok": 1925,
+    "errors": 0
+  },
+  {
+    "case": "video_long",
+    "think": true,
+    "bs": 8,
+    "tps": 1566.2,
+    "avg_lat": 8580,
+    "total_tok": 19359,
+    "errors": 0
+  },
+  {
+    "case": "video_long",
+    "think": true,
+    "bs": 16,
+    "tps": 3353.9,
+    "avg_lat": 9298,
+    "total_tok": 34386,
+    "errors": 0
+  },
+  {
+    "case": "video_long",
+    "think": true,
+    "bs": 32,
+    "tps": 4250.7,
+    "avg_lat": 12339,
+    "total_tok": 74477,
+    "errors": 0
+  },
+  {
+    "case": "video_long",
+    "think": true,
+    "bs": 48,
+    "tps": 6047.4,
+    "avg_lat": 14532,
+    "total_tok": 107560,
+    "errors": 0
+  },
+  {
+    "case": "video_long",
+    "think": true,
+    "bs": 64,
+    "tps": 4751.8,
+    "avg_lat": 19112,
+    "total_tok": 143913,
+    "errors": 0
+  }
+]
