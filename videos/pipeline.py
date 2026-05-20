@@ -217,29 +217,40 @@ def disk_free_gb():
 # ==================== 清理黑名单视频 ====================
 
 def run_cleanup():
-    """同步黑名单后，删除已下载的黑名单视频 + 从 dl_progress 中移除"""
+    """同步黑名单后，删除已下载的黑名单视频/帧/缩略图 + 从 dl_progress 中移除"""
     _, blacklist = sync_from_peers()
     if not blacklist:
         logger.info("[cleanup] 黑名单为空，无需清理")
         return
 
-    # 扫描已下载视频
-    deleted = 0
-    for f in VIDEOS_DIR.iterdir():
-        vid = f.stem
-        if vid in blacklist:
-            f.unlink()
-            deleted += 1
+    # 清理视频、帧、缩略图
+    dirs = [
+        ("videos", VIDEOS_DIR),
+        ("frames", DATA_DIR / "frames"),
+        ("thumbs", DATA_DIR / "thumbs"),
+    ]
+    for name, d in dirs:
+        if not d.exists():
+            continue
+        deleted = 0
+        for f in d.iterdir():
+            if f.stem in blacklist:
+                f.unlink()
+                deleted += 1
+        if deleted:
+            logger.info(f"[cleanup] {name}: 删除 {deleted} 个文件")
 
     # 从 dl_progress 中剔除黑名单
     if DL_PROGRESS.exists():
         done = config.read_lines(DL_PROGRESS)
         clean_done = done - blacklist
-        if len(clean_done) < len(done):
+        removed = len(done) - len(clean_done)
+        if removed:
             with open(DL_PROGRESS, "w") as f:
                 f.write("\n".join(sorted(clean_done)) + "\n")
+            logger.info(f"[cleanup] dl_progress: 剔除 {removed} 条")
 
-    logger.info(f"[cleanup] 删除视频: {deleted} | dl_progress 剔除: {len(blacklist & config.read_lines(DL_PROGRESS)) if DL_PROGRESS.exists() else 0}")
+    logger.info(f"[cleanup] 完成, blacklist 总计: {len(blacklist)}")
 
 
 # ==================== 入口 ====================
