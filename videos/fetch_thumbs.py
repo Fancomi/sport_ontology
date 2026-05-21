@@ -23,28 +23,23 @@ THUMB_URL = "https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
 KEEP_FIELDS = ["video_id", "title", "channel", "duration", "view_count", "source", "label"]
 
 
-def _make_opener():
-    proxy = config.PROXY
-    if proxy:
-        return urllib.request.build_opener(
-            urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
-    return urllib.request.build_opener()
-
-
-def fetch_one(item, opener):
+def fetch_one(item):
     """下载缩略图 + 返回精简 meta"""
     vid = item["video_id"]
     thumb_path = config.THUMBS_DIR / f"{vid}.jpg"
 
     if not thumb_path.exists():
         try:
+            proxy = config.DOWNLOAD_POOL[hash(vid) % len(config.DOWNLOAD_POOL)]
+            opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
             url = THUMB_URL.format(vid=vid)
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             data = opener.open(req, timeout=10).read()
             if len(data) > 1000:
                 thumb_path.write_bytes(data)
             else:
-                return None  # 无效缩略图 = 视频不存在
+                return None
         except Exception:
             return None
 
@@ -74,13 +69,12 @@ def main():
         logger.info("无需处理")
         return
 
-    opener = _make_opener()
     valid, invalid = 0, 0
     meta_f = open(config.META_FILE, "a", encoding="utf-8")
 
     try:
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
-            futs = {pool.submit(fetch_one, item, opener): item for item in pending}
+            futs = {pool.submit(fetch_one, item): item for item in pending}
             for i, fut in enumerate(as_completed(futs), 1):
                 item = futs[fut]
                 vid = item["video_id"]

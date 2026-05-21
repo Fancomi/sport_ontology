@@ -32,6 +32,7 @@ cd "$(dirname "$0")"
 source /root/paddlejob/workspace/env_run/penghaotian/envs/dino/bin/activate
 export YT_PROXY=http://agent.baidu.com:8188
 export GITHUB_PROXY=http://njxg-banqian20230721-sousuo00230.njxg:3231/
+export PYTHONWARNINGS=ignore
 unset http_proxy https_proxy
 
 STEP=${1:-all}
@@ -41,9 +42,9 @@ echo "══════ 阶段一: URL 采集 + 筛选 (step=$STEP) ═══�
 run_crawl() {
     echo "[1/4] 采集..."
     python3 crawl.py datasets
-    python3 crawl.py search &
-    python3 crawl.py channels &
-    python3 crawl.py diverse &
+    python3 crawl.py search 2>/dev/null &
+    python3 crawl.py channels 2>/dev/null &
+    python3 crawl.py diverse 2>/dev/null &
     wait
     echo "  done"
 }
@@ -52,7 +53,6 @@ run_process() {
     echo "[2/4] 处理..."
     python3 process.py merge
     python3 process.py enrich
-    python3 process.py merge
     python3 process.py clean
     echo "  clean_videos: $(wc -l < results/clean_videos.jsonl) 条"
 }

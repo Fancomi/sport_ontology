@@ -26,7 +26,7 @@ OEMBED_URL = "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v
 
 def _fetch_oembed(video_id):
     """oEmbed API 获取 title + channel (不触发反爬)"""
-    proxy = config.PROXY
+    proxy = config.PROXY_POOL[0]
     handler = urllib.request.ProxyHandler({"http": proxy, "https": proxy}) if proxy else None
     opener = urllib.request.build_opener(handler) if handler else urllib.request.build_opener()
     try:
@@ -189,7 +189,6 @@ if __name__ == "__main__":
     elif cmd == "all":
         run_merge()
         run_enrich()
-        run_merge()
         run_clean()
     else:
         print("用法: python3 process.py [enrich|merge|clean|all]")

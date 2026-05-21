@@ -72,6 +72,20 @@ def _load_keywords():
         return [l.strip() for l in f if l.strip() and not l.startswith("#")]
 
 
+_yt_idx = 0
+_yt_lock = threading.Lock()
+
+
+def _ydl_opts(**extra):
+    """构建 yt-dlp 选项，轮询代理池（不占信号量，搜索是短请求）"""
+    global _yt_idx
+    with _yt_lock:
+        proxy = config.PROXY_POOL[_yt_idx % len(config.PROXY_POOL)]
+        _yt_idx += 1
+    opts = {**config.YDL_BASE, "proxy": proxy, **extra}
+    return opts
+
+
 def _is_valid_entry(e, seen_ids, blacklist):
     """通用条目校验: 去重 + 黑名单 + 时长 + 标题黑名单"""
     if not e or not e.get("id"):
@@ -97,7 +111,7 @@ def _is_valid_entry(e, seen_ids, blacklist):
 def _search_one(keyword, sp, seen_ids, blacklist):
     """搜索单个关键词+SP组合"""
     url = f"https://www.youtube.com/results?search_query={quote_plus(keyword)}&sp={sp}"
-    opts = {**config.YDL_BASE, "extract_flat": "in_playlist"}
+    opts = _ydl_opts(extract_flat="in_playlist")
     results = []
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -153,7 +167,7 @@ def run_search():
                 config.append_jsonl(config.SEARCH_RESULTS, results)
                 total += len(results)
             config.append_line(config.SEARCH_PROGRESS, key)
-            if i % 200 == 0:
+            if i % 100 == 0:
                 logger.info(f"搜索 [{i}/{len(tasks)}] 累计新增: {total}")
     logger.info(f"搜索完成! 新增: {total}")
 
@@ -168,8 +182,7 @@ def _crawl_one(channel, seen_ids, blacklist):
     if channel.startswith("UC") or channel.startswith("@"):
         urls.insert(0, f"https://www.youtube.com/{channel}/videos")
 
-    opts = {**config.YDL_BASE, "extract_flat": "in_playlist",
-            "playlistend": config.MAX_PER_CHANNEL_CRAWL}
+    opts = _ydl_opts(extract_flat="in_playlist", playlistend=config.MAX_PER_CHANNEL_CRAWL)
     results = []
     for url in urls:
         try:
@@ -199,16 +212,23 @@ def _crawl_one(channel, seen_ids, blacklist):
 
 def run_channels():
     """频道爬取主流程"""
-    # 从已有搜索结果 + 种子文件发现频道
-    channels = set()
+    from collections import Counter
+    # 从已有搜索结果 + 种子文件发现频道, 只爬出现≥2次的 (过滤噪音)
+    ch_counter = Counter()
     for src in [config.SEARCH_RESULTS, config.DIVERSE_VIDEOS]:
         for r in config.read_jsonl(src):
             if r.get("channel"):
-                channels.add(r["channel"].strip())
+                ch_counter[r["channel"].strip()] += 1
+    # 种子频道直接入选
+    seed = set()
     if config.CHANNELS_SEED.exists():
         with open(config.CHANNELS_SEED, "r", encoding="utf-8") as f:
-            channels |= {l.strip() for l in f if l.strip() and not l.startswith("#")}
-    channels = sorted(channels)
+            seed = {l.strip() for l in f if l.strip() and not l.startswith("#")}
+    # 只保留出现≥2次 或 种子频道, 且名字合法
+    channels = sorted(ch for ch, cnt in ch_counter.items()
+                      if (cnt >= 2 or ch in seed)
+                      and len(ch) > 2
+                      and (ch[0].isalnum() or ch.startswith("@") or ch.startswith("UC")))
 
     blacklist = config.load_blacklist()
     seen_ids = {r["video_id"] for r in config.read_jsonl(config.SEARCH_RESULTS)}
@@ -229,7 +249,7 @@ def run_channels():
                 config.append_jsonl(config.CHANNEL_VIDEOS, results)
                 total += len(results)
             config.append_line(config.CRAWL_PROGRESS, ch)
-            if i % 200 == 0:
+            if i % 100 == 0:
                 logger.info(f"频道 [{i}/{len(pending)}] 累计: {total}")
     logger.info(f"频道爬取完成! 新增: {total}")
 
@@ -239,7 +259,7 @@ def run_channels():
 def _diverse_search(query, sp, seen_ids, blacklist, ch_counts):
     """多样性搜索 (频道配额限制)"""
     url = f"https://www.youtube.com/results?search_query={quote_plus(query)}&sp={sp}"
-    opts = {**config.YDL_BASE, "extract_flat": "in_playlist"}
+    opts = _ydl_opts(extract_flat="in_playlist")
     results = []
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -312,7 +332,7 @@ def run_diverse():
                 config.append_jsonl(config.DIVERSE_VIDEOS, results)
                 total += len(results)
             config.append_line(config.DIVERSE_PROGRESS, f"{kw}|{sp}")
-            if i % 200 == 0:
+            if i % 100 == 0:
                 logger.info(f"多样性 [{i}/{len(pending)}] 累计: {total}, 频道: {len(ch_counts)}")
     logger.info(f"多样性搜索完成! 新增: {total}, 频道: {len(ch_counts)}")
 
@@ -320,16 +340,28 @@ def run_diverse():
 # ==================== 数据集获取 ====================
 
 def _download_file(url, path):
-    proxy = config.GITHUB_PROXY
-    handler = urllib.request.ProxyHandler({"http": proxy, "https": proxy}) if proxy else None
-    opener = urllib.request.build_opener(handler) if handler else urllib.request.build_opener()
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    data = opener.open(req, timeout=120).read()
-    path.write_bytes(data)
+    """使用代理池下载文件（带进度）"""
+    config.download_with_proxy(url, path, desc=path.stem)
+
+
+# Kinetics 健身相关标签白名单 (手动筛选)
+KINETICS_FITNESS_LABELS = {
+    "bench pressing", "deadlifting", "squat", "lunge", "pull ups", "push up",
+    "situp", "yoga", "stretching arm", "stretching leg", "snatch weight lifting",
+    "clean and jerk", "punching bag", "exercising arm", "exercising with an exercise ball",
+    "rope pushdown", "battle rope training", "kettlebell", "jumping jacks",
+    "burpees", "mountain climber (exercise)", "planking", "wall pushups",
+    "front raises", "side kick", "high kick", "roundhouse kick",
+    "punching person (boxing)", "headbutting", "wrestling", "tai chi",
+    "krumping", "swinging on something", "climbing a rope", "climbing ladder",
+    "pull ups", "chin ups", "muscle up", "handstand pushup", "plank",
+    "tricep dips", "box jumps", "jumping jacks", "skipping rope",
+    "using mechanical tools",
+}
 
 
 def run_datasets():
-    """下载 Kinetics CSV 全量提取 video_id"""
+    """下载 Kinetics CSV，仅保留健身相关标签"""
     config.init_dirs()
     blacklist = config.load_blacklist()
     all_ids = set()
@@ -346,15 +378,19 @@ def run_datasets():
             reader = csv.DictReader(f)
             for row in reader:
                 vid = row.get("youtube_id", "").strip()
-                if vid and vid not in blacklist:
-                    all_ids.add((vid, row.get("label", "")))
+                label = row.get("label", "").strip()
+                if not vid or vid in blacklist:
+                    continue
+                # 标签预过滤: 只留健身相关
+                if label.lower() in KINETICS_FITNESS_LABELS:
+                    all_ids.add((vid, label))
 
     existing = {r["video_id"] for r in config.read_jsonl(config.DATASET_IDS)}
     new_items = [{"video_id": vid, "title": label, "label": label,
                   "source": "kinetics"} for vid, label in all_ids if vid not in existing]
     if new_items:
         config.append_jsonl(config.DATASET_IDS, new_items)
-    logger.info(f"数据集: 全量 {len(all_ids)} | 新增 {len(new_items)}")
+    logger.info(f"数据集: 健身标签匹配 {len(all_ids)} | 新增 {len(new_items)}")
 
 
 # ==================== 入口 ====================
