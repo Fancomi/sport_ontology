@@ -29,6 +29,7 @@ command -v deno >/dev/null || { echo "ERROR: deno not in PATH"; exit 1; }
 
 echo "[4/5] YouTube 解签自检..."
 yt-dlp --proxy http://agent.baidu.com:8188 \
+  --remote-components ejs:github \
   --cookies /root/paddlejob/workspace/env_run/penghaotian/llm_infer/cookies_Resxuilpazcuoe_origin.txt \
   -f "18/best[height<=480][ext=mp4]/best[height<=720]/best" \
   --skip-download --print "%(id)s %(format_id)s" \

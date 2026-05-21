@@ -20,7 +20,8 @@
       "Bash(pip show:*)",
       "Bash(which node:*)",
       "Bash(cd:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Skill(keybindings-help)"
     ]
   }
 }

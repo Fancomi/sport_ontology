@@ -104,6 +104,7 @@ def download_one(item, out_dir):
         "extractor_retries": 1,
         "fragment_retries": 1,
         "concurrent_fragment_downloads": 1,
+        "remote_components": ["ejs:github"],
     }
     if _COOKIE_COPY:
         opts["cookiefile"] = str(_COOKIE_COPY)
