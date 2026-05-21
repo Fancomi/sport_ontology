@@ -19,11 +19,14 @@ unset http_proxy https_proxy
 
 echo "══════ 阶段二: 视频下载 (shard ${RANK}/${TOTAL}) ══════"
 
-# 首次启动: 同步黑名单 + 拉取最新 filtered.jsonl
+# 首次启动: 同步黑名单 + 从主节点拉取最新 filtered.jsonl (非主节点时)
 python3 pipeline.py --cleanup
-curl -sf --connect-timeout 5 -o /root/paddlejob/workspace/env_run/penghaotian/datas/videos/filtered.jsonl \
-    http://10.52.101.140:8555/datas/videos/filtered.jsonl && \
-    echo "  filtered.jsonl 已同步: $(wc -l < /root/paddlejob/workspace/env_run/penghaotian/datas/videos/filtered.jsonl) 条"
+LOCAL_IP=$(hostname -I | awk '{print $1}')
+if [[ "$LOCAL_IP" != "10.52.101.140" ]]; then
+    curl -sf --connect-timeout 5 -o /root/paddlejob/workspace/env_run/penghaotian/datas/videos/filtered.jsonl \
+        http://10.52.101.140:8555/datas/videos/filtered.jsonl && \
+        echo "  filtered.jsonl 已同步: $(wc -l < /root/paddlejob/workspace/env_run/penghaotian/datas/videos/filtered.jsonl) 条"
+fi
 
 while true; do
     python3 pipeline.py --dl-workers 15 --total-shards "$TOTAL" --shard-id "$RANK" 2>/dev/null
