@@ -62,8 +62,10 @@ def sync_from_peers():
 
     local_done = config.read_lines(DL_PROGRESS)
     local_bl = config.load_blacklist()
-    merged_done = local_done | all_done
     merged_bl = local_bl | all_bl
+    # 关键: done 永远过滤 blacklist，避免远端旧 dl_progress 把无效ID同步回来
+    merged_done_raw = local_done | all_done
+    merged_done = merged_done_raw - merged_bl
 
     with open(DL_PROGRESS, "w") as f:
         f.write("\n".join(sorted(merged_done)) + "\n")
@@ -71,7 +73,8 @@ def sync_from_peers():
     if new_bl:
         config.append_blacklist(new_bl)
 
-    logger.info(f"[同步] done: {len(local_done)}→{len(merged_done)} | bl: {len(local_bl)}→{len(merged_bl)}")
+    removed = len(merged_done_raw) - len(merged_done)
+    logger.info(f"[同步] done: {len(local_done)}→{len(merged_done)} | bl: {len(local_bl)}→{len(merged_bl)} | 剔除黑名单:{removed}")
     return merged_done, merged_bl
 
 
@@ -87,8 +90,14 @@ def download_one(item, out_dir):
     opts = {
         "proxy": proxy, "quiet": True, "no_warnings": True,
         "retries": 1, "socket_timeout": 30,
-        "format": "best[height<=720]/best",
+        "format": "18/best[height<=480][ext=mp4]/best[height<=720]/best",
         "outtmpl": str(out_dir / f"{vid}.%(ext)s"),
+        "noprogress": True,
+        "ratelimit": None,
+        "throttledratelimit": 50 * 1024,
+        "extractor_retries": 1,
+        "fragment_retries": 1,
+        "concurrent_fragment_downloads": 1,
     }
     if _COOKIE_COPY:
         opts["cookiefile"] = str(_COOKIE_COPY)
@@ -98,7 +107,9 @@ def download_one(item, out_dir):
             return bool(list(out_dir.glob(f"{vid}.*")))
     except Exception as e:
         msg = str(e).lower()
-        if "bot" in msg or "sign in" in msg:
+        if "signature" in msg or "n challenge" in msg:
+            logger.warning("[环境] yt-dlp 解签名失败，请确认 deno 在 PATH 中")
+        elif "bot" in msg or "sign in" in msg or "403" in msg:
             config.cooldown_proxy(proxy)
         elif any(k in msg for k in ("unavailable", "removed", "private", "not exist")):
             config.append_blacklist(vid)
@@ -116,7 +127,7 @@ def run_download(workers, total_shards, shard_id):
     pending = [r for r in items
                if r["video_id"] not in done
                and r["video_id"] not in blacklist
-               and hash(r["video_id"]) % total_shards == shard_id]
+               and config.stable_mod(r["video_id"], total_shards) == shard_id]
     random.shuffle(pending)
     logger.info(f"[下载] 分片:{shard_id}/{total_shards} 待下:{len(pending)} workers:{workers}")
 

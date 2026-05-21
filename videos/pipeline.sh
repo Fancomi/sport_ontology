@@ -19,6 +19,12 @@ unset http_proxy https_proxy
 
 echo "══════ 阶段二: 视频下载 (shard ${RANK}/${TOTAL}) ══════"
 
+# YouTube 2026 signature challenge 需要 Deno
+if ! command -v deno >/dev/null 2>&1; then
+    echo "未发现 deno，先安装..."
+    bash install_deno.sh
+fi
+
 # 首次启动: 同步黑名单 + 从主节点拉取最新 filtered.jsonl (非主节点时)
 python3 pipeline.py --cleanup
 LOCAL_IP=$(hostname -I | awk '{print $1}')

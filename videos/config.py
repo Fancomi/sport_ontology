@@ -4,6 +4,7 @@ import sys
 import json
 import logging
 import time
+import hashlib
 import threading
 from pathlib import Path
 
@@ -147,6 +148,11 @@ def alive_proxy_count() -> int:
     """当前可用代理数"""
     now = time.time()
     return sum(1 for p in PROXY_POOL if _proxy_cooldown.get(p, 0) < now)
+
+
+def stable_mod(text: str, mod: int) -> int:
+    """跨进程/跨机器稳定分片 hash"""
+    return int(hashlib.md5(text.encode()).hexdigest()[:8], 16) % mod
 
 
 # === 黑名单管理 (线程安全) ===
