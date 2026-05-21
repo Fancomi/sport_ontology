@@ -25,13 +25,18 @@ _spec.loader.exec_module(config)
 
 logger = config.get_logger(__name__, "pipeline.log")
 
-# === 二阶段 cookie (独立账号，避免与一阶段冲突) ===
-import shutil, tempfile
-_COOKIE_ORIGIN = Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer/cookies_Resxuilpazcuoe_origin.txt")
-_COOKIE_COPY = None
-if _COOKIE_ORIGIN.exists():
-    _COOKIE_COPY = Path(tempfile.gettempdir()) / f"yt_dl_cookies_{os.getpid()}.txt"
-    shutil.copy2(_COOKIE_ORIGIN, _COOKIE_COPY)
+# === 二阶段 cookies (一阶段已完成，两个账号都可用于下载) ===
+import tempfile
+_COOKIE_ORIGINS = [
+    Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer/cookies_Resxuilpazcuoe_origin.txt"),
+    Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer/cookies_Cocoonconcoction070_origin.txt"),
+]
+_COOKIE_COPIES = []
+for i, src in enumerate(_COOKIE_ORIGINS):
+    if src.exists():
+        dst = Path(tempfile.gettempdir()) / f"yt_dl_cookies_{i}_{os.getpid()}.txt"
+        shutil.copy2(src, dst)
+        _COOKIE_COPIES.append(dst)
 
 # === 路径 ===
 DATA_DIR = config.DATA_DIR
@@ -89,7 +94,7 @@ def download_one(item, out_dir):
     """下载单个视频，使用 config 统一代理管理"""
     vid = item["video_id"]
     if list(out_dir.glob(f"{vid}.*")):
-        return True, "exists", "local", 0.0
+        return True, "exists", "local", 0.0, "local"
 
     t0 = time.time()
     proxy = config.pick_proxy(vid)
@@ -106,12 +111,16 @@ def download_one(item, out_dir):
         "concurrent_fragment_downloads": 1,
         "remote_components": ["ejs:github"],
     }
-    if _COOKIE_COPY:
-        opts["cookiefile"] = str(_COOKIE_COPY)
+    cookie_name = "none"
+    if _COOKIE_COPIES:
+        # 按 video_id 稳定分配 cookie，避免单账号压力集中
+        idx = config.stable_mod(vid, len(_COOKIE_COPIES))
+        opts["cookiefile"] = str(_COOKIE_COPIES[idx])
+        cookie_name = f"cookie{idx}"
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([f"https://www.youtube.com/watch?v={vid}"])
-            return bool(list(out_dir.glob(f"{vid}.*"))), "ok", _pname(proxy), time.time() - t0
+            return bool(list(out_dir.glob(f"{vid}.*"))), "ok", _pname(proxy), time.time() - t0, cookie_name
     except Exception as e:
         msg = str(e).lower()
         if "signature" in msg or "n challenge" in msg:
@@ -129,7 +138,7 @@ def download_one(item, out_dir):
             reason = "timeout"
         else:
             reason = "other"
-        return False, reason, _pname(proxy), time.time() - t0
+        return False, reason, _pname(proxy), time.time() - t0, cookie_name
     finally:
         config.release_proxy(proxy)
 
@@ -151,12 +160,13 @@ def run_download(workers, total_shards, shard_id):
         logger.info("[下载] 无待下载任务")
         return
 
-    logger.info(f"[环境] deno={shutil.which('deno') or 'NOT_FOUND'} cookie={_COOKIE_COPY}")
+    logger.info(f"[环境] deno={shutil.which('deno') or 'NOT_FOUND'} cookies={len(_COOKIE_COPIES)}")
     from collections import Counter, defaultdict
     ok, fail = 0, 0
     reasons = Counter()
     proxy_stats = defaultdict(lambda: Counter(ok=0, fail=0, sec=0.0))
-    BATCH = 20
+    cookie_stats = defaultdict(lambda: Counter(ok=0, fail=0))
+    BATCH = 50
 
     for batch_start in range(0, len(pending), BATCH):
         if disk_free_gb() < DISK_LIMIT_GB:
@@ -171,15 +181,17 @@ def run_download(workers, total_shards, shard_id):
             futs = {pool.submit(download_one, item, VIDEOS_DIR): item for item in batch}
             for fut in as_completed(futs):
                 item = futs[fut]
-                success, reason, proxy, sec = fut.result()
+                success, reason, proxy, sec, cookie = fut.result()
                 reasons[reason] += 1
                 proxy_stats[proxy]["sec"] += sec
                 if success:
                     proxy_stats[proxy]["ok"] += 1
+                    cookie_stats[cookie]["ok"] += 1
                     config.append_line(DL_PROGRESS, item["video_id"])
                     ok += 1
                 else:
                     proxy_stats[proxy]["fail"] += 1
+                    cookie_stats[cookie]["fail"] += 1
                     fail += 1
 
         if (batch_start // BATCH) % 1 == 0:
@@ -189,9 +201,10 @@ def run_download(workers, total_shards, shard_id):
                 n = st["ok"] + st["fail"]
                 if n:
                     proxy_brief.append(f"{p}:ok{st['ok']}/fail{st['fail']}/avg{st['sec']/n:.1f}s")
+            cookie_brief = ",".join(f"{k}:ok{v['ok']}/fail{v['fail']}" for k, v in sorted(cookie_stats.items()))
             logger.info(f"[下载] [{batch_start+len(batch)}/{len(pending)}] "
                         f"成功:{ok} 失败:{fail} 代理:{config.alive_proxy_count()}/{len(config.PROXY_POOL)} "
-                        f"磁盘:{disk_free_gb():.0f}GB 原因:{top_reason} | {' ; '.join(proxy_brief[:5])}")
+                        f"磁盘:{disk_free_gb():.0f}GB 原因:{top_reason} cookies:{cookie_brief} | {' ; '.join(proxy_brief[:5])}")
 
     logger.info(f"[下载] 完成! 成功:{ok} 失败:{fail}")
 
@@ -238,7 +251,7 @@ def run_cleanup():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dl-workers", type=int, default=15)
+    parser.add_argument("--dl-workers", type=int, default=50)
     parser.add_argument("--total-shards", type=int, default=1)
     parser.add_argument("--shard-id", type=int, default=0)
     parser.add_argument("--cleanup", action="store_true")

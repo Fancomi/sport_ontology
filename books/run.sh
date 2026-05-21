@@ -19,8 +19,13 @@ source "$(dirname "$0")/../vllm_deploy/detect_ports.sh" # 这里会将THINK转�
 # # # shellcheck disable=SC2086
 # # python T1_auto_pair.py --dir /root/paddlejob/workspace/env_run/penghaotian/datas/book_md $VLM $THINK_FLAG
 
-# # 加 --text-merge 可用文本重合度合并（替代 VLM 视觉合并，速度更快）：
-# python T1_auto_pair.py --dir /root/paddlejob/workspace/env_run/penghaotian/datas/book_md $VLM $THINK_FLAG --text-merge
+# # 新版 T1 默认只处理人工保留的 264 本书，按「文本段抽取 → 图片 caption → 图片成组 → 图文匹配」四阶段运行：
+# # shellcheck disable=SC2086
+# python T1_auto_pair.py --review $VLM $THINK_FLAG -w 32
+#
+# # 小规模测试示例：只跑 1 本书、2 个文本窗口、20 张图，输出 pairs_test_*.json：
+# # shellcheck disable=SC2086
+# python T1_auto_pair.py --review $VLM $THINK_FLAG --limit-books 1 --limit-windows 2 --limit-images 20 --out-prefix pairs_test -w 4 --force
 
 # # 转为数据集
 # python build_dataset.py \

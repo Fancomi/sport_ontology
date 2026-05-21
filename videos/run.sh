@@ -65,8 +65,9 @@ run_thumbs() {
 
 run_vlm() {
     echo "[4/4] VLM 筛选..."
+    export WORKERS=${WORKERS:-256}
     source ../vllm_deploy/detect_ports.sh
-    python3 filter_vlm.py $VLM
+    python3 filter_vlm.py $VLM --batch-size 5000
     echo "  filtered: $(wc -l < /root/paddlejob/workspace/env_run/penghaotian/datas/videos/filtered.jsonl) 条"
 }
 

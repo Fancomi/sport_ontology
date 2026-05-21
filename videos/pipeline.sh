@@ -35,7 +35,7 @@ if [[ "$LOCAL_IP" != "10.52.101.140" ]]; then
 fi
 
 while true; do
-    python3 pipeline.py --dl-workers 15 --total-shards "$TOTAL" --shard-id "$RANK" 2>/dev/null
+    python3 pipeline.py --dl-workers 50 --total-shards "$TOTAL" --shard-id "$RANK" 2>/dev/null
     echo "$(date '+%H:%M') 进程退出, 5分钟后重启..."
     sleep 300
 done

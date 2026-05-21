@@ -18,6 +18,7 @@ __pycache__/
 .claudian
 books/datas/
 books/data/
+books/logs
 tools/9_1_progress.json
 videos/downloads
 videos/logs
