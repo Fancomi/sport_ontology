@@ -11,6 +11,7 @@ import random
 import time
 import threading
 import urllib.request
+import shutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -84,7 +85,7 @@ def download_one(item, out_dir):
     """下载单个视频，使用 config 统一代理管理"""
     vid = item["video_id"]
     if list(out_dir.glob(f"{vid}.*")):
-        return True
+        return True, "exists"
 
     proxy = config.pick_proxy(vid)
     opts = {
@@ -104,16 +105,24 @@ def download_one(item, out_dir):
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([f"https://www.youtube.com/watch?v={vid}"])
-            return bool(list(out_dir.glob(f"{vid}.*")))
+            return bool(list(out_dir.glob(f"{vid}.*"))), "ok"
     except Exception as e:
         msg = str(e).lower()
         if "signature" in msg or "n challenge" in msg:
-            logger.warning("[环境] yt-dlp 解签名失败，请确认 deno 在 PATH 中")
+            reason = "deno_signature"
+        elif "requested format is not available" in msg:
+            reason = "format_unavailable"
         elif "bot" in msg or "sign in" in msg or "403" in msg:
             config.cooldown_proxy(proxy)
+            reason = "blocked_403"
         elif any(k in msg for k in ("unavailable", "removed", "private", "not exist")):
             config.append_blacklist(vid)
-        return False
+            reason = "invalid_video"
+        elif "timed out" in msg or "timeout" in msg:
+            reason = "timeout"
+        else:
+            reason = "other"
+        return False, reason
     finally:
         config.release_proxy(proxy)
 
@@ -135,7 +144,10 @@ def run_download(workers, total_shards, shard_id):
         logger.info("[下载] 无待下载任务")
         return
 
+    logger.info(f"[环境] deno={shutil.which('deno') or 'NOT_FOUND'} cookie={_COOKIE_COPY}")
+    from collections import Counter
     ok, fail = 0, 0
+    reasons = Counter()
     BATCH = 20
 
     for batch_start in range(0, len(pending), BATCH):
@@ -151,16 +163,19 @@ def run_download(workers, total_shards, shard_id):
             futs = {pool.submit(download_one, item, VIDEOS_DIR): item for item in batch}
             for fut in as_completed(futs):
                 item = futs[fut]
-                if fut.result():
+                success, reason = fut.result()
+                reasons[reason] += 1
+                if success:
                     config.append_line(DL_PROGRESS, item["video_id"])
                     ok += 1
                 else:
                     fail += 1
 
         if (batch_start // BATCH) % 1 == 0:
+            top_reason = ",".join(f"{k}:{v}" for k, v in reasons.most_common(3))
             logger.info(f"[下载] [{batch_start+len(batch)}/{len(pending)}] "
                         f"成功:{ok} 失败:{fail} 代理:{config.alive_proxy_count()}/{len(config.PROXY_POOL)} "
-                        f"磁盘:{disk_free_gb():.0f}GB")
+                        f"磁盘:{disk_free_gb():.0f}GB 原因:{top_reason}")
 
     logger.info(f"[下载] 完成! 成功:{ok} 失败:{fail}")
 
