@@ -1,0 +1,444 @@
+{
+  "config": {
+    "ports": [
+      8001,
+      8002,
+      8003,
+      8004,
+      8005,
+      8006,
+      8007,
+      8008
+    ],
+    "per_port_concurrency": 1,
+    "total_concurrency": 8,
+    "duration_s": 20.0,
+    "case": "text_short",
+    "think": false,
+    "max_tokens": 60,
+    "request_timeout_s": 60.0,
+    "bucket_seconds": 10
+  },
+  "stable": true,
+  "stability_checks": {
+    "zero_errors": true,
+    "ports_healthy_after": true,
+    "chat_probes_ok_after": true,
+    "max_memory_growth_mb": 622,
+    "memory_growth_ok": true,
+    "latency_growth": {
+      "ratio": null,
+      "early_p50_ms": null,
+      "late_p50_ms": null
+    },
+    "latency_growth_ok": true
+  },
+  "port_health_before": {
+    "8001": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8002": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8003": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8004": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8005": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8006": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8007": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8008": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    }
+  },
+  "port_health_after": {
+    "8001": {
+      "ok": true
+    },
+    "8002": {
+      "ok": true
+    },
+    "8003": {
+      "ok": true
+    },
+    "8004": {
+      "ok": true
+    },
+    "8005": {
+      "ok": true
+    },
+    "8006": {
+      "ok": true
+    },
+    "8007": {
+      "ok": true
+    },
+    "8008": {
+      "ok": true
+    }
+  },
+  "chat_probes_after": {
+    "8001": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 122.4,
+      "text": "{\"id\":\"dd7928a45d5b4d8bac2f741a40af72f8\",\"object\":\"chat.completion\",\"created\":1779520114,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8002": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 123.5,
+      "text": "{\"id\":\"62bb9ec081ef48cab489cd6577f5fa50\",\"object\":\"chat.completion\",\"created\":1779520114,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8003": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 124.8,
+      "text": "{\"id\":\"4979c554efa84f809fb7699cd87b51e5\",\"object\":\"chat.completion\",\"created\":1779520114,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8004": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 123.9,
+      "text": "{\"id\":\"8c852861848c4eba86a1cc23b5a28605\",\"object\":\"chat.completion\",\"created\":1779520114,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8005": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 122.2,
+      "text": "{\"id\":\"18b37fe7168a48dfb4e14e7411089495\",\"object\":\"chat.completion\",\"created\":1779520115,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8006": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 153.9,
+      "text": "{\"id\":\"4c4fe34a5be545199b2ea964cddec8a4\",\"object\":\"chat.completion\",\"created\":1779520115,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8007": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 155.5,
+      "text": "{\"id\":\"51bd2b7f3aa141b78e941db6f10968aa\",\"object\":\"chat.completion\",\"created\":1779520115,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8008": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 151.4,
+      "text": "{\"id\":\"c0f36a3e98ea409b82ab0bb380071522\",\"object\":\"chat.completion\",\"created\":1779520115,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    }
+  },
+  "summary": {
+    "duration_s": 20.2,
+    "requests": 777,
+    "successful_requests": 777,
+    "errors": 0,
+    "total_tokens": 14763,
+    "throughput_tps": 729.5,
+    "avg_latency_ms": 206.7,
+    "p50_latency_ms": 224.2,
+    "p95_latency_ms": 243.0,
+    "p99_latency_ms": 250.8,
+    "by_port": {
+      "8001": {
+        "requests": 123,
+        "errors": 0,
+        "tokens": 2337,
+        "avg_latency_ms": 162.8,
+        "p50_latency_ms": 147.0,
+        "p95_latency_ms": 223.2,
+        "tps": 115.5
+      },
+      "8002": {
+        "requests": 111,
+        "errors": 0,
+        "tokens": 2109,
+        "avg_latency_ms": 180.8,
+        "p50_latency_ms": 147.2,
+        "p95_latency_ms": 242.5,
+        "tps": 104.2
+      },
+      "8003": {
+        "requests": 106,
+        "errors": 0,
+        "tokens": 2014,
+        "avg_latency_ms": 189.4,
+        "p50_latency_ms": 218.9,
+        "p95_latency_ms": 225.4,
+        "tps": 99.5
+      },
+      "8004": {
+        "requests": 93,
+        "errors": 0,
+        "tokens": 1767,
+        "avg_latency_ms": 214.9,
+        "p50_latency_ms": 233.5,
+        "p95_latency_ms": 243.0,
+        "tps": 87.3
+      },
+      "8005": {
+        "requests": 90,
+        "errors": 0,
+        "tokens": 1710,
+        "avg_latency_ms": 223.0,
+        "p50_latency_ms": 223.4,
+        "p95_latency_ms": 228.4,
+        "tps": 84.5
+      },
+      "8006": {
+        "requests": 83,
+        "errors": 0,
+        "tokens": 1577,
+        "avg_latency_ms": 242.0,
+        "p50_latency_ms": 242.2,
+        "p95_latency_ms": 245.6,
+        "tps": 77.9
+      },
+      "8007": {
+        "requests": 84,
+        "errors": 0,
+        "tokens": 1596,
+        "avg_latency_ms": 240.7,
+        "p50_latency_ms": 240.2,
+        "p95_latency_ms": 244.5,
+        "tps": 78.9
+      },
+      "8008": {
+        "requests": 87,
+        "errors": 0,
+        "tokens": 1653,
+        "avg_latency_ms": 230.6,
+        "p50_latency_ms": 230.8,
+        "p95_latency_ms": 235.5,
+        "tps": 81.7
+      }
+    },
+    "buckets": [
+      {
+        "start_s": 0.0,
+        "end_s": 10.0,
+        "requests": 360,
+        "errors": 0,
+        "tokens": 6840,
+        "tps": 684.0,
+        "p50_latency_ms": 231.3,
+        "p95_latency_ms": 243.3
+      },
+      {
+        "start_s": 10.0,
+        "end_s": 20.0,
+        "requests": 417,
+        "errors": 0,
+        "tokens": 7923,
+        "tps": 792.3,
+        "p50_latency_ms": 217.2,
+        "p95_latency_ms": 242.7
+      },
+      {
+        "start_s": 20.0,
+        "end_s": 20.2,
+        "requests": 0,
+        "errors": 0,
+        "tokens": 0,
+        "tps": 0.0,
+        "p50_latency_ms": null,
+        "p95_latency_ms": null
+      }
+    ],
+    "first_error": null
+  },
+  "gpu_memory": {
+    "0": {
+      "min_mb": 62040,
+      "max_mb": 62662,
+      "delta_mb": 622
+    },
+    "1": {
+      "min_mb": 62040,
+      "max_mb": 62662,
+      "delta_mb": 622
+    },
+    "2": {
+      "min_mb": 62040,
+      "max_mb": 62662,
+      "delta_mb": 622
+    },
+    "3": {
+      "min_mb": 62040,
+      "max_mb": 62662,
+      "delta_mb": 622
+    },
+    "4": {
+      "min_mb": 62662,
+      "max_mb": 62662,
+      "delta_mb": 0
+    },
+    "5": {
+      "min_mb": 62662,
+      "max_mb": 62662,
+      "delta_mb": 0
+    },
+    "6": {
+      "min_mb": 62662,
+      "max_mb": 62662,
+      "delta_mb": 0
+    },
+    "7": {
+      "min_mb": 63166,
+      "max_mb": 63166,
+      "delta_mb": 0
+    }
+  },
+  "gpu_samples": [
+    {
+      "t_s": 0.0,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62662,
+          "util_pct": 100
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62662,
+          "util_pct": 100
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62662,
+          "util_pct": 97
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62662,
+          "util_pct": 100
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62662,
+          "util_pct": 98
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62662,
+          "util_pct": 98
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62662,
+          "util_pct": 100
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 63166,
+          "util_pct": 99
+        }
+      ]
+    },
+    {
+      "t_s": 10.2,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62040,
+          "util_pct": 50
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62662,
+          "util_pct": 42
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62662,
+          "util_pct": 100
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62662,
+          "util_pct": 100
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62662,
+          "util_pct": 100
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62662,
+          "util_pct": 100
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62662,
+          "util_pct": 100
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 63166,
+          "util_pct": 100
+        }
+      ]
+    },
+    {
+      "t_s": 20.2,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62040,
+          "util_pct": 5
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62040,
+          "util_pct": 25
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62040,
+          "util_pct": 35
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62040,
+          "util_pct": 32
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62662,
+          "util_pct": 39
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62662,
+          "util_pct": 93
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62662,
+          "util_pct": 100
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 63166,
+          "util_pct": 78
+        }
+      ]
+    }
+  ]
+}

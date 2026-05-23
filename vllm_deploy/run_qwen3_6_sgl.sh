@@ -15,6 +15,7 @@ usage() {
 PORT_START=8001
 NUM_INSTANCES=8
 GPU_START=0
+WATCHDOG_TIMEOUT=${WATCHDOG_TIMEOUT:-1200}
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -26,7 +27,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "配置: PORT_START=$PORT_START, NUM_INSTANCES=$NUM_INSTANCES, GPU_START=$GPU_START"
+echo "配置: PORT_START=$PORT_START, NUM_INSTANCES=$NUM_INSTANCES, GPU_START=$GPU_START, WATCHDOG_TIMEOUT=$WATCHDOG_TIMEOUT"
 
 MODEL=/root/paddlejob/workspace/env_run/penghaotian/models/Qwen3.6-35B-A3B-FP8
 SHM_MODEL=/dev/shm/models/$(basename $MODEL)
@@ -46,7 +47,7 @@ for i in $(seq 0 $((NUM_INSTANCES - 1))); do
     GPU=$((GPU_START + i))
     DIST_PORT=$((29500 + i))
 
-    SGLANG_ENABLE_SPEC_V2=1 CUDA_VISIBLE_DEVICES=$GPU \
+    SGLANG_ENABLE_SPEC_V2=1 SGLANG_ENABLE_JIT_DEEPGEMM=0 CUDA_VISIBLE_DEVICES=$GPU \
     python -m sglang.launch_server \
         --model-path $MODEL \
         --port $PORT \
@@ -54,6 +55,7 @@ for i in $(seq 0 $((NUM_INSTANCES - 1))); do
         --tp-size 1 \
         --mem-fraction-static 0.8 \
         --context-length 16384 \
+        --watchdog-timeout $WATCHDOG_TIMEOUT \
         --reasoning-parser qwen3 \
         --mamba-scheduler-strategy extra_buffer \
         --speculative-algo NEXTN \

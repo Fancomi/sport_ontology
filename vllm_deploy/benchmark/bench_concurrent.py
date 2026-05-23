@@ -39,18 +39,27 @@ VIDEO_SUFFIX_LONG = "详细分析视频中人物的动作技术，包括身体�
 VIDEO_SUFFIX_SHORT = "这个人在做什么动作？一句话描述。"
 
 
+FRAME_B64 = None
+
+
 def load_frame():
     cap = cv2.VideoCapture(VIDEO_PATH)
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.set(cv2.CAP_PROP_POS_FRAMES, total // 2)
     ret, frame = cap.read()
     cap.release()
+    if not ret or frame is None:
+        raise RuntimeError(f"无法读取视频帧: {VIDEO_PATH}")
     frame = cv2.resize(frame, (512, 512))
     _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
     return base64.b64encode(buf).decode()
 
 
-FRAME_B64 = load_frame()
+def get_frame_b64():
+    global FRAME_B64
+    if FRAME_B64 is None:
+        FRAME_B64 = load_frame()
+    return FRAME_B64
 
 CASES = [
     {"name": "text_short",       "video": False, "long_out": False, "prompt": SHORT_PROMPT,       "max_tokens": 60},
@@ -67,7 +76,7 @@ CASES = [
 def build_body(case, model_id, think):
     content = []
     if case["video"]:
-        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{FRAME_B64}"}})
+        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{get_frame_b64()}"}})
     prompt = case["prompt"]
     if not think:
         prompt += " /no_think"

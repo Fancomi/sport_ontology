@@ -1,0 +1,959 @@
+{
+  "config": {
+    "ports": [
+      8001,
+      8002,
+      8003,
+      8004,
+      8005,
+      8006,
+      8007,
+      8008
+    ],
+    "per_port_concurrency": 15,
+    "total_concurrency": 120,
+    "duration_s": 120.0,
+    "case": "text_long",
+    "think": false,
+    "max_tokens": 1024,
+    "request_timeout_s": 300.0,
+    "bucket_seconds": 30
+  },
+  "stable": true,
+  "stability_checks": {
+    "zero_errors": true,
+    "ports_healthy_after": true,
+    "chat_probes_ok_after": true,
+    "max_memory_growth_mb": 136,
+    "memory_growth_ok": true,
+    "latency_growth": {
+      "ratio": 1.003,
+      "early_p50_ms": 8274.7,
+      "late_p50_ms": 8296.8
+    },
+    "latency_growth_ok": true
+  },
+  "port_health_before": {
+    "8001": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8002": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8003": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8004": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8005": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8006": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8007": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    },
+    "8008": {
+      "ok": true,
+      "model": "/dev/shm/models/Qwen3.6-35B-A3B-FP8"
+    }
+  },
+  "port_health_after": {
+    "8001": {
+      "ok": true
+    },
+    "8002": {
+      "ok": true
+    },
+    "8003": {
+      "ok": true
+    },
+    "8004": {
+      "ok": true
+    },
+    "8005": {
+      "ok": true
+    },
+    "8006": {
+      "ok": true
+    },
+    "8007": {
+      "ok": true
+    },
+    "8008": {
+      "ok": true
+    }
+  },
+  "chat_probes_after": {
+    "8001": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 124.6,
+      "text": "{\"id\":\"4c33b4e42cac4558a8b756b0c5a0b915\",\"object\":\"chat.completion\",\"created\":1779526052,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8002": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 126.4,
+      "text": "{\"id\":\"305b8f5acead45e6b5ea2ccbb9031d5e\",\"object\":\"chat.completion\",\"created\":1779526052,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8003": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 126.6,
+      "text": "{\"id\":\"dfc766ab2eaa44ee97f41789dbe82bbb\",\"object\":\"chat.completion\",\"created\":1779526052,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8004": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 127.0,
+      "text": "{\"id\":\"eb06222fe23343f992007c6e2a152694\",\"object\":\"chat.completion\",\"created\":1779526053,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8005": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 123.2,
+      "text": "{\"id\":\"83ab4ac5f49747549ca4c45ff7779c30\",\"object\":\"chat.completion\",\"created\":1779526053,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8006": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 125.5,
+      "text": "{\"id\":\"864104995de04e42b7c03171a37c6fba\",\"object\":\"chat.completion\",\"created\":1779526053,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8007": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 126.6,
+      "text": "{\"id\":\"b61c66fa551c45208d9e9d0ce0f53f13\",\"object\":\"chat.completion\",\"created\":1779526053,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    },
+    "8008": {
+      "ok": true,
+      "status": 200,
+      "latency_ms": 125.2,
+      "text": "{\"id\":\"18a7d85f451347368916b8d09bdae2d0\",\"object\":\"chat.completion\",\"created\":1779526053,\"model\":\"/dev/shm/models/Qwen3.6-35B-A3B-FP8\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Po"
+    }
+  },
+  "summary": {
+    "duration_s": 125.7,
+    "requests": 1834,
+    "successful_requests": 1834,
+    "errors": 0,
+    "total_tokens": 1733605,
+    "throughput_tps": 13793.2,
+    "avg_latency_ms": 8042.9,
+    "p50_latency_ms": 8400.8,
+    "p95_latency_ms": 9077.2,
+    "p99_latency_ms": 9293.9,
+    "by_port": {
+      "8001": {
+        "requests": 229,
+        "errors": 0,
+        "tokens": 217195,
+        "avg_latency_ms": 8019.1,
+        "p50_latency_ms": 8329.9,
+        "p95_latency_ms": 8985.7,
+        "tps": 1728.1
+      },
+      "8002": {
+        "requests": 228,
+        "errors": 0,
+        "tokens": 216775,
+        "avg_latency_ms": 8093.7,
+        "p50_latency_ms": 8384.2,
+        "p95_latency_ms": 9087.3,
+        "tps": 1724.7
+      },
+      "8003": {
+        "requests": 230,
+        "errors": 0,
+        "tokens": 216656,
+        "avg_latency_ms": 8014.0,
+        "p50_latency_ms": 8411.0,
+        "p95_latency_ms": 9039.6,
+        "tps": 1723.8
+      },
+      "8004": {
+        "requests": 230,
+        "errors": 0,
+        "tokens": 215710,
+        "avg_latency_ms": 8046.0,
+        "p50_latency_ms": 8451.9,
+        "p95_latency_ms": 9102.6,
+        "tps": 1716.3
+      },
+      "8005": {
+        "requests": 230,
+        "errors": 0,
+        "tokens": 218634,
+        "avg_latency_ms": 8017.7,
+        "p50_latency_ms": 8355.9,
+        "p95_latency_ms": 9001.2,
+        "tps": 1739.5
+      },
+      "8006": {
+        "requests": 232,
+        "errors": 0,
+        "tokens": 216413,
+        "avg_latency_ms": 7926.4,
+        "p50_latency_ms": 8281.7,
+        "p95_latency_ms": 9138.4,
+        "tps": 1721.9
+      },
+      "8007": {
+        "requests": 228,
+        "errors": 0,
+        "tokens": 215545,
+        "avg_latency_ms": 8098.8,
+        "p50_latency_ms": 8447.1,
+        "p95_latency_ms": 9168.4,
+        "tps": 1715.0
+      },
+      "8008": {
+        "requests": 227,
+        "errors": 0,
+        "tokens": 216677,
+        "avg_latency_ms": 8130.3,
+        "p50_latency_ms": 8485.2,
+        "p95_latency_ms": 9051.5,
+        "tps": 1724.0
+      }
+    },
+    "buckets": [
+      {
+        "start_s": 0.0,
+        "end_s": 30.0,
+        "requests": 499,
+        "errors": 0,
+        "tokens": 472381,
+        "tps": 15746.0,
+        "p50_latency_ms": 8274.7,
+        "p95_latency_ms": 9099.0
+      },
+      {
+        "start_s": 30.0,
+        "end_s": 60.0,
+        "requests": 460,
+        "errors": 0,
+        "tokens": 436702,
+        "tps": 14556.7,
+        "p50_latency_ms": 8499.4,
+        "p95_latency_ms": 9102.5
+      },
+      {
+        "start_s": 60.0,
+        "end_s": 90.0,
+        "requests": 433,
+        "errors": 0,
+        "tokens": 407731,
+        "tps": 13591.0,
+        "p50_latency_ms": 8481.8,
+        "p95_latency_ms": 9075.0
+      },
+      {
+        "start_s": 90.0,
+        "end_s": 120.0,
+        "requests": 442,
+        "errors": 0,
+        "tokens": 416791,
+        "tps": 13893.0,
+        "p50_latency_ms": 8296.8,
+        "p95_latency_ms": 9000.5
+      },
+      {
+        "start_s": 120.0,
+        "end_s": 125.7,
+        "requests": 0,
+        "errors": 0,
+        "tokens": 0,
+        "tps": 0.0,
+        "p50_latency_ms": null,
+        "p95_latency_ms": null
+      }
+    ],
+    "first_error": null
+  },
+  "gpu_memory": {
+    "0": {
+      "min_mb": 62360,
+      "max_mb": 62496,
+      "delta_mb": 136
+    },
+    "1": {
+      "min_mb": 62864,
+      "max_mb": 62982,
+      "delta_mb": 118
+    },
+    "2": {
+      "min_mb": 62344,
+      "max_mb": 62460,
+      "delta_mb": 116
+    },
+    "3": {
+      "min_mb": 62866,
+      "max_mb": 62982,
+      "delta_mb": 116
+    },
+    "4": {
+      "min_mb": 62360,
+      "max_mb": 62478,
+      "delta_mb": 118
+    },
+    "5": {
+      "min_mb": 62848,
+      "max_mb": 62964,
+      "delta_mb": 116
+    },
+    "6": {
+      "min_mb": 62848,
+      "max_mb": 62964,
+      "delta_mb": 116
+    },
+    "7": {
+      "min_mb": 62868,
+      "max_mb": 62984,
+      "delta_mb": 116
+    }
+  },
+  "gpu_samples": [
+    {
+      "t_s": 0.0,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62360,
+          "util_pct": 11
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62864,
+          "util_pct": 8
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62344,
+          "util_pct": 2
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62866,
+          "util_pct": 0
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62360,
+          "util_pct": 57
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62848,
+          "util_pct": 0
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62848,
+          "util_pct": 1
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62868,
+          "util_pct": 0
+        }
+      ]
+    },
+    {
+      "t_s": 10.2,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62496,
+          "util_pct": 100
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62980,
+          "util_pct": 100
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62460,
+          "util_pct": 100
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62982,
+          "util_pct": 100
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62478,
+          "util_pct": 100
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62984,
+          "util_pct": 100
+        }
+      ]
+    },
+    {
+      "t_s": 21.1,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62496,
+          "util_pct": 100
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62982,
+          "util_pct": 100
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62460,
+          "util_pct": 100
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62982,
+          "util_pct": 100
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62478,
+          "util_pct": 100
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62984,
+          "util_pct": 100
+        }
+      ]
+    },
+    {
+      "t_s": 31.3,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62496,
+          "util_pct": 62
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62982,
+          "util_pct": 99
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62460,
+          "util_pct": 90
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62982,
+          "util_pct": 63
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62478,
+          "util_pct": 68
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62964,
+          "util_pct": 64
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62964,
+          "util_pct": 62
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62984,
+          "util_pct": 100
+        }
+      ]
+    },
+    {
+      "t_s": 41.7,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62496,
+          "util_pct": 93
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62982,
+          "util_pct": 64
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62460,
+          "util_pct": 72
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62982,
+          "util_pct": 100
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62478,
+          "util_pct": 65
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62964,
+          "util_pct": 98
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62964,
+          "util_pct": 64
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62984,
+          "util_pct": 71
+        }
+      ]
+    },
+    {
+      "t_s": 51.9,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62496,
+          "util_pct": 100
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62982,
+          "util_pct": 64
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62460,
+          "util_pct": 100
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62982,
+          "util_pct": 100
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62478,
+          "util_pct": 100
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62984,
+          "util_pct": 64
+        }
+      ]
+    },
+    {
+      "t_s": 62.9,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62496,
+          "util_pct": 76
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62982,
+          "util_pct": 78
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62460,
+          "util_pct": 64
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62982,
+          "util_pct": 91
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62478,
+          "util_pct": 90
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62964,
+          "util_pct": 54
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62964,
+          "util_pct": 89
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62984,
+          "util_pct": 91
+        }
+      ]
+    },
+    {
+      "t_s": 73.1,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62496,
+          "util_pct": 83
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62982,
+          "util_pct": 66
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62460,
+          "util_pct": 100
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62982,
+          "util_pct": 71
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62478,
+          "util_pct": 100
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62964,
+          "util_pct": 94
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62984,
+          "util_pct": 95
+        }
+      ]
+    },
+    {
+      "t_s": 83.5,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62496,
+          "util_pct": 100
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62982,
+          "util_pct": 100
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62460,
+          "util_pct": 100
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62982,
+          "util_pct": 85
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62478,
+          "util_pct": 100
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62984,
+          "util_pct": 100
+        }
+      ]
+    },
+    {
+      "t_s": 94.0,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62496,
+          "util_pct": 100
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62982,
+          "util_pct": 64
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62460,
+          "util_pct": 63
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62982,
+          "util_pct": 100
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62478,
+          "util_pct": 58
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62964,
+          "util_pct": 70
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62984,
+          "util_pct": 100
+        }
+      ]
+    },
+    {
+      "t_s": 104.3,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62496,
+          "util_pct": 79
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62982,
+          "util_pct": 100
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62460,
+          "util_pct": 100
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62982,
+          "util_pct": 100
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62478,
+          "util_pct": 100
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62984,
+          "util_pct": 100
+        }
+      ]
+    },
+    {
+      "t_s": 114.6,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62496,
+          "util_pct": 64
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62982,
+          "util_pct": 63
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62460,
+          "util_pct": 98
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62982,
+          "util_pct": 86
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62478,
+          "util_pct": 69
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62964,
+          "util_pct": 64
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62984,
+          "util_pct": 100
+        }
+      ]
+    },
+    {
+      "t_s": 124.9,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62496,
+          "util_pct": 71
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62982,
+          "util_pct": 100
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62460,
+          "util_pct": 100
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62982,
+          "util_pct": 100
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62478,
+          "util_pct": 100
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62964,
+          "util_pct": 100
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62964,
+          "util_pct": 0
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62984,
+          "util_pct": 100
+        }
+      ]
+    },
+    {
+      "t_s": 125.7,
+      "gpus": [
+        {
+          "gpu": 0,
+          "memory_mb": 62496,
+          "util_pct": 0
+        },
+        {
+          "gpu": 1,
+          "memory_mb": 62982,
+          "util_pct": 9
+        },
+        {
+          "gpu": 2,
+          "memory_mb": 62460,
+          "util_pct": 71
+        },
+        {
+          "gpu": 3,
+          "memory_mb": 62982,
+          "util_pct": 99
+        },
+        {
+          "gpu": 4,
+          "memory_mb": 62478,
+          "util_pct": 20
+        },
+        {
+          "gpu": 5,
+          "memory_mb": 62964,
+          "util_pct": 0
+        },
+        {
+          "gpu": 6,
+          "memory_mb": 62964,
+          "util_pct": 0
+        },
+        {
+          "gpu": 7,
+          "memory_mb": 62984,
+          "util_pct": 0
+        }
+      ]
+    }
+  ]
+}
