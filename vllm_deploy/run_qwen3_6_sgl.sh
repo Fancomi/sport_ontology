@@ -54,7 +54,7 @@ for i in $(seq 0 $((NUM_INSTANCES - 1))); do
         --dist-init-addr 127.0.0.1:$DIST_PORT \
         --tp-size 1 \
         --mem-fraction-static 0.8 \
-        --context-length 16384 \
+        --context-length 32768 \
         --watchdog-timeout $WATCHDOG_TIMEOUT \
         --reasoning-parser qwen3 \
         --mamba-scheduler-strategy extra_buffer \
