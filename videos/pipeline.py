@@ -16,6 +16,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import yt_dlp
+import cv2
 
 import importlib.util
 _HERE = Path(__file__).resolve().parent
@@ -44,6 +45,8 @@ FILTERED = config.FILTERED
 VIDEOS_DIR = DATA_DIR / "videos"
 DL_PROGRESS = DATA_DIR / "dl_progress.txt"
 DISK_LIMIT_GB = 500
+MAX_ACTUAL_DURATION = 600.0
+_CV2_LOCK = threading.Lock()
 
 # === 机器 peers ===
 PEERS = [
@@ -90,10 +93,52 @@ def _pname(proxy):
     return proxy.split('//')[1].split('/')[0]
 
 
+def actual_duration(video_path: Path) -> float | None:
+    """读取视频实际时长；失败返回 None。"""
+    with _CV2_LOCK:
+        null = os.open(os.devnull, os.O_WRONLY)
+        saved2 = os.dup(2)
+        cap = None
+        try:
+            os.dup2(null, 2)
+            cap = cv2.VideoCapture(str(video_path))
+            if not cap.isOpened():
+                return None
+            frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+        finally:
+            if cap is not None:
+                cap.release()
+            os.dup2(saved2, 2)
+            os.close(null)
+            os.close(saved2)
+    if not frames or not fps or fps <= 0:
+        return None
+    return float(frames) / float(fps)
+
+
+def downloaded_file(out_dir: Path, vid: str) -> Path | None:
+    files = [p for p in out_dir.glob(f"{vid}.*") if ".part" not in p.name]
+    return files[0] if files else None
+
+
+def reject_if_too_long(video_path: Path, vid: str) -> tuple[bool, str]:
+    duration = actual_duration(video_path)
+    if duration is None or duration <= MAX_ACTUAL_DURATION:
+        return False, ""
+    config.append_blacklist(vid)
+    video_path.unlink(missing_ok=True)
+    return True, f"too_long:{duration:.1f}s"
+
+
 def download_one(item, out_dir):
     """下载单个视频，使用 config 统一代理管理"""
     vid = item["video_id"]
-    if list(out_dir.glob(f"{vid}.*")):
+    existing = downloaded_file(out_dir, vid)
+    if existing:
+        rejected, reason = reject_if_too_long(existing, vid)
+        if rejected:
+            return False, reason, "local", 0.0, "local"
         return True, "exists", "local", 0.0, "local"
 
     t0 = time.time()
@@ -120,7 +165,13 @@ def download_one(item, out_dir):
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([f"https://www.youtube.com/watch?v={vid}"])
-            return bool(list(out_dir.glob(f"{vid}.*"))), "ok", _pname(proxy), time.time() - t0, cookie_name
+            video_path = downloaded_file(out_dir, vid)
+            if not video_path:
+                return False, "missing_after_download", _pname(proxy), time.time() - t0, cookie_name
+            rejected, reason = reject_if_too_long(video_path, vid)
+            if rejected:
+                return False, reason, _pname(proxy), time.time() - t0, cookie_name
+            return True, "ok", _pname(proxy), time.time() - t0, cookie_name
     except Exception as e:
         msg = str(e).lower()
         if "signature" in msg or "n challenge" in msg:
