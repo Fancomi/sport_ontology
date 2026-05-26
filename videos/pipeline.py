@@ -45,7 +45,7 @@ FILTERED = config.FILTERED
 VIDEOS_DIR = DATA_DIR / "videos"
 DL_PROGRESS = DATA_DIR / "dl_progress.txt"
 DISK_LIMIT_GB = 500
-MAX_ACTUAL_DURATION = 600.0
+MAX_ACTUAL_DURATION = 480.0
 _CV2_LOCK = threading.Lock()
 
 # === 机器 peers ===

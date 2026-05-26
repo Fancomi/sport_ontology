@@ -21,7 +21,7 @@ import config
 
 VIDEOS_DIR = config.DATA_DIR / "videos"
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
-DEFAULT_MAX_DURATION = 600.0
+DEFAULT_MAX_DURATION = 480.0
 _CV2_LOCK = threading.Lock()
 
 
