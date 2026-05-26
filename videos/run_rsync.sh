@@ -21,5 +21,5 @@ python3 sync_videos_rsync.py \
   --interval "$INTERVAL" \
   --min-age "$MIN_AGE" \
   --max-files "$MAX_FILES" \
-  --delete-local # \
-  # --require-audited
+  --delete-local \
+  --no-require-audited
