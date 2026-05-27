@@ -1,5 +1,5 @@
 #!/bin/bash
-# 阶段二: 将已审计通过的视频逐条 rsync 到远端硬盘，成功后删除本地文件释放空间。
+# 阶段二: 将本地已完成且未进 blacklist 的视频逐条 rsync 到远端硬盘，成功后删除本地文件释放空间。
 # 用法: bash run_rsync.sh
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -14,7 +14,7 @@ MAX_FILES="${MAX_FILES:-0}"
 
 echo "══════ 阶段二: rsync 视频到远端硬盘 (interval=${INTERVAL}s min_age=${MIN_AGE}s max_files=${MAX_FILES}) ══════"
 echo "目标: ral@10.109.83.30:/root/back_2/penghaotian/datas/yt-dlp-downloads/videos"
-echo "策略: 仅发送已 audit 且未进 blacklist 的完整视频；发送成功后删除本地文件"
+echo "策略: 发送本地已完成且未进 blacklist 的完整视频；发送成功后删除本地文件；不等待 audit"
 
 python3 sync_videos_rsync.py \
   --loop \

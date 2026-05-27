@@ -1373,29 +1373,30 @@ def make_pairs(groups: list[list[ImageInfo]], cases: list[TextCase], lang: str,
 
 
 def stage_path(book_dir: Path) -> Path:
-    return book_dir / f't1_stages_{date.today().isoformat()}.json'
+    return book_dir / 't1_stages.json'
+
+
+def legacy_stage_paths(book_dir: Path) -> list[Path]:
+    return sorted(book_dir.glob('t1_stages_*.json'), reverse=True)
 
 
 def save_stage(book_dir: Path, **data) -> None:
     path = stage_path(book_dir)
-    old = {}
-    if path.exists():
-        try:
-            old = json.loads(path.read_text(encoding='utf-8'))
-        except json.JSONDecodeError:
-            old = {}
+    old = load_stage(book_dir)
     old.update(data)
     path.write_text(json.dumps(old, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
 def load_stage(book_dir: Path) -> dict:
-    path = stage_path(book_dir)
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding='utf-8'))
-    except json.JSONDecodeError:
-        return {}
+    paths = [stage_path(book_dir), *legacy_stage_paths(book_dir)]
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            return json.loads(path.read_text(encoding='utf-8'))
+        except json.JSONDecodeError:
+            continue
+    return {}
 
 
 def process_book(book_dir: Path, client: LLMClient, workers: int,
