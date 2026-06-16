@@ -73,6 +73,7 @@ SLOTS = (
     "gender", "camera_view", "equipment", "contact_part", "contact_type",
     "posture_alignment", "trajectory", "exercise", "force_part",
     "force_type", "laterality",
+    "body_position", "tempo", "limb_state",
 )
 _SLOT_SET = frozenset(SLOTS)
 _RE_SLOT      = re.compile(r'\[(\w+):([^\]]+)\]')   # 正常 [key:value]

@@ -19,7 +19,8 @@ VALID_KEY   = '_cat3_validated'
 
 VALID_SLOTS = frozenset({
     'gender', 'camera_view', 'equipment', 'contact_part', 'contact_type',
-    'posture_alignment', 'trajectory', 'exercise', 'force_part', 'force_type', 'laterality'
+    'posture_alignment', 'trajectory', 'exercise', 'force_part', 'force_type', 'laterality',
+    'body_position', 'tempo', 'limb_state',
 })
 
 RE_SLOT  = re.compile(r'\[([a-zA-Z_]+):([^\]]+)\]')
