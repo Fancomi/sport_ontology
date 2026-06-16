@@ -33,20 +33,19 @@
 快速 / 缓慢 / 爆发 / 匀速 / 控制 / 停顿 / 静态保持
 ```
 
-### limb_state 复合值格式
+### limb_state 值格式（自然短语，守铁律）
 
-值采用 `部位:状态` 复合结构，使 confusable 负样本能在**同部位内**替换状态：
+value = **原句中的连续自然短语**，与其余 13 键完全同构（去括号后逐字还原原文）。**不使用 `部位:状态` 复合值**——复合值会插入原文不存在的规范化部位词（如把"另一条腿"改写成"非工作腿"），破坏"去括号逐字相等"铁律。
 
 ```
-[limb_state:对侧臂:举过头顶]
-[limb_state:非工作腿:屈膝]
-[limb_state:单手:扶墙]
-[limb_state:双腿:伸直]
-[limb_state:自由臂:侧平举]
+[limb_state:另一条腿屈膝]
+[limb_state:对侧手臂向上伸直]
+[limb_state:单手扶墙]
+[limb_state:双腿伸直]
 ```
 
-- 部位前缀闭词表：`对侧臂 / 自由臂 / 单手 / 双臂 / 非工作腿 / 后腿 / 单腿 / 双腿 / 头部` 等。
-- 状态闭词表：`举过头顶 / 侧平举 / 前平举 / 屈膝 / 伸直 / 扶墙 / 扶器械 / 叉腰 / 置于胸前 / 置于头侧 / 自然下垂 / 交叉` 等。
+- 标注原则：选取原句里描述**非主导肢体姿态**的最小连续片段套括号，不增删任何字。
+- 负样本替换粒度：confusable 在 `limb_state` 槽内整段替换（如"另一条腿屈膝"↔"另一条腿伸直"），由 5_enrich 在 ontology 里建 confusable 关系时按语义聚类，无需句内拆分。
 - 闭词表在 2_3 跑完后按真实词频收敛裁剪。
 
 ## 裁决总原则：优先级链
@@ -76,13 +75,13 @@
 | 5 | `body_position:站立` vs `posture_alignment:双脚与肩同宽站立` | 体位 or 站距对齐 | 体位部分→`body_position:站立`；站距对齐→`posture_alignment:双脚与肩同宽`（一句话可同时出两键，各取所指） |
 | 6 | 节奏 vs 轨迹 | 速度 or 方向阶段 | 速度→`tempo:快速/缓慢`；方向→`trajectory:向心上升/离心下降` |
 | 7 | `tempo:静态保持` vs `force_type:保持` vs `trajectory:顶峰收缩` | 速度特征 / 发力方式 / 轨迹阶段 | 三者可共存：等长不动的速度特征→`tempo:静态保持`；用力维持→`force_type:保持`；处于收缩顶点→`trajectory:顶峰收缩` |
-| 8 | `limb_state:单手:扶墙` vs `contact_part:单手`+`contact_type:接触` | 是否构成与器械/地面的接触 | 若该肢体接触了 equipment/地面→走 `contact_part`+`contact_type`(接触/扶)；若只是悬空姿态(举过头顶/侧平举,无接触)→`limb_state` |
+| 8 | `limb_state:单手扶墙` vs `contact_part:单手`+`contact_type:接触` | 是否构成与器械/地面的接触 | 若该肢体接触了 equipment/地面→走 `contact_part`+`contact_type`(接触/扶)；若只是悬空姿态(向上伸直/侧平举,无接触)→`limb_state` |
 | 9 | `limb_state` 部位 vs `contact_part` 部位 | 该部位是否在接触 | 接触中→`contact_part`；仅姿态无接触→`limb_state` |
-| 10 | `limb_state:对侧臂:举过头顶` vs `posture_alignment:双手置于头侧` | 单侧(非主导) or 双侧整体对齐 | 单侧非主导→`limb_state`；双侧对称整体→`posture_alignment` |
+| 10 | `limb_state:对侧手臂向上伸直` vs `posture_alignment:双手置于头侧` | 单侧(非主导) or 双侧整体对齐 | 单侧非主导→`limb_state`；双侧对称整体→`posture_alignment` |
 | 11 | `body_position:弓步` vs `exercise:箭步蹲` | 静态体位 or 动作名 | 体位→`body_position:弓步`；动作通用名→`exercise:箭步蹲`（共存，不冲突） |
 | 12 | `body_position:蹲姿` vs `force_type:下蹲` vs `trajectory:离心下降` | 静态体位 / 发力动作 / 轨迹 | 三者可共存：当前所处体位→`body_position:蹲姿`；下蹲发力→`force_type:下蹲`；下降轨迹→`trajectory:离心下降` |
 | 13 | `body_position:悬垂` vs `contact_type:正握`+`contact_part:双手` | 整体体位 or 抓握接触 | 体位→`body_position:悬垂`；握杠接触→`contact_part:双手`+`contact_type:正握`（共存） |
-| 14 | `laterality` vs `limb_state` 部位前缀 | 解剖左右侧 or 肢体角色 | 左右侧→`laterality:左侧/右侧`；非主导肢体角色→`limb_state:对侧臂:…`（正交，可共存） |
+| 14 | `laterality` vs `limb_state` 部位前缀 | 解剖左右侧 or 肢体角色 | 左右侧→`laterality:左侧/右侧`；非主导肢体姿态→`limb_state:对侧手臂向上伸直`（正交，可共存） |
 
 **矩阵使用约定**：
 - "共存"= 同一句可同时出现两键，因为它们指向**不同语义维度**，不算重复。
@@ -135,7 +134,7 @@ strip_brackets(new_text) == strip_brackets(old_text)   # 去括号后逐字相�
 ```
 prompt JSON：`5_enrich_cn.json` / `5_enrich_en.json` 的 `slot_desc` + `slot_examples` 加 3 键。
 
-`2_2` 英译需特殊处理 `limb_state` 复合值：`部位:状态` 两段都译成英文，冒号分隔保留（如 `[limb_state:opposite_arm:overhead]`）。
+**2_2** 英译需特殊处理 `limb_state`：value 是自然短语（如"另一条腿屈膝"），整体译成英文短语（如 `[limb_state:other leg bent]`），与其余键译法一致，无需特殊冒号处理。
 
 ## 数据流
 
@@ -167,3 +166,21 @@ prompt JSON：`5_enrich_cn.json` / `5_enrich_en.json` 的 `slot_desc` + `slot_ex
 - width（与肩/髋同宽）已被 posture_alignment 覆盖，不动。
 - load（负重/阻力）、ROM 单独成键：规模小、边界糊，不做。
 - 不重跑已有 6505 条的 VLM（成本高且违反"句子不变"）。
+
+## 未来工作：按槽位差异化的负样本增强（本期不实现，仅登记）
+
+> **本期不执行。** 此节记录后续设计方向，供未来改 `5_enrich_with_llm` / `5_1_clean_ontology` / `5_2_infer_relations` 时参考。本期只完成 14 槽位的抽取与重标，使新键的值进入 `slot_vocab` 与 ontology；负样本生成逻辑沿用现有 confusable_siblings / incompatibility / hypernym 机制，**暂不**针对新键定制。
+
+**动机**：不同槽位的"难负样本"语义结构不同，统一的 confusable 替换不够精准。新增的三键尤其需要定制：
+
+- **`limb_state`**：理想难负样本是**同部位、反状态**——"手抬起" 的难负样本应是 "手落下"、"手平举"，而不是换成一条腿的状态。需要 5_enrich 在建关系时，把 limb_state 的值按"部位"聚类，再在簇内按"状态对立/邻近"生成 confusable 与 incompatibility（抬起↔落下 为 incompatibility，抬起↔平举 为 confusable）。
+- **`body_position`**：难负样本是**相近体位**（站立↔半蹲），逻辑互斥是**不可共存体位**（仰卧↔站立）。
+- **`tempo`**：难负样本是**相邻速度档**（快速↔匀速），互斥是**对立档**（快速↔静态保持）。
+
+**改造点（未来）**：
+1. `5_enrich_with_llm.py`：为新键在 `prompts/5_enrich_cn.json` 增加 `slot_desc`/`slot_examples`，并考虑 limb_state 的"部位内聚类"提示，让 LLM 产出部位感知的关系。
+2. `5_1_clean_ontology.py`：清理规则需感知 limb_state 跨部位关系应被判为非法（"手抬起"不该与"腿屈膝"成 confusable）。
+3. `5_2_infer_relations.py`：对称传播时按槽位类型施加约束，避免跨部位/跨维度误传播。
+4. 下游 `8_eval_confusable` / `hard_utils`：替换采样时对 limb_state 走"同部位"过滤。
+
+这部分留待新键数据落地、词频与关系分布明朗后再设计。
