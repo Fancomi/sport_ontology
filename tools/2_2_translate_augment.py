@@ -36,7 +36,8 @@ If a more natural/accurate English expression exists for the context, prefer it 
 3. Translate all three fields:
    - category_3_slotted_description: Keep [slot_key:slot_value] bracket format exactly.
      • Slot KEYS (the part before the colon, e.g. camera_view, gender, equipment, contact_part,
-       contact_type, posture_alignment, trajectory, exercise, force_part, force_type, laterality)
+       contact_type, posture_alignment, trajectory, exercise, force_part, force_type, laterality,
+       body_position, tempo, limb_state)
        are ALREADY in English — copy them verbatim, do NOT translate or alter them in any way.
      • Slot VALUES (the part after the colon) must be translated from Chinese to English.
      • Translate the natural-language text surrounding the brackets normally.

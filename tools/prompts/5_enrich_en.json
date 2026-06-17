@@ -2,62 +2,596 @@
   "system": "You are an expert in sports/fitness ontology engineering with deep knowledge of anatomy, strength training, and exercise science.\nYour task: generate complete ontology attributes for slot nodes used in a fitness video VQA project.\n\n# Context\n- The ontology describes fitness action videos: muscles, equipment, camera angles, exercise names, etc.\n- Attributes are used to generate Hard Negatives: replace one slot word in a correct description so a VLM must judge which sentence better matches the video.\n- Quality requirement: a human watching a 12-second fitness video can reliably tell which version is correct.\n- All attributes must be strictly limited to the sports/fitness domain.\n\n# 11 slot definitions\n- gender: biological sex of the subject (male / female)\n- camera_view: camera angle (front / side / rear / overhead, etc.)\n- equipment: training equipment (barbell / dumbbell / pull-up bar / resistance band / bodyweight, etc.)\n- contact_part: body part in contact with equipment or floor (palm / heel / back, etc.)\n- contact_type: grip or contact style (overhand grip / underhand grip / neutral grip / foot planted, etc.)\n- posture_alignment: body posture / alignment state (straight back / feet shoulder-width apart / slight knee bend, etc.)\n- trajectory: movement trajectory (concentric contraction / eccentric contraction / peak contraction / rotation, etc.)\n- exercise: fitness exercise proper noun (deadlift / squat / curl / pull-up, etc.)\n- force_part: visually visible muscle(s) producing force (biceps brachii / latissimus dorsi / gluteus maximus, etc.)\n- force_type: force pattern (pull / push / hold / squat, etc.)\n- laterality: anatomical left/right side (left / right / bilateral / alternating)\n\n# Attribute descriptions\n- en: English term for this node (1-3 words, English only)\n- definition: brief definition in the fitness context (1-2 sentences, ≤60 words)\n- synonyms: synonyms / alternative names (English only, ≤5 items)\n- hypernym: broader concept (e.g. \"biceps brachii\" → \"upper arm muscles\", ≤3 items)\n- hyponyms: narrower concepts (e.g. \"deadlift\" → \"Romanian deadlift\", ≤5 items)\n- antonyms: antonyms (e.g. \"overhand grip\" → \"underhand grip\", ≤3 items)\n- confusable_siblings: easily confused same-slot siblings for generating Hard Negatives (≤5 items)\n  ✓ Keep: same slot, semantically close, reliably distinguishable by human eye in a 12-second fitness video\n  ✗ Remove: synonyms / aliases of the node (those belong in synonyms)\n  ✗ Remove: hypernyms or hyponyms of the node\n  ✗ Remove: visually indistinguishable items (insufficient visual difference to form a valid negative)\n- incompatibility: semantically mutually exclusive terms that cannot legally co-occur in the same action video (≤5 items)\n  ✓ Keep: truly mutually exclusive, e.g. overhand grip ↔ underhand grip, male ↔ female, concentric ↔ eccentric\n  ✗ Remove: near-synonyms / aliases that are not truly exclusive\n  ✗ Remove: terms that can legally co-occur in the same action video\n\n# Language rules\n- ALL fields must be in English (en, definition, synonyms, hypernym, hyponyms, antonyms, confusable_siblings, incompatibility)\n- No Chinese characters or Pinyin anywhere\n\n# Generation rules\n1. Every list item must be: English-only, directly relevant to this slot's semantic domain, grounded in fitness/anatomy\n2. hyponyms must be sub-variants of this node within the same slot (e.g. hyponyms of \"deadlift\" are only deadlift variants)\n3. Use empty list [] when no valid content exists — do not pad\n4. Return JSON with all 8 attribute fields (even if empty list)\n\nKeep your reasoning concise (under 1000 words).",
   "verify_system": "You are a fitness ontology quality reviewer. You will receive a draft ontology node and must perform a strict second-pass verification.\n\n# Review responsibilities (fix violations only — do not rewrite without cause)\n1. **en field**: if missing or non-English, add/replace with the standard English term (1-3 words)\n2. **Language violation**: if any list field (synonyms/hypernym/hyponyms/antonyms/confusable_siblings/incompatibility) contains Chinese characters, Pinyin, or mixed-language entries, remove those entries\n3. **Domain violation**: if any field content is unrelated to sports/fitness/anatomy (e.g. animal names, grammatical terms, geographic nouns, everyday non-fitness concepts), remove those entries; if definition contains off-topic content, rewrite it (≤60 words, fitness context only)\n4. **Logic violation**:\n   - Remove hyponyms that are not same-slot sub-variants of this node\n   - Remove or replace nonsensical hypernyms\n\n# Editing principles\n- **Minimal changes**: keep all non-violating fields and entries exactly as-is; do not \"improve\" or expand\n- Do not introduce new non-English words in list fields\n- Do not add concepts outside the fitness domain\n- Return the complete 8-field JSON with no explanatory text\n\nKeep your reasoning concise (under 1000 words).",
   "slot_desc": {
-    "gender":            "biological sex of the subject (male / female)",
-    "camera_view":       "camera angle (front / side / rear / overhead, etc.)",
-    "equipment":         "training equipment (barbell / dumbbell / pull-up bar / resistance band / bodyweight, etc.)",
-    "contact_part":      "body part in contact with equipment or floor (palm / heel / back, etc.)",
-    "contact_type":      "grip or contact style (overhand grip / underhand grip / neutral grip / foot planted, etc.)",
+    "gender": "biological sex of the subject (male / female)",
+    "camera_view": "camera angle (front / side / rear / overhead, etc.)",
+    "equipment": "training equipment (barbell / dumbbell / pull-up bar / resistance band / bodyweight, etc.)",
+    "contact_part": "body part in contact with equipment or floor (palm / heel / back, etc.)",
+    "contact_type": "grip or contact style (overhand grip / underhand grip / neutral grip / foot planted, etc.)",
     "posture_alignment": "body posture / alignment state (straight back / feet shoulder-width apart / slight knee bend, etc.)",
-    "trajectory":        "movement trajectory (concentric / eccentric / peak contraction / rotation, etc.)",
-    "exercise":          "fitness exercise proper noun (deadlift / squat / curl / pull-up, etc.)",
-    "force_part":        "visually visible muscle(s) producing force (biceps brachii / lats / glutes, etc.)",
-    "force_type":        "force pattern (pull / push / hold / squat, etc.)",
-    "laterality":        "anatomical side (left / right / bilateral / alternating)"
+    "trajectory": "movement trajectory (concentric / eccentric / peak contraction / rotation, etc.)",
+    "exercise": "fitness exercise proper noun (deadlift / squat / curl / pull-up, etc.)",
+    "force_part": "visually visible muscle(s) producing force (biceps brachii / lats / glutes, etc.)",
+    "force_type": "force pattern (pull / push / hold / squat, etc.)",
+    "laterality": "anatomical side (left / right / bilateral / alternating)",
+    "body_position": "overall body posture type (standing / seated / kneeling / supine / prone / hanging / lunge)",
+    "tempo": "movement speed / cadence (fast / slow / explosive / steady / controlled / paused / isometric hold)",
+    "limb_state": "posture of the non-dominant limb (e.g. other leg bent, opposite arm raised overhead)"
   },
   "slot_examples": {
     "gender": [
-      {"word": "male", "expected": {"en": "male", "definition": "Male subject in the fitness video.", "synonyms": ["man"], "hypernym": ["gender"], "hyponyms": [], "antonyms": ["female"], "confusable_siblings": [], "incompatibility": ["female"]}},
-      {"word": "female", "expected": {"en": "female", "definition": "Female subject in the fitness video.", "synonyms": ["woman"], "hypernym": ["gender"], "hyponyms": [], "antonyms": ["male"], "confusable_siblings": [], "incompatibility": ["male"]}}
+      {
+        "word": "male",
+        "expected": {
+          "en": "male",
+          "definition": "Male subject in the fitness video.",
+          "synonyms": [
+            "man"
+          ],
+          "hypernym": [
+            "gender"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "female"
+          ],
+          "confusable_siblings": [],
+          "incompatibility": [
+            "female"
+          ]
+        }
+      },
+      {
+        "word": "female",
+        "expected": {
+          "en": "female",
+          "definition": "Female subject in the fitness video.",
+          "synonyms": [
+            "woman"
+          ],
+          "hypernym": [
+            "gender"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "male"
+          ],
+          "confusable_siblings": [],
+          "incompatibility": [
+            "male"
+          ]
+        }
+      }
     ],
     "camera_view": [
-      {"word": "front view", "expected": {"en": "front view", "definition": "Camera facing the subject's front (chest/face side).", "synonyms": ["anterior view"], "hypernym": ["camera angle"], "hyponyms": [], "antonyms": ["rear view"], "confusable_siblings": ["diagonal front view"], "incompatibility": ["rear view", "overhead view"]}},
-      {"word": "side view", "expected": {"en": "side view", "definition": "Camera positioned to the left or right side of the subject.", "synonyms": ["lateral view"], "hypernym": ["camera angle"], "hyponyms": ["left side view", "right side view"], "antonyms": [], "confusable_siblings": ["diagonal side view"], "incompatibility": []}}
+      {
+        "word": "front view",
+        "expected": {
+          "en": "front view",
+          "definition": "Camera facing the subject's front (chest/face side).",
+          "synonyms": [
+            "anterior view"
+          ],
+          "hypernym": [
+            "camera angle"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "rear view"
+          ],
+          "confusable_siblings": [
+            "diagonal front view"
+          ],
+          "incompatibility": [
+            "rear view",
+            "overhead view"
+          ]
+        }
+      },
+      {
+        "word": "side view",
+        "expected": {
+          "en": "side view",
+          "definition": "Camera positioned to the left or right side of the subject.",
+          "synonyms": [
+            "lateral view"
+          ],
+          "hypernym": [
+            "camera angle"
+          ],
+          "hyponyms": [
+            "left side view",
+            "right side view"
+          ],
+          "antonyms": [],
+          "confusable_siblings": [
+            "diagonal side view"
+          ],
+          "incompatibility": []
+        }
+      }
     ],
     "equipment": [
-      {"word": "dumbbell", "expected": {"en": "dumbbell", "definition": "A short free-weight bar with fixed weights on each end, used for unilateral or bilateral strength training.", "synonyms": [], "hypernym": ["free weight equipment"], "hyponyms": ["hex dumbbell", "adjustable dumbbell"], "antonyms": [], "confusable_siblings": ["kettlebell", "barbell"], "incompatibility": ["bodyweight"]}},
-      {"word": "barbell", "expected": {"en": "barbell", "definition": "A long steel bar with adjustable weight plates, commonly used for squats, deadlifts, and bench press.", "synonyms": [], "hypernym": ["free weight equipment"], "hyponyms": ["Olympic barbell", "EZ bar"], "antonyms": [], "confusable_siblings": ["dumbbell", "Smith machine"], "incompatibility": ["bodyweight"]}}
+      {
+        "word": "dumbbell",
+        "expected": {
+          "en": "dumbbell",
+          "definition": "A short free-weight bar with fixed weights on each end, used for unilateral or bilateral strength training.",
+          "synonyms": [],
+          "hypernym": [
+            "free weight equipment"
+          ],
+          "hyponyms": [
+            "hex dumbbell",
+            "adjustable dumbbell"
+          ],
+          "antonyms": [],
+          "confusable_siblings": [
+            "kettlebell",
+            "barbell"
+          ],
+          "incompatibility": [
+            "bodyweight"
+          ]
+        }
+      },
+      {
+        "word": "barbell",
+        "expected": {
+          "en": "barbell",
+          "definition": "A long steel bar with adjustable weight plates, commonly used for squats, deadlifts, and bench press.",
+          "synonyms": [],
+          "hypernym": [
+            "free weight equipment"
+          ],
+          "hyponyms": [
+            "Olympic barbell",
+            "EZ bar"
+          ],
+          "antonyms": [],
+          "confusable_siblings": [
+            "dumbbell",
+            "Smith machine"
+          ],
+          "incompatibility": [
+            "bodyweight"
+          ]
+        }
+      }
     ],
     "contact_part": [
-      {"word": "palm", "expected": {"en": "palm", "definition": "The inner surface of the hand that contacts the equipment or floor.", "synonyms": ["hand palm"], "hypernym": ["hand"], "hyponyms": [], "antonyms": [], "confusable_siblings": ["fingertips", "back of hand"], "incompatibility": []}},
-      {"word": "heel", "expected": {"en": "heel", "definition": "The rear part of the foot, commonly the contact point during squats and deadlifts.", "synonyms": [], "hypernym": ["foot"], "hyponyms": [], "antonyms": ["toes"], "confusable_siblings": ["ball of foot", "toes"], "incompatibility": []}}
+      {
+        "word": "palm",
+        "expected": {
+          "en": "palm",
+          "definition": "The inner surface of the hand that contacts the equipment or floor.",
+          "synonyms": [
+            "hand palm"
+          ],
+          "hypernym": [
+            "hand"
+          ],
+          "hyponyms": [],
+          "antonyms": [],
+          "confusable_siblings": [
+            "fingertips",
+            "back of hand"
+          ],
+          "incompatibility": []
+        }
+      },
+      {
+        "word": "heel",
+        "expected": {
+          "en": "heel",
+          "definition": "The rear part of the foot, commonly the contact point during squats and deadlifts.",
+          "synonyms": [],
+          "hypernym": [
+            "foot"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "toes"
+          ],
+          "confusable_siblings": [
+            "ball of foot",
+            "toes"
+          ],
+          "incompatibility": []
+        }
+      }
     ],
     "contact_type": [
-      {"word": "overhand grip", "expected": {"en": "overhand grip", "definition": "Gripping the bar with palms facing down (pronated position).", "synonyms": ["pronated grip"], "hypernym": ["grip style"], "hyponyms": [], "antonyms": ["underhand grip"], "confusable_siblings": ["neutral grip"], "incompatibility": ["underhand grip"]}},
-      {"word": "underhand grip", "expected": {"en": "underhand grip", "definition": "Gripping the bar with palms facing up (supinated position).", "synonyms": ["supinated grip", "reverse grip"], "hypernym": ["grip style"], "hyponyms": [], "antonyms": ["overhand grip"], "confusable_siblings": ["neutral grip"], "incompatibility": ["overhand grip"]}}
+      {
+        "word": "overhand grip",
+        "expected": {
+          "en": "overhand grip",
+          "definition": "Gripping the bar with palms facing down (pronated position).",
+          "synonyms": [
+            "pronated grip"
+          ],
+          "hypernym": [
+            "grip style"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "underhand grip"
+          ],
+          "confusable_siblings": [
+            "neutral grip"
+          ],
+          "incompatibility": [
+            "underhand grip"
+          ]
+        }
+      },
+      {
+        "word": "underhand grip",
+        "expected": {
+          "en": "underhand grip",
+          "definition": "Gripping the bar with palms facing up (supinated position).",
+          "synonyms": [
+            "supinated grip",
+            "reverse grip"
+          ],
+          "hypernym": [
+            "grip style"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "overhand grip"
+          ],
+          "confusable_siblings": [
+            "neutral grip"
+          ],
+          "incompatibility": [
+            "overhand grip"
+          ]
+        }
+      }
     ],
     "posture_alignment": [
-      {"word": "straight back", "expected": {"en": "straight back", "definition": "Lumbar spine in neutral position with no rounding or excessive extension.", "synonyms": ["neutral spine"], "hypernym": ["body alignment"], "hyponyms": [], "antonyms": ["rounded back"], "confusable_siblings": ["chest up"], "incompatibility": ["rounded back"]}},
-      {"word": "feet shoulder-width apart", "expected": {"en": "feet shoulder-width apart", "definition": "Stance width equal to shoulder width, common starting position for squats and deadlifts.", "synonyms": ["shoulder-width stance"], "hypernym": ["foot position"], "hyponyms": [], "antonyms": [], "confusable_siblings": ["wide stance", "narrow stance"], "incompatibility": []}}
+      {
+        "word": "straight back",
+        "expected": {
+          "en": "straight back",
+          "definition": "Lumbar spine in neutral position with no rounding or excessive extension.",
+          "synonyms": [
+            "neutral spine"
+          ],
+          "hypernym": [
+            "body alignment"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "rounded back"
+          ],
+          "confusable_siblings": [
+            "chest up"
+          ],
+          "incompatibility": [
+            "rounded back"
+          ]
+        }
+      },
+      {
+        "word": "feet shoulder-width apart",
+        "expected": {
+          "en": "feet shoulder-width apart",
+          "definition": "Stance width equal to shoulder width, common starting position for squats and deadlifts.",
+          "synonyms": [
+            "shoulder-width stance"
+          ],
+          "hypernym": [
+            "foot position"
+          ],
+          "hyponyms": [],
+          "antonyms": [],
+          "confusable_siblings": [
+            "wide stance",
+            "narrow stance"
+          ],
+          "incompatibility": []
+        }
+      }
     ],
     "trajectory": [
-      {"word": "concentric contraction", "expected": {"en": "concentric contraction", "definition": "The muscle-shortening phase that produces force, e.g. the upward phase of a bicep curl.", "synonyms": ["concentric phase"], "hypernym": ["muscle contraction type"], "hyponyms": [], "antonyms": ["eccentric contraction"], "confusable_siblings": ["isometric contraction"], "incompatibility": ["eccentric contraction"]}},
-      {"word": "eccentric contraction", "expected": {"en": "eccentric contraction", "definition": "The muscle-lengthening phase under tension, e.g. the lowering phase of a bicep curl.", "synonyms": ["eccentric phase"], "hypernym": ["muscle contraction type"], "hyponyms": [], "antonyms": ["concentric contraction"], "confusable_siblings": ["isometric contraction"], "incompatibility": ["concentric contraction"]}}
+      {
+        "word": "concentric contraction",
+        "expected": {
+          "en": "concentric contraction",
+          "definition": "The muscle-shortening phase that produces force, e.g. the upward phase of a bicep curl.",
+          "synonyms": [
+            "concentric phase"
+          ],
+          "hypernym": [
+            "muscle contraction type"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "eccentric contraction"
+          ],
+          "confusable_siblings": [
+            "isometric contraction"
+          ],
+          "incompatibility": [
+            "eccentric contraction"
+          ]
+        }
+      },
+      {
+        "word": "eccentric contraction",
+        "expected": {
+          "en": "eccentric contraction",
+          "definition": "The muscle-lengthening phase under tension, e.g. the lowering phase of a bicep curl.",
+          "synonyms": [
+            "eccentric phase"
+          ],
+          "hypernym": [
+            "muscle contraction type"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "concentric contraction"
+          ],
+          "confusable_siblings": [
+            "isometric contraction"
+          ],
+          "incompatibility": [
+            "concentric contraction"
+          ]
+        }
+      }
     ],
     "exercise": [
-      {"word": "deadlift", "expected": {"en": "deadlift", "definition": "A compound lift where a loaded barbell or dumbbell is pulled from the floor to a hip-extended standing position.", "synonyms": [], "hypernym": ["compound strength exercise"], "hyponyms": ["Romanian deadlift", "stiff-leg deadlift", "sumo deadlift"], "antonyms": [], "confusable_siblings": ["Romanian deadlift", "stiff-leg deadlift", "good morning"], "incompatibility": []}},
-      {"word": "curl", "expected": {"en": "curl", "definition": "An isolation exercise flexing the elbow to lift weight, primarily targeting the biceps.", "synonyms": [], "hypernym": ["isolation exercise"], "hyponyms": ["dumbbell curl", "barbell curl", "hammer curl"], "antonyms": [], "confusable_siblings": ["hammer curl", "reverse curl"], "incompatibility": []}}
+      {
+        "word": "deadlift",
+        "expected": {
+          "en": "deadlift",
+          "definition": "A compound lift where a loaded barbell or dumbbell is pulled from the floor to a hip-extended standing position.",
+          "synonyms": [],
+          "hypernym": [
+            "compound strength exercise"
+          ],
+          "hyponyms": [
+            "Romanian deadlift",
+            "stiff-leg deadlift",
+            "sumo deadlift"
+          ],
+          "antonyms": [],
+          "confusable_siblings": [
+            "Romanian deadlift",
+            "stiff-leg deadlift",
+            "good morning"
+          ],
+          "incompatibility": []
+        }
+      },
+      {
+        "word": "curl",
+        "expected": {
+          "en": "curl",
+          "definition": "An isolation exercise flexing the elbow to lift weight, primarily targeting the biceps.",
+          "synonyms": [],
+          "hypernym": [
+            "isolation exercise"
+          ],
+          "hyponyms": [
+            "dumbbell curl",
+            "barbell curl",
+            "hammer curl"
+          ],
+          "antonyms": [],
+          "confusable_siblings": [
+            "hammer curl",
+            "reverse curl"
+          ],
+          "incompatibility": []
+        }
+      }
     ],
     "force_part": [
-      {"word": "biceps brachii", "expected": {"en": "biceps brachii", "definition": "Two-headed muscle on the front of the upper arm; primary mover in elbow flexion and forearm supination.", "synonyms": ["biceps"], "hypernym": ["upper arm muscles"], "hyponyms": ["biceps long head", "biceps short head"], "antonyms": [], "confusable_siblings": ["brachialis", "brachioradialis"], "incompatibility": []}},
-      {"word": "latissimus dorsi", "expected": {"en": "latissimus dorsi", "definition": "The broadest back muscle; responsible for shoulder adduction and extension; primary mover in rows and pull-downs.", "synonyms": ["lats"], "hypernym": ["back muscles"], "hyponyms": [], "antonyms": [], "confusable_siblings": ["rhomboids", "mid-lower trapezius", "teres major"], "incompatibility": []}}
+      {
+        "word": "biceps brachii",
+        "expected": {
+          "en": "biceps brachii",
+          "definition": "Two-headed muscle on the front of the upper arm; primary mover in elbow flexion and forearm supination.",
+          "synonyms": [
+            "biceps"
+          ],
+          "hypernym": [
+            "upper arm muscles"
+          ],
+          "hyponyms": [
+            "biceps long head",
+            "biceps short head"
+          ],
+          "antonyms": [],
+          "confusable_siblings": [
+            "brachialis",
+            "brachioradialis"
+          ],
+          "incompatibility": []
+        }
+      },
+      {
+        "word": "latissimus dorsi",
+        "expected": {
+          "en": "latissimus dorsi",
+          "definition": "The broadest back muscle; responsible for shoulder adduction and extension; primary mover in rows and pull-downs.",
+          "synonyms": [
+            "lats"
+          ],
+          "hypernym": [
+            "back muscles"
+          ],
+          "hyponyms": [],
+          "antonyms": [],
+          "confusable_siblings": [
+            "rhomboids",
+            "mid-lower trapezius",
+            "teres major"
+          ],
+          "incompatibility": []
+        }
+      }
     ],
     "force_type": [
-      {"word": "pull", "expected": {"en": "pull", "definition": "Pulling a load or resistance toward the body, e.g. rows and curls.", "synonyms": [], "hypernym": ["force pattern"], "hyponyms": [], "antonyms": ["push"], "confusable_siblings": [], "incompatibility": ["push"]}},
-      {"word": "push", "expected": {"en": "push", "definition": "Pushing a load or resistance away from the body, e.g. bench press and overhead press.", "synonyms": [], "hypernym": ["force pattern"], "hyponyms": [], "antonyms": ["pull"], "confusable_siblings": [], "incompatibility": ["pull"]}}
+      {
+        "word": "pull",
+        "expected": {
+          "en": "pull",
+          "definition": "Pulling a load or resistance toward the body, e.g. rows and curls.",
+          "synonyms": [],
+          "hypernym": [
+            "force pattern"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "push"
+          ],
+          "confusable_siblings": [],
+          "incompatibility": [
+            "push"
+          ]
+        }
+      },
+      {
+        "word": "push",
+        "expected": {
+          "en": "push",
+          "definition": "Pushing a load or resistance away from the body, e.g. bench press and overhead press.",
+          "synonyms": [],
+          "hypernym": [
+            "force pattern"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "pull"
+          ],
+          "confusable_siblings": [],
+          "incompatibility": [
+            "pull"
+          ]
+        }
+      }
     ],
     "laterality": [
-      {"word": "bilateral", "expected": {"en": "bilateral", "definition": "Both limbs working simultaneously, e.g. a two-hand barbell curl.", "synonyms": [], "hypernym": ["laterality"], "hyponyms": [], "antonyms": ["unilateral"], "confusable_siblings": ["alternating"], "incompatibility": ["unilateral", "left side", "right side"]}},
-      {"word": "unilateral", "expected": {"en": "unilateral", "definition": "A single limb working independently, e.g. single-arm dumbbell row.", "synonyms": ["single-sided"], "hypernym": ["laterality"], "hyponyms": ["left side", "right side"], "antonyms": ["bilateral"], "confusable_siblings": ["alternating"], "incompatibility": ["bilateral"]}}
+      {
+        "word": "bilateral",
+        "expected": {
+          "en": "bilateral",
+          "definition": "Both limbs working simultaneously, e.g. a two-hand barbell curl.",
+          "synonyms": [],
+          "hypernym": [
+            "laterality"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "unilateral"
+          ],
+          "confusable_siblings": [
+            "alternating"
+          ],
+          "incompatibility": [
+            "unilateral",
+            "left side",
+            "right side"
+          ]
+        }
+      },
+      {
+        "word": "unilateral",
+        "expected": {
+          "en": "unilateral",
+          "definition": "A single limb working independently, e.g. single-arm dumbbell row.",
+          "synonyms": [
+            "single-sided"
+          ],
+          "hypernym": [
+            "laterality"
+          ],
+          "hyponyms": [
+            "left side",
+            "right side"
+          ],
+          "antonyms": [
+            "bilateral"
+          ],
+          "confusable_siblings": [
+            "alternating"
+          ],
+          "incompatibility": [
+            "bilateral"
+          ]
+        }
+      }
+    ],
+    "body_position": [
+      {
+        "word": "standing",
+        "expected": {
+          "en": "standing",
+          "definition": "Upright posture supported by both feet.",
+          "synonyms": [],
+          "hypernym": [
+            "body position"
+          ],
+          "hyponyms": [],
+          "antonyms": [],
+          "confusable_siblings": [
+            "seated",
+            "squatting"
+          ],
+          "incompatibility": [
+            "supine",
+            "prone"
+          ]
+        }
+      }
+    ],
+    "tempo": [
+      {
+        "word": "slow",
+        "expected": {
+          "en": "slow",
+          "definition": "Low-speed, control-focused cadence.",
+          "synonyms": [
+            "steady"
+          ],
+          "hypernym": [
+            "tempo"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "fast"
+          ],
+          "confusable_siblings": [
+            "controlled"
+          ],
+          "incompatibility": [
+            "explosive"
+          ]
+        }
+      }
+    ],
+    "limb_state": [
+      {
+        "word": "other leg bent",
+        "expected": {
+          "en": "other leg bent",
+          "definition": "Non-dominant leg in a flexed posture.",
+          "synonyms": [],
+          "hypernym": [
+            "limb posture"
+          ],
+          "hyponyms": [],
+          "antonyms": [
+            "other leg straight"
+          ],
+          "confusable_siblings": [],
+          "incompatibility": []
+        }
+      }
     ]
   }
 }

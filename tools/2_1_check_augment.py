@@ -19,7 +19,8 @@ VALID_KEY   = '_cat3_validated'
 
 VALID_SLOTS = frozenset({
     'gender', 'camera_view', 'equipment', 'contact_part', 'contact_type',
-    'posture_alignment', 'trajectory', 'exercise', 'force_part', 'force_type', 'laterality'
+    'posture_alignment', 'trajectory', 'exercise', 'force_part', 'force_type', 'laterality',
+    'body_position', 'tempo', 'limb_state',
 })
 
 RE_SLOT  = re.compile(r'\[([a-zA-Z_]+):([^\]]+)\]')
@@ -27,22 +28,25 @@ RE_ASCII = re.compile(r'^[\x00-\x7F]+$')
 
 # ── Part 1：规则校验 ──────────────────────────────────────────────────────────
 def check_rules(text: str) -> list:
-    """返回可被规则检出的问题列表（非法键 / 英文值）。"""
+    """返回可被规则检出的问题列表（非法键 / 英文值 / limb_state 格式）。"""
     issues = []
     for key, val in RE_SLOT.findall(text):
         if key not in VALID_SLOTS:
             issues.append(f'非法槽位键[{key}]，合法键：{sorted(VALID_SLOTS)}')
         elif RE_ASCII.match(val.strip()):
             issues.append(f'槽位值为非中文[{key}:{val.strip()}]')
+        elif key == 'limb_state' and (':' in val or '：' in val):
+            issues.append(f'limb_state 值不得为复合值[{key}:{val}]，须用自然短语')
     return issues
 
 # ── Part 2：LLM 校验 ──────────────────────────────────────────────────────────
 _SYSTEM = """\
 你是健身动作描述质检专家，对 category_3_slotted_description 进行两层质检。
 
-【合法槽位键（共11个，严格区分大小写）】
+【合法槽位键（共14个，严格区分大小写）】
 gender, camera_view, equipment, contact_part, contact_type,
-posture_alignment, trajectory, exercise, force_part, force_type, laterality
+posture_alignment, trajectory, exercise, force_part, force_type, laterality,
+body_position, tempo, limb_state
 
 【各槽含义与精确定义】
 - gender: 性别（男性/女性）
@@ -56,6 +60,9 @@ posture_alignment, trajectory, exercise, force_part, force_type, laterality
 - force_part: 视觉可见的发力/收缩部位（肱二头肌/背阔肌/腹直肌等）
 - force_type: 发力方式（拉/推/保持/下蹲/旋转/卷曲/蹬伸等）
 - laterality: 【被摄者的解剖学左右侧】，合法值：左侧/右侧/双侧/交替；双侧对称运动（如深蹲、硬拉、双臂推举）使用`双侧`是正确的，不应被质疑。无法确定时省略整个槽位标注，"省略"本身绝对不能作为槽位值。
+- body_position: 【被摄者整体身姿类型】站立/坐姿/跪姿/半跪/仰卧/俯卧/侧卧/俯卧撑姿/四点支撑/悬垂/弓步/蹲姿/桥式。与 posture_alignment 区别：body_position 是"哪种体位"，posture_alignment 是"该体位摆得正不正(腰背挺直等)"。
+- tempo: 【动作速度/节奏】快速/缓慢/爆发/匀速/控制/停顿/静态保持。与 trajectory 区别：tempo 是速度，trajectory 是方向阶段。
+- limb_state: 【非主导肢体(不发力、起平衡/支撑作用的那条手/腿)的姿态】value 用原句连续片段如"另一条腿屈膝"。主导发力肢体归 force_part/force_type，不要标 limb_state。严禁"部位:状态"复合值。
 
 【槽位通用规则】
 - 每个槽位允许出现 0 至多次，不强求覆盖全部槽位。同一槽位相同值重复出现不视为错误。
@@ -64,7 +71,7 @@ posture_alignment, trajectory, exercise, force_part, force_type, laterality
 第一层：语句正确性（硬性规则 A/B/D/E/F）
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 检查以下问题，发现则在 corrected 中修正（允许使用模糊表达，保证语句通顺即可）：
-A. 槽位键必须在上述11个中，不得有拼写错误或自创键。
+A. 槽位键必须在上述14个中，不得有拼写错误或自创键。
 B. 槽位值必须为中文，不得为英文或其他语言。
 C. metadata_cn 仅作辅助参考，不作强制对齐标准；视频内容优先，不应以 metadata_cn 不准确判定描述错误。
 D. 串位：某槽的值不应明显属于另一槽语义（如 [equipment:推] 或 [force_type:哑铃]）。
