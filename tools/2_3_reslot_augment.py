@@ -19,7 +19,7 @@ RESLOT_KEY  = '_cat3_reslotted'
 PROMPT_PATH = PROMPTS_DIR / '2_3_reslot_cn.md'
 
 
-def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 4) -> tuple[str, str]:
+def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 10) -> tuple[str, str]:
     """返回 (new_text, status)。status: ok|unchanged|reverted|illegal_key|parse_fail
 
     接受条件：去括号逐字相等 且 所有键合法。任一不满足则重试（部分随机，
@@ -54,7 +54,7 @@ def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 4) -> tu
     return text, last_status
 
 
-def process_file(aug_path: Path, client, prompt_tmpl: str, max_attempts: int = 4) -> str:
+def process_file(aug_path: Path, client, prompt_tmpl: str, max_attempts: int = 10) -> str:
     try:
         d = json.loads(aug_path.read_text('utf-8'))
     except Exception as e:
@@ -78,7 +78,7 @@ def main() -> None:
     ap.add_argument('--backend', default='local', choices=['local', 'poe'])
     ap.add_argument('--workers', '-w', type=int, default=1)
     ap.add_argument('--limit', type=int, default=None, help='只处理前 N 个（小样本验证用）')
-    ap.add_argument('--retries', type=int, default=4, help='单条最多尝试次数（reverted/解析失败时重试）')
+    ap.add_argument('--retries', type=int, default=10, help='单条最多尝试次数（reverted/解析失败时重试）')
     ap.add_argument('--think', action='store_true', default=None)
     args = ap.parse_args()
 

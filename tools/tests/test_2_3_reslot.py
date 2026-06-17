@@ -124,3 +124,13 @@ def test_reslot_one_returns_error_when_all_attempts_raise():
     assert status == 'error'
     assert new == old
     assert client.calls == 3
+
+
+def test_reslot_one_default_max_attempts_is_10():
+    import inspect
+    assert inspect.signature(mod.reslot_one).parameters['max_attempts'].default == 10
+
+
+def test_process_file_default_max_attempts_is_10():
+    import inspect
+    assert inspect.signature(mod.process_file).parameters['max_attempts'].default == 10
