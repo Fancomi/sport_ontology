@@ -19,24 +19,34 @@ RESLOT_KEY  = '_cat3_reslotted'
 PROMPT_PATH = PROMPTS_DIR / '2_3_reslot_cn.md'
 
 
-def reslot_one(text: str, client, prompt_tmpl: str) -> tuple[str, str]:
-    """返回 (new_text, status)。status: ok|unchanged|reverted|parse_fail"""
+def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 4) -> tuple[str, str]:
+    """返回 (new_text, status)。status: ok|unchanged|reverted|parse_fail
+
+    重试策略：parse_fail / reverted 时重试；任一次满足不变量即采纳；
+    max_attempts 次全失败才返回原文。
+    """
     prompt = prompt_tmpl.replace('{{category_3}}', text)
-    raw = client.chat(messages=[{'role': 'user', 'content': prompt}])
-    if not raw:
-        return text, 'parse_fail'
-    result = parse_json_response(raw)
-    if not result or FIELD not in result:
-        return text, 'parse_fail'
-    new = result[FIELD]
-    if not ru.invariant_ok(text, new):
-        return text, 'reverted'
-    if new == text:
-        return text, 'unchanged'
-    return new, 'ok'
+    last_status = 'parse_fail'
+    for _ in range(max_attempts):
+        raw = client.chat(messages=[{'role': 'user', 'content': prompt}])
+        if not raw:
+            last_status = 'parse_fail'
+            continue
+        result = parse_json_response(raw)
+        if not result or FIELD not in result:
+            last_status = 'parse_fail'
+            continue
+        new = result[FIELD]
+        if not ru.invariant_ok(text, new):
+            last_status = 'reverted'
+            continue
+        if new == text:
+            return text, 'unchanged'
+        return new, 'ok'
+    return text, last_status
 
 
-def process_file(aug_path: Path, client, prompt_tmpl: str) -> str:
+def process_file(aug_path: Path, client, prompt_tmpl: str, max_attempts: int = 4) -> str:
     try:
         d = json.loads(aug_path.read_text('utf-8'))
     except Exception as e:
@@ -45,7 +55,7 @@ def process_file(aug_path: Path, client, prompt_tmpl: str) -> str:
         return '跳过(已重标)'
     if FIELD not in d:
         return '无目标字段'
-    new, status = reslot_one(d[FIELD], client, prompt_tmpl)
+    new, status = reslot_one(d[FIELD], client, prompt_tmpl, max_attempts)
     if status in ('ok', 'unchanged'):
         d[FIELD] = new
         d[RESLOT_KEY] = True
@@ -60,6 +70,7 @@ def main() -> None:
     ap.add_argument('--backend', default='local', choices=['local', 'poe'])
     ap.add_argument('--workers', '-w', type=int, default=1)
     ap.add_argument('--limit', type=int, default=None, help='只处理前 N 个（小样本验证用）')
+    ap.add_argument('--retries', type=int, default=4, help='单条最多尝试次数（reverted/解析失败时重试）')
     ap.add_argument('--think', action='store_true', default=None)
     args = ap.parse_args()
 
@@ -90,7 +101,7 @@ def main() -> None:
     def _worker(idx_path):
         i, p = idx_path
         rel = p.relative_to(DATA_ROOT)
-        status = process_file(p, client, prompt_tmpl)
+        status = process_file(p, client, prompt_tmpl, args.retries)
         with print_lock:
             stats[status] = stats.get(status, 0) + 1
             print(f'[{i}/{len(pending)}] {rel}: {status}')

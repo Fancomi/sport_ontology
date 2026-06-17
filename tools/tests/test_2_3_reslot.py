@@ -39,3 +39,35 @@ def test_reslot_one_unchanged_when_llm_returns_same():
     reply = '{"category_3_slotted_description": "[gender:男性]站立"}'
     new, status = mod.reslot_one(old, StubClient(reply), "P {{category_3}}")
     assert status == 'unchanged'
+
+
+class SeqClient:
+    """按序返回多个预设回复，模拟重试时模型输出变化。"""
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.calls = 0
+    def chat(self, messages, **kw):
+        r = self.replies[min(self.calls, len(self.replies) - 1)]
+        self.calls += 1
+        return r
+
+
+def test_reslot_one_retry_salvages_after_bad_attempt():
+    old = "他抬起另一条腿屈膝保持平衡"
+    bad = '{"category_3_slotted_description": "他抬起[limb_state:非工作腿:屈膝]保持平衡"}'  # 改字→reverted
+    good = '{"category_3_slotted_description": "他抬起[limb_state:另一条腿屈膝]保持平衡"}'
+    client = SeqClient([bad, bad, good])
+    new, status = mod.reslot_one(old, client, "P {{category_3}}", max_attempts=4)
+    assert status == 'ok'
+    assert new == "他抬起[limb_state:另一条腿屈膝]保持平衡"
+    assert client.calls == 3  # 第3次才成功
+
+
+def test_reslot_one_gives_up_after_max_attempts():
+    old = "他抬起另一条腿屈膝保持平衡"
+    bad = '{"category_3_slotted_description": "他抬起[limb_state:非工作腿:屈膝]保持平衡"}'
+    client = SeqClient([bad])  # 永远改字
+    new, status = mod.reslot_one(old, client, "P {{category_3}}", max_attempts=3)
+    assert status == 'reverted'
+    assert new == old
+    assert client.calls == 3  # 用满 3 次
