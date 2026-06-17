@@ -36,9 +36,6 @@ def keys_legal(text: str) -> bool:
     return all(k in SLOT_SET for k, _ in _MARKUP_RE.findall(text))
 
 
-_MARKUP_RE_FULL = _MARKUP_RE  # alias for clarity below
-
-
 def limb_state_legal(text: str) -> bool:
     """文本中所有 limb_state 值必须是自然短语（不含冒号），不得为 部位:状态 复合值。"""
     return all(limb_state_value_ok(v) for k, v in _MARKUP_RE.findall(text) if k == "limb_state")
