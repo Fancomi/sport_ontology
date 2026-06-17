@@ -20,10 +20,11 @@ PROMPT_PATH = PROMPTS_DIR / '2_3_reslot_cn.md'
 
 
 def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 4) -> tuple[str, str]:
-    """返回 (new_text, status)。status: ok|unchanged|reverted|parse_fail
+    """返回 (new_text, status)。status: ok|unchanged|reverted|illegal_key|parse_fail
 
-    重试策略：parse_fail / reverted 时重试；任一次满足不变量即采纳；
-    max_attempts 次全失败才返回原文。
+    接受条件：去括号逐字相等 且 所有键合法。任一不满足则重试（部分随机，
+    重试常能拿到干净版本）；max_attempts 次全失败才返回原文。
+    被采纳的输出必然满足铁律且键合法，安全性不受重试影响。
     """
     prompt = prompt_tmpl.replace('{{category_3}}', text)
     last_status = 'parse_fail'
@@ -39,6 +40,9 @@ def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 4) -> tu
         new = result[FIELD]
         if not ru.invariant_ok(text, new):
             last_status = 'reverted'
+            continue
+        if not ru.keys_legal(new):
+            last_status = 'illegal_key'
             continue
         if new == text:
             return text, 'unchanged'

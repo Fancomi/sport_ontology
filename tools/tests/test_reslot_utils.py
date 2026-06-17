@@ -31,3 +31,12 @@ def test_invariant_fails_when_text_changed():
 def test_limb_state_format_rejects_colon_composite():
     assert ru.limb_state_value_ok("另一条腿屈膝") is True
     assert ru.limb_state_value_ok("非工作腿:屈膝") is False
+
+
+def test_keys_legal_accepts_valid():
+    assert ru.keys_legal("[gender:男性][body_position:站立]") is True
+
+
+def test_keys_legal_rejects_invalid():
+    assert ru.keys_legal("[static:保持]身体") is False
+    assert ru.keys_legal("[temo:快速]") is False

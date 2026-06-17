@@ -31,6 +31,11 @@ def limb_state_value_ok(value: str) -> bool:
     return ":" not in value and "：" not in value
 
 
+def keys_legal(text: str) -> bool:
+    """文本中所有 [key:value] 的 key 必须都是 14 个合法槽位键之一。"""
+    return all(k in SLOT_SET for k, _ in _MARKUP_RE.findall(text))
+
+
 # ── 新键初版闭词表（2_3 跑完按词频收敛）────────────────────────────────────────
 BODY_POSITION_VOCAB = frozenset({
     "站立", "坐姿", "跪姿", "半跪", "仰卧", "俯卧", "侧卧",

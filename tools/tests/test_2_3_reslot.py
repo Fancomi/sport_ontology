@@ -71,3 +71,24 @@ def test_reslot_one_gives_up_after_max_attempts():
     assert status == 'reverted'
     assert new == old
     assert client.calls == 3  # 用满 3 次
+
+
+def test_reslot_one_rejects_illegal_key_then_salvages():
+    old = "他保持身体稳定"
+    bad = '{"category_3_slotted_description": "他[static:保持]身体稳定"}'   # 非法键
+    good = '{"category_3_slotted_description": "他[force_type:保持]身体稳定"}'  # 合法键
+    client = SeqClient([bad, good])
+    new, status = mod.reslot_one(old, client, "P {{category_3}}", max_attempts=4)
+    assert status == 'ok'
+    assert new == "他[force_type:保持]身体稳定"
+    assert client.calls == 2
+
+
+def test_reslot_one_gives_up_on_persistent_illegal_key():
+    old = "他保持身体稳定"
+    bad = '{"category_3_slotted_description": "他[static:保持]身体稳定"}'
+    client = SeqClient([bad])
+    new, status = mod.reslot_one(old, client, "P {{category_3}}", max_attempts=3)
+    assert status == 'illegal_key'
+    assert new == old
+    assert client.calls == 3
