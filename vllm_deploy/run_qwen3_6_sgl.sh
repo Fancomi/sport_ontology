@@ -1,9 +1,14 @@
 #!/bin/bash
-# Qwen3.6-35B-A3B-FP8 — N×单卡并行 (SGLang + NEXTN 投机解码)
+# Qwen3.6-35B-A3B-FP8 — N×单卡并行 (SGLang，默认关闭投机解码，--spec 可控开启)
 # 每卡独立 sglang server，单卡 FP8 最优配置
 #
+# 注意：NEXTN/EAGLE 投机解码在长时离线批处理下会泄漏 KV 页并把 scheduler 线程锁死在
+#       cudaEventSynchronize（watchdog 超时后实例被 Killed），故默认关闭；
+#       仅在线高吞吐场景按需用 --spec 开启。
+#
 # 示例:
-#   bash run_qwen3_6_sgl.sh -p 8001 -g 0 -n 4 &
+#   bash run_qwen3_6_sgl.sh -p 8001 -g 0 -n 4 &            # 默认无投机解码（稳定，适合批处理）
+#   bash run_qwen3_6_sgl.sh -p 8001 -g 0 -n 4 --spec &     # 开启 NEXTN 投机解码（在线高吞吐）
 #   bash run_qwen3_6_sgl.sh -p 8005 -g 4 -n 4 --deepgemm &
 #   wait
 
@@ -15,6 +20,7 @@ usage() {
     echo "  -n, --num NUM_INSTANCES      启动实例数量 (默认 8)"
     echo "  -g, --gpu GPU_START          CUDA_VISIBLE_DEVICES 起始编号 (默认 0)"
     echo "  --deepgemm                   使用 sglang__0.5.12_deepgemm 环境 + JIT DeepGEMM"
+    echo "  --spec                       开启 NEXTN 投机解码（默认关闭；离线批处理勿开，会锁死 scheduler）"
     echo "  -h, --help                   显示帮助"
     exit 0
 }
@@ -23,6 +29,7 @@ PORT_START=8001
 NUM_INSTANCES=8
 GPU_START=0
 USE_DEEPGEMM=0
+USE_SPEC=0
 WATCHDOG_TIMEOUT=${WATCHDOG_TIMEOUT:-1200}
 
 while [[ $# -gt 0 ]]; do
@@ -31,6 +38,7 @@ while [[ $# -gt 0 ]]; do
         -n|--num)       NUM_INSTANCES="$2"; shift 2 ;;
         -g|--gpu)       GPU_START="$2";     shift 2 ;;
         --deepgemm)     USE_DEEPGEMM=1;     shift ;;
+        --spec)         USE_SPEC=1;         shift ;;
         -h|--help)      usage ;;
         *) echo "未知参数: $1"; usage ;;
     esac
@@ -45,7 +53,16 @@ else
     SGLANG_ENABLE_JIT_DEEPGEMM=${SGLANG_ENABLE_JIT_DEEPGEMM:-0}
 fi
 
-echo "配置: port=$PORT_START, num=$NUM_INSTANCES, gpu=$GPU_START, deepgemm=$USE_DEEPGEMM"
+# 投机解码（默认关闭）。NEXTN/EAGLE 在长时批处理下会泄漏 KV 页、锁死 scheduler，仅 --spec 时开启。
+if [ "$USE_SPEC" = "1" ]; then
+    SPEC_ENV="SGLANG_ENABLE_SPEC_V2=1"
+    SPEC_ARGS="--speculative-algo NEXTN --speculative-num-steps 3 --speculative-eagle-topk 1 --speculative-num-draft-tokens 4"
+else
+    SPEC_ENV=""
+    SPEC_ARGS=""
+fi
+
+echo "配置: port=$PORT_START, num=$NUM_INSTANCES, gpu=$GPU_START, deepgemm=$USE_DEEPGEMM, spec=$USE_SPEC"
 echo "  python: $SGLANG_PYTHON"
 
 if [ ! -x "$SGLANG_PYTHON" ]; then
@@ -74,7 +91,7 @@ for i in $(seq 0 $((NUM_INSTANCES - 1))); do
     GPU=$((GPU_START + i))
     DIST_PORT=$((29500 + GPU))
 
-    SGLANG_ENABLE_SPEC_V2=1 SGLANG_ENABLE_JIT_DEEPGEMM=$SGLANG_ENABLE_JIT_DEEPGEMM CUDA_VISIBLE_DEVICES=$GPU \
+    $SPEC_ENV SGLANG_ENABLE_JIT_DEEPGEMM=$SGLANG_ENABLE_JIT_DEEPGEMM CUDA_VISIBLE_DEVICES=$GPU \
     "$SGLANG_PYTHON" -m sglang.launch_server \
         --model-path "$MODEL" \
         --port $PORT \
@@ -85,10 +102,7 @@ for i in $(seq 0 $((NUM_INSTANCES - 1))); do
         --watchdog-timeout $WATCHDOG_TIMEOUT \
         --reasoning-parser qwen3 \
         --mamba-scheduler-strategy extra_buffer \
-        --speculative-algo NEXTN \
-        --speculative-num-steps 3 \
-        --speculative-eagle-topk 1 \
-        --speculative-num-draft-tokens 4 \
+        $SPEC_ARGS \
         --skip-server-warmup \
         --trust-remote-code &
 
