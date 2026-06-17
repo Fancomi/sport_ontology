@@ -224,3 +224,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# videos/lib/ 是 videos 流水线的共享源码库（config / vlm_prompts），
+# 被上面通用的 lib/ 规则误伤；这里显式取消忽略「目录 + .py 源码」，
+# 但不放开 __pycache__/*.pyc（仍由上面的通用规则忽略）。
+!videos/lib/
+!videos/lib/*.py

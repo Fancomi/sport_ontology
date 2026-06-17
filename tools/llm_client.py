@@ -136,8 +136,14 @@ class VLMEndpoint:
 
 
 def build_vlm_endpoints(host: str, ports: list[int],
-                        think: bool | None = None) -> list[VLMEndpoint]:
-    """构建 VLMEndpoint 列表（raw httpx，绕过 OpenAI 客户端的 json.dumps 开销）。"""
+                        think: bool | None = None,
+                        max_conn: int = 256) -> list[VLMEndpoint]:
+    """构建 VLMEndpoint 列表（raw httpx，绕过 OpenAI 客户端的 json.dumps 开销）。
+
+    max_conn: 每个端点 httpx 连接池上限（默认 256）。高并发派发时务必 >= 单端点
+              实际并发数，否则会被 httpx 默认 max_connections=100 卡住。
+    """
+    limits = httpx.Limits(max_connections=max_conn, max_keepalive_connections=max_conn)
     eps = []
     for port, r in sorted(_probe_vlm_ports(host, ports).items()):
         if isinstance(r, Exception):
@@ -150,7 +156,7 @@ def build_vlm_endpoints(host: str, ports: list[int],
             # thinking 模式下 max_tokens 需容纳推理链，默认 16384
             max_tok_b = b'16384' if think else b''
             eps.append(VLMEndpoint(
-                session=httpx.Client(timeout=120),
+                session=httpx.Client(timeout=120, limits=limits),
                 url=f'http://{host}:{port}/v1/chat/completions',
                 mod_b=json.dumps(mid).encode(),
                 ext_b=ext_b,
@@ -164,6 +170,47 @@ def frames_to_img_bytes(frames: list[str]) -> bytes:
     parts = [b'{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,' +
              f.encode() + b'"}}' for f in frames]
     return b'[' + b','.join(parts) + b']'
+
+
+def call_vlm_raw(ep: VLMEndpoint, img_bytes: bytes, prompt: str,
+                 system: str | None = None, max_tokens: int | None = None) -> str:
+    """统一的 raw httpx VLM 调用：拼预序列化 body 直发，绕过 OpenAI SDK 的 json.dumps GIL 热点。
+
+    这是各 VLM 脚本（caption / audit / eval）共用的快路径，消除多处重复的字节拼装。
+
+    Args:
+        ep:         build_vlm_endpoints 产出的端点（含预序列化的 model/extra_body）。
+        img_bytes:  frames_to_img_bytes() 产出的图像 JSON 数组字节（形如 b'[{...},...]'）。
+                    大 base64 已在此预序列化，调用线程不再做重活——这是提速关键。
+        prompt:     用户文本（小，每次 json.dumps 开销可忽略）。
+        system:     可选 system 消息文本；None 则不加。
+        max_tokens: 可选 max_tokens；优先级：think 模式(ep.max_tok_b) > 本参数 > 512。
+
+    Returns:
+        message.content（去首尾空白）。
+
+    Raises:
+        HTTP / JSON 解析失败时**抛异常**，由调用方按各自策略容错
+        （audit 保守保留 / caption 标 __error__ / eval 跳过）。
+    """
+    text_b = b'{"type":"text","text":' + json.dumps(prompt).encode() + b'}'
+    content = img_bytes[:-1] + b',' + text_b + b']'      # 去掉尾部 ']' 再追加文本项
+    if ep.max_tok_b:                 # think 模式下 build_vlm_endpoints 已塞入 16384
+        mt_b = ep.max_tok_b
+    elif max_tokens is not None:
+        mt_b = str(max_tokens).encode()
+    else:
+        mt_b = b'512'
+    sys_part = (b'{"role":"system","content":' + json.dumps(system).encode() + b'},'
+                if system else b'')
+    body = (b'{"model":' + ep.mod_b +
+            b',"messages":[' + sys_part + b'{"role":"user","content":' + content + b'}]' +
+            b',"max_tokens":' + mt_b + b',"temperature":0.0' +
+            (b',' + ep.ext_b if ep.ext_b else b'') + b'}')
+    r = ep.session.post(ep.url, content=body,
+                        headers={"Content-Type": "application/json"})
+    return (r.json()["choices"][0]["message"].get("content") or "").strip()
+
 
 
 # ── POE 默认配置 ──────────────────────────────────────────────────────────────
