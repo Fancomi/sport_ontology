@@ -50,6 +50,9 @@ def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 10) -> t
         if not ru.keys_legal(new):
             last_status = 'illegal_key'
             continue
+        if not ru.limb_state_legal(new):
+            last_status = 'illegal_key'
+            continue
         if new == text:
             return text, 'unchanged'
         return new, 'ok'

@@ -152,3 +152,19 @@ def test_reslot_one_caps_max_tokens_at_2048():
     client = RecordingClient(good)
     mod.reslot_one(old, client, "P {{category_3}}")
     assert client.last_kwargs.get('max_tokens') == 2048
+
+
+def test_process_file_leaves_file_untouched_on_revert(tmp_path):
+    import json as _json
+    from pathlib import Path as _Path
+    p = tmp_path / "augment_front_cn.json"
+    original = {"category_3_slotted_description": "他抬起另一条腿屈膝保持平衡", "other": "keep"}
+    p.write_text(_json.dumps(original, ensure_ascii=False, indent=2), "utf-8")
+    before = p.read_text("utf-8")
+    # LLM 改字 → invariant 破坏 → reverted，不应写回
+    bad = '{"category_3_slotted_description": "他抬起[limb_state:非工作腿:屈膝]保持平衡"}'
+    status = mod.process_file(_Path(str(p)), StubClient(bad), "P {{category_3}}", 2)
+    assert status == 'reverted'
+    after = p.read_text("utf-8")
+    assert after == before                       # 磁盘文件逐字未变
+    assert "_cat3_reslotted" not in _json.loads(after)

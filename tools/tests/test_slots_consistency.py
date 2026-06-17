@@ -32,3 +32,18 @@ def test_clean_ontology_slots_has_14():
 def test_check_augment_valid_slots_has_14():
     vals = _flatten(_extract_tuple('2_1_check_augment.py', 'VALID_SLOTS'))
     assert vals == set(ru.SLOTS)
+
+
+def _extract_ordered(path, varname):
+    """抓 varname = (...) 里字符串值的【有序】列表。"""
+    import re as _re
+    src = open(os.path.join(os.path.dirname(__file__), '..', path)).read()
+    m = _re.search(varname + r'\s*=\s*\((.*?)\)', src, _re.S)
+    assert m, f'{varname} tuple not found in {path}'
+    return _re.findall(r'"(\w+)"', m.group(1))
+
+
+def test_tuple_slot_lists_preserve_order():
+    expected = list(ru.SLOTS)
+    for path in ('3_collect_slots.py', '5_enrich_with_llm.py', '5_1_clean_ontology.py'):
+        assert _extract_ordered(path, 'SLOTS') == expected, f'order mismatch in {path}'

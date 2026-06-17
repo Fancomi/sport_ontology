@@ -40,3 +40,9 @@ def test_keys_legal_accepts_valid():
 def test_keys_legal_rejects_invalid():
     assert ru.keys_legal("[static:保持]身体") is False
     assert ru.keys_legal("[temo:快速]") is False
+
+
+def test_limb_state_legal():
+    assert ru.limb_state_legal("[limb_state:另一条腿屈膝][body_position:站立]") is True
+    assert ru.limb_state_legal("[limb_state:非工作腿:屈膝]") is False
+    assert ru.limb_state_legal("[force_type:推]") is True  # 无 limb_state 视为合法

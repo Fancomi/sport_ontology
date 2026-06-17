@@ -36,6 +36,14 @@ def keys_legal(text: str) -> bool:
     return all(k in SLOT_SET for k, _ in _MARKUP_RE.findall(text))
 
 
+_MARKUP_RE_FULL = _MARKUP_RE  # alias for clarity below
+
+
+def limb_state_legal(text: str) -> bool:
+    """文本中所有 limb_state 值必须是自然短语（不含冒号），不得为 部位:状态 复合值。"""
+    return all(limb_state_value_ok(v) for k, v in _MARKUP_RE.findall(text) if k == "limb_state")
+
+
 # ── 新键闭词表（已按 6229 条全量重标的真实词频收敛）──────────────────────────────
 # 值为原句自由片段，闭词表非硬门禁，仅作 2_4 审核"新值"统计与未来 ontology 归一的语义参考。
 # 下列为真实高频规范形（同义变体如 站/站立/站姿 由 5_enrich 在 ontology 层归并）。
