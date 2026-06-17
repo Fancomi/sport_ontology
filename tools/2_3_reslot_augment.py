@@ -17,6 +17,7 @@ import reslot_utils as ru
 FIELD       = 'category_3_slotted_description'
 RESLOT_KEY  = '_cat3_reslotted'
 PROMPT_PATH = PROMPTS_DIR / '2_3_reslot_cn.md'
+MAX_OUT_TOKENS = 2048   # 上限：正常输出（原文+括号）远低于此；防止模型跑飞到 16384 拖慢并压垮服务
 
 
 def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 10) -> tuple[str, str]:
@@ -30,7 +31,8 @@ def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 10) -> t
     last_status = 'parse_fail'
     for _ in range(max_attempts):
         try:
-            raw = client.chat(messages=[{'role': 'user', 'content': prompt}])
+            raw = client.chat(messages=[{'role': 'user', 'content': prompt}],
+                               max_tokens=MAX_OUT_TOKENS)
         except Exception:
             last_status = 'error'
             continue

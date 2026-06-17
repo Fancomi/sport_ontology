@@ -134,3 +134,21 @@ def test_reslot_one_default_max_attempts_is_10():
 def test_process_file_default_max_attempts_is_10():
     import inspect
     assert inspect.signature(mod.process_file).parameters['max_attempts'].default == 10
+
+
+class RecordingClient:
+    """记录传给 chat 的 kwargs，返回预设 reply。"""
+    def __init__(self, reply):
+        self.reply = reply
+        self.last_kwargs = None
+    def chat(self, messages, **kw):
+        self.last_kwargs = kw
+        return self.reply
+
+
+def test_reslot_one_caps_max_tokens_at_2048():
+    old = "他站立"
+    good = '{"category_3_slotted_description": "他[body_position:站立]"}'
+    client = RecordingClient(good)
+    mod.reslot_one(old, client, "P {{category_3}}")
+    assert client.last_kwargs.get('max_tokens') == 2048
