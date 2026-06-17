@@ -39,7 +39,7 @@ from typing import Optional
 
 from config import DATA_ROOT, LangPaths, augment_name
 from hard_utils import load_hard_all, save_hard_all
-from llm_client import build_vlm_endpoints, frames_to_img_bytes, parse_ports, VLMEndpoint
+from llm_client import build_vlm_endpoints, call_vlm_raw, frames_to_img_bytes, parse_ports, VLMEndpoint
 from ontology_utils import SLOT_RE, build_lookup
 from video_frames import ensure_frames, FPS_DEFAULT
 
@@ -47,7 +47,6 @@ VIEWS         = ("front", "side")
 ANS_RE        = re.compile(r"\((\d+)\)=([A-Da-d])")
 N_CHOICES_MAX = 4
 MAX_TOKENS    = 256
-_MAX_B        = str(MAX_TOKENS).encode()
 
 _inflight: list[int] = []
 _inf_lock = Lock()
@@ -293,17 +292,9 @@ def format_prompt(q: ClozeQuestion, lang: str = 'cn') -> str:
 # ── VLM 调用 ─────────────────────────────────────────────────────────────────
 
 def call_vlm(img_bytes: bytes, prompt: str, ep: VLMEndpoint) -> str:
-    text_b  = b'{"type":"text","text":' + json.dumps(prompt).encode() + b'}'
-    content = img_bytes[:-1] + b',' + text_b + b']'
-    body    = (b'{"model":' + ep.mod_b +
-               b',"messages":[{"role":"user","content":' + content + b'}]' +
-               b',"max_tokens":' + (ep.max_tok_b or _MAX_B) + b',"temperature":0.0' +
-               (b',' + ep.ext_b if ep.ext_b else b'') + b'}')
+    """委托共享 call_vlm_raw（raw httpx）；失败返回 ""。"""
     try:
-        r = ep.session.post(ep.url, content=body,
-                            headers={"Content-Type": "application/json"})
-        msg = r.json()["choices"][0]["message"]
-        return (msg.get("content") or "").strip()
+        return call_vlm_raw(ep, img_bytes, prompt, max_tokens=MAX_TOKENS)
     except Exception as e:
         print(f"  ✗ VLM: {e}")
         return ""
