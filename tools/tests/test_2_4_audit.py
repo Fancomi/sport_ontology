@@ -19,6 +19,7 @@ def test_audit_passes_clean_text():
     assert issues == []
 
 
-def test_audit_reports_out_of_vocab_body_position():
-    issues = mod.audit_text("[body_position:漂浮]")
-    assert any('闭词表外' in i for i in issues)
+def test_audit_accepts_freetext_body_position():
+    # value 为原文自由片段（如口语"躺"），不在 seed 词表也不报错
+    issues = mod.audit_text("[body_position:躺]")
+    assert issues == []

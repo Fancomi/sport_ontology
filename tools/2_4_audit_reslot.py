@@ -15,7 +15,8 @@ _MARKUP_RE = re.compile(r"\[(\w+):([^\]]+)\]")
 
 
 def audit_text(text: str) -> list:
-    """规则层审核，返回问题字符串列表（空=通过）。"""
+    """规则层审核，返回硬性问题列表（空=通过）。
+    body_position/tempo 值为自由原文片段，不做闭词表门禁；其分布在 main() 单独统计。"""
     issues = []
     for key, val in _MARKUP_RE.findall(text):
         if key not in ru.SLOT_SET:
@@ -23,10 +24,6 @@ def audit_text(text: str) -> list:
             continue
         if key == 'limb_state' and not ru.limb_state_value_ok(val):
             issues.append(f'limb_state 复合值非法[{val}]（须自然短语，不含冒号）')
-        if key == 'body_position' and val not in ru.BODY_POSITION_VOCAB:
-            issues.append(f'body_position 闭词表外值[{val}]')
-        if key == 'tempo' and val not in ru.TEMPO_VOCAB:
-            issues.append(f'tempo 闭词表外值[{val}]')
     return issues
 
 
@@ -37,7 +34,8 @@ def main() -> None:
 
     all_aug = sorted(DATA_ROOT.rglob('augment_*_cn.json'))
     report = {'total': 0, 'reslotted': 0, 'with_issues': 0,
-              'issue_counts': {}, 'samples': []}
+              'issue_counts': {}, 'samples': [],
+              'new_slot_values': {k: {} for k in ('body_position', 'tempo', 'limb_state')}}
     for p in all_aug:
         try:
             d = json.loads(p.read_text('utf-8'))
@@ -50,6 +48,9 @@ def main() -> None:
             continue
         report['reslotted'] += 1
         issues = audit_text(d[FIELD])
+        for key, val in _MARKUP_RE.findall(d[FIELD]):
+            if key in report['new_slot_values']:
+                report['new_slot_values'][key][val] = report['new_slot_values'][key].get(val, 0) + 1
         if issues:
             report['with_issues'] += 1
             for it in issues:
@@ -63,6 +64,11 @@ def main() -> None:
     print(f"审核完成: 重标 {report['reslotted']} 条，{report['with_issues']} 条有问题")
     print(f"问题分布: {report['issue_counts']}")
     print(f"报告: {args.out}")
+    print("新槽位值分布（synonym-merge 参考）：")
+    for slot, seed in (('body_position', ru.BODY_POSITION_VOCAB), ('tempo', ru.TEMPO_VOCAB)):
+        vals = report['new_slot_values'][slot]
+        novel = [v for v in vals if v not in seed]
+        print(f"  {slot}: {len(vals)} 个不同值，其中 {len(novel)} 个在 seed 词表外（待归一候选）")
 
 
 if __name__ == '__main__':
