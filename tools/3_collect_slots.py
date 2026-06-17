@@ -254,6 +254,8 @@ def main() -> None:
                         help="输出目录（默认脚本同级目录）")
     parser.add_argument("--lang",    default="cn", choices=["cn", "en"],
                         help="语言版本，决定读取的 augment 文件与输出文件名后缀（默认 cn）")
+    parser.add_argument("--delete-abnormal", action="store_true", dest="delete_abnormal",
+                        help="删除含异常槽位的 augment 文件（默认仅报告不删除，破坏性操作需显式开启）")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -317,13 +319,19 @@ def main() -> None:
                     "  原因：槽位值须为纯英文，含 CJK 字符说明翻译未完成或 QC 未通过")
 
     if abnormal_files:
-        print(f"\n删除含异常槽位的文件（共 {len(abnormal_files)} 个）：")
-        for f in sorted(abnormal_files):
-            f.unlink()
-            print(f"  ✗ {f.relative_to(DATA_ROOT)}")
-        print(f"✓ 已删除 {len(abnormal_files)} 个文件，修复方法：\n  {fix_hint}")
+        if args.delete_abnormal:
+            print(f"\n删除含异常槽位的文件（共 {len(abnormal_files)} 个）：")
+            for f in sorted(abnormal_files):
+                f.unlink()
+                print(f"  ✗ {f.relative_to(DATA_ROOT)}")
+            print(f"✓ 已删除 {len(abnormal_files)} 个文件，修复方法：\n  {fix_hint}")
+        else:
+            print(f"\n⚠ 发现含异常槽位的文件（共 {len(abnormal_files)} 个，未删除）：")
+            for f in sorted(abnormal_files):
+                print(f"  ! {f.relative_to(DATA_ROOT)}")
+            print(f"  如需删除请加 --delete-abnormal；修复方法：\n  {fix_hint}")
     else:
-        print("\n✓ 无需删除文件")
+        print("\n✓ 无异常文件")
 
 
 if __name__ == "__main__":
