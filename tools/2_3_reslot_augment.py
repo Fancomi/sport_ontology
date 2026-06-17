@@ -29,7 +29,11 @@ def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 4) -> tu
     prompt = prompt_tmpl.replace('{{category_3}}', text)
     last_status = 'parse_fail'
     for _ in range(max_attempts):
-        raw = client.chat(messages=[{'role': 'user', 'content': prompt}])
+        try:
+            raw = client.chat(messages=[{'role': 'user', 'content': prompt}])
+        except Exception:
+            last_status = 'error'
+            continue
         if not raw:
             last_status = 'parse_fail'
             continue

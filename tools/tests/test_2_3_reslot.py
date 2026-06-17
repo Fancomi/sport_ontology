@@ -92,3 +92,35 @@ def test_reslot_one_gives_up_on_persistent_illegal_key():
     assert status == 'illegal_key'
     assert new == old
     assert client.calls == 3
+
+
+class RaisingClient:
+    """前 n 次抛异常，之后返回 good（模拟 token 耗尽后重试成功）。"""
+    def __init__(self, raises_first, good_reply):
+        self.raises_first = raises_first
+        self.good_reply = good_reply
+        self.calls = 0
+    def chat(self, messages, **kw):
+        self.calls += 1
+        if self.calls <= self.raises_first:
+            raise RuntimeError("Token 预算耗尽 (finish_reason=length)")
+        return self.good_reply
+
+
+def test_reslot_one_survives_transient_exception_then_succeeds():
+    old = "他抬起另一条腿屈膝保持平衡"
+    good = '{"category_3_slotted_description": "他抬起[limb_state:另一条腿屈膝]保持平衡"}'
+    client = RaisingClient(raises_first=2, good_reply=good)
+    new, status = mod.reslot_one(old, client, "P {{category_3}}", max_attempts=4)
+    assert status == 'ok'
+    assert new == "他抬起[limb_state:另一条腿屈膝]保持平衡"
+    assert client.calls == 3
+
+
+def test_reslot_one_returns_error_when_all_attempts_raise():
+    old = "他保持平衡"
+    client = RaisingClient(raises_first=99, good_reply="unused")
+    new, status = mod.reslot_one(old, client, "P {{category_3}}", max_attempts=3)
+    assert status == 'error'
+    assert new == old
+    assert client.calls == 3
