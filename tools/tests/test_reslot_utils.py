@@ -78,3 +78,28 @@ def test_new_slot_value_ok_length_cap():
 def test_new_slot_value_ok_old_keys_always_pass():
     assert ru.new_slot_value_ok("equipment", "哑铃") is True
     assert ru.new_slot_value_ok("force_type", "蹬伸") is True
+
+
+def test_strip_bad_new_slots_removes_only_bad_new_keys():
+    text = "他[limb_state:控制节奏]进行[body_position:站立]训练，[tempo:稳定]"
+    out = ru.strip_bad_new_slots(text)
+    assert "[limb_state:控制节奏]" not in out
+    assert "控制节奏" in out
+    assert "[body_position:站立]" in out      # 合格，保留
+    assert "[tempo:稳定]" not in out           # 黑名单，剥离
+    assert "稳定" in out
+
+
+def test_strip_bad_new_slots_keeps_old_keys_untouched():
+    text = "他[equipment:哑铃][force_type:蹬伸][limb_state:双手]"
+    out = ru.strip_bad_new_slots(text)
+    assert "[equipment:哑铃]" in out
+    assert "[force_type:蹬伸]" in out          # 旧键不受门禁
+    assert "[limb_state:双手]" not in out       # 纯部位，剥离
+    assert "双手" in out
+
+
+def test_strip_bad_new_slots_preserves_invariant():
+    text = "他[limb_state:控制节奏]站立[tempo:稳定]保持"
+    out = ru.strip_bad_new_slots(text)
+    assert ru.invariant_ok(text, out)

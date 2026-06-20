@@ -90,3 +90,14 @@ def new_slot_value_ok(slot: str, value: str) -> bool:
             return False
         return True
     return True
+
+
+def strip_bad_new_slots(text: str) -> str:
+    """剥离所有 new_slot_value_ok 不通过的新键标注（去括号保留裸词），旧键不动。
+    保证 strip_markup(text) == strip_markup(返回值)（守去括号铁律）。"""
+    def _repl(m):
+        key, val = m.group(1), m.group(2)
+        if key in NEW_SLOTS and not new_slot_value_ok(key, val):
+            return val
+        return m.group(0)
+    return _MARKUP_RE.sub(_repl, text)
