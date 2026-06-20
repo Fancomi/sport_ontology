@@ -3,6 +3,7 @@ import sys, os, importlib
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 mod = importlib.import_module('2_3_reslot_augment')
+import reslot_utils as ru
 
 
 class StubClient:
@@ -168,3 +169,19 @@ def test_process_file_leaves_file_untouched_on_revert(tmp_path):
     after = p.read_text("utf-8")
     assert after == before                       # 磁盘文件逐字未变
     assert "_cat3_reslotted" not in _json.loads(after)
+
+
+def test_reslot_one_strips_bad_new_slot_before_accept():
+    old = "他控制节奏进行训练"
+    reply = '{"category_3_slotted_description": "他[limb_state:控制节奏]进行训练"}'
+    new, status = mod.reslot_one(old, StubClient(reply), "P {{category_3}}", max_attempts=1)
+    assert "[limb_state:控制节奏]" not in new   # 坏新键被门禁剥离
+    assert ru.invariant_ok(old, new)
+
+
+def test_reslot_one_keeps_good_new_slot():
+    old = "他另一条腿屈膝保持平衡"
+    reply = '{"category_3_slotted_description": "他[limb_state:另一条腿屈膝]保持平衡"}'
+    new, status = mod.reslot_one(old, StubClient(reply), "P {{category_3}}", max_attempts=1)
+    assert status == 'ok'
+    assert "[limb_state:另一条腿屈膝]" in new

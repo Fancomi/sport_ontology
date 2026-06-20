@@ -53,6 +53,7 @@ def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 10) -> t
         if not ru.limb_state_legal(new):
             last_status = 'illegal_key'
             continue
+        new = ru.strip_bad_new_slots(new)   # 第1层门禁：剥离不合格新键标注
         if new == text:
             return text, 'unchanged'
         return new, 'ok'
