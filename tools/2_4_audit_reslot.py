@@ -24,6 +24,8 @@ def audit_text(text: str) -> list:
             continue
         if key == 'limb_state' and not ru.limb_state_value_ok(val):
             issues.append(f'limb_state 复合值非法[{val}]（须自然短语，不含冒号）')
+        if not ru.new_slot_value_ok(key, val):
+            issues.append(f'新键门禁违规[{key}:{val}]')
     return issues
 
 

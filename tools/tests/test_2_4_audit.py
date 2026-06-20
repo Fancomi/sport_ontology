@@ -23,3 +23,14 @@ def test_audit_accepts_freetext_body_position():
     # value 为原文自由片段（如口语"躺"），不在 seed 词表也不报错
     issues = mod.audit_text("[body_position:躺]")
     assert issues == []
+
+
+def test_audit_flags_gate_violations():
+    assert any('门禁' in i for i in mod.audit_text("[tempo:稳定]"))
+    assert any('门禁' in i for i in mod.audit_text("[limb_state:控制节奏]"))
+    assert any('门禁' in i for i in mod.audit_text("[body_position:姿势]"))
+
+
+def test_audit_passes_gate_compliant():
+    issues = mod.audit_text("[body_position:站立][tempo:缓慢][limb_state:另一条腿屈膝]")
+    assert issues == []
