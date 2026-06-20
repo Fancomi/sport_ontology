@@ -46,3 +46,35 @@ def test_limb_state_legal():
     assert ru.limb_state_legal("[limb_state:另一条腿屈膝][body_position:站立]") is True
     assert ru.limb_state_legal("[limb_state:非工作腿:屈膝]") is False
     assert ru.limb_state_legal("[force_type:推]") is True  # 无 limb_state 视为合法
+
+
+def test_new_slot_value_ok_tempo_blacklist():
+    assert ru.new_slot_value_ok("tempo", "缓慢") is True
+    assert ru.new_slot_value_ok("tempo", "稳定") is False
+    assert ru.new_slot_value_ok("tempo", "控制良好") is False
+    assert ru.new_slot_value_ok("tempo", "动作节奏平稳且控制良好") is False  # 超长
+
+
+def test_new_slot_value_ok_limb_state_anchor():
+    assert ru.new_slot_value_ok("limb_state", "另一条腿屈膝") is True
+    assert ru.new_slot_value_ok("limb_state", "控制节奏") is False   # 无部位 + 黑名单
+    assert ru.new_slot_value_ok("limb_state", "双手") is False       # 纯部位无姿态
+    assert ru.new_slot_value_ok("limb_state", "缓慢") is False       # 无部位
+    assert ru.new_slot_value_ok("limb_state", "手臂离心下降") is False # 含部位但带轨迹黑名单
+
+
+def test_new_slot_value_ok_body_position_blacklist():
+    assert ru.new_slot_value_ok("body_position", "站立") is True
+    assert ru.new_slot_value_ok("body_position", "躺") is True       # 泛化新词放行
+    assert ru.new_slot_value_ok("body_position", "姿势") is False    # 泛词
+    assert ru.new_slot_value_ok("body_position", "保持") is False
+
+
+def test_new_slot_value_ok_length_cap():
+    assert ru.new_slot_value_ok("body_position", "低弓步") is True
+    assert ru.new_slot_value_ok("body_position", "双脚与肩同宽站立姿势") is False  # ≥8
+
+
+def test_new_slot_value_ok_old_keys_always_pass():
+    assert ru.new_slot_value_ok("equipment", "哑铃") is True
+    assert ru.new_slot_value_ok("force_type", "蹬伸") is True

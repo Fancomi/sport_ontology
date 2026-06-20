@@ -55,3 +55,38 @@ TEMPO_VOCAB = frozenset({
     "缓慢", "控制", "爆发", "爆发力", "快速", "匀速",
     "节奏", "节奏感", "节奏平稳", "停顿", "静态", "静态保持", "轻快",
 })
+
+# ── 第1层写入门禁：黑名单 + 结构锚点（黑名单制，保 LLM 泛化）──────────────────────
+TEMPO_BLACKLIST = frozenset({"稳定", "平稳", "受控", "协调", "流畅", "控制良好", "身体稳定"})
+LIMB_STATE_BLACKLIST = frozenset({
+    "离心", "向心", "上升", "下降", "顶峰收缩", "水平", "旋转",        # 轨迹
+    "控制节奏", "节奏", "轻快", "缓慢", "快速", "爆发力", "停顿", "静态",  # 节奏
+    "发力", "蹬伸", "推", "拉", "保持稳定",                            # 发力
+})
+BODY_POSITION_BLACKLIST = frozenset({"姿势", "姿态", "保持", "动作"})
+LIMB_PARTS = ("腿", "臂", "手", "脚", "膝", "肘", "肩", "髋", "踝", "腕", "颈", "背")
+PURE_PART = frozenset({"双手", "单手", "双脚", "单脚", "双腿", "单腿", "双臂", "背部", "手"})
+
+MAX_NEW_SLOT_LEN = 7   # 新键 value 上限字符数；≥8 视为整句误标
+
+
+def new_slot_value_ok(slot: str, value: str) -> bool:
+    """第1层确定性门禁。非新键恒 True；新键按黑名单+结构锚点+超长判定。"""
+    if slot not in NEW_SLOTS:
+        return True
+    v = value.strip()
+    if len(v) > MAX_NEW_SLOT_LEN:
+        return False
+    if slot == "tempo":
+        return not any(b in v for b in TEMPO_BLACKLIST)
+    if slot == "body_position":
+        return not any(b in v for b in BODY_POSITION_BLACKLIST)
+    if slot == "limb_state":
+        if any(b in v for b in LIMB_STATE_BLACKLIST):
+            return False
+        if not any(p in v for p in LIMB_PARTS):
+            return False
+        if v in PURE_PART:
+            return False
+        return True
+    return True
