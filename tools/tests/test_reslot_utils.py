@@ -103,3 +103,19 @@ def test_strip_bad_new_slots_preserves_invariant():
     text = "他[limb_state:控制节奏]站立[tempo:稳定]保持"
     out = ru.strip_bad_new_slots(text)
     assert ru.invariant_ok(text, out)
+
+
+def test_new_slot_value_ok_review_fixes():
+    # 长度上限 8：部位+姿态常达 8 字应放行
+    assert ru.new_slot_value_ok("limb_state", "对侧手臂向上伸直") is True   # 8 字
+    assert ru.new_slot_value_ok("limb_state", "单腿抬至与地面平行") is False  # 9 字超限
+    # 黑名单不再单字误杀 推/拉
+    assert ru.new_slot_value_ok("limb_state", "单手推墙") is True
+    assert ru.new_slot_value_ok("limb_state", "对侧手臂下拉") is True
+    assert ru.new_slot_value_ok("limb_state", "手臂水平外展") is True   # "水平" 不再单独黑名单
+    # 但完整轨迹整词仍拦
+    assert ru.new_slot_value_ok("limb_state", "手臂离心下降") is False
+    # tempo 黑名单去掉"平稳"单字，但词表/黑名单不再自相矛盾
+    assert "节奏平稳" not in ru.TEMPO_VOCAB           # 已移除矛盾项
+    assert ru.new_slot_value_ok("tempo", "缓慢") is True
+    assert ru.new_slot_value_ok("tempo", "稳定") is False
