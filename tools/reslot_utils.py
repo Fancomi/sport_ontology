@@ -76,3 +76,26 @@ def strip_bad_new_slots(text: str) -> str:
             return val
         return m.group(0)
     return _MARKUP_RE.sub(_repl, text)
+
+
+# ── 召回线索词：明文含这些词却没标对应新键 → 疑似漏标，触发重试 ──────────────────
+BODY_POSITION_CUES = (
+    "站立", "站姿", "站在", "坐姿", "坐在", "跪", "仰卧", "俯卧", "侧卧", "平躺",
+    "悬垂", "悬挂", "弓步", "深蹲", "俯卧撑", "平板支撑", "四点支撑", "俯身",
+)
+TEMPO_CUES = ("缓慢", "快速", "迅速", "爆发", "停顿", "静态", "匀速", "节奏")
+
+
+def has_unmarked_cue(text: str) -> bool:
+    """文本明文含 body_position/tempo 线索词，但该词未被对应新键标注覆盖 → True（疑似漏标）。
+    仅作重试触发信号：误判只多花重试，不影响正确性（重试仍漏则接受）。"""
+    marked_bp = " ".join(v for k, v in _MARKUP_RE.findall(text) if k == "body_position")
+    marked_tp = " ".join(v for k, v in _MARKUP_RE.findall(text) if k == "tempo")
+    plain = strip_markup(text)
+    for w in BODY_POSITION_CUES:
+        if w in plain and w not in marked_bp:
+            return True
+    for w in TEMPO_CUES:
+        if w in plain and w not in marked_tp:
+            return True
+    return False

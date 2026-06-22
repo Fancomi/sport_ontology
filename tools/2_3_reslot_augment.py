@@ -23,12 +23,15 @@ MAX_OUT_TOKENS = 2048   # 上限：正常输出（原文+括号）远低于此�
 def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 10) -> tuple[str, str]:
     """返回 (new_text, status)。status: ok|unchanged|reverted|illegal_key|parse_fail
 
-    接受条件：去括号逐字相等 且 所有键合法。任一不满足则重试（部分随机，
-    重试常能拿到干净版本）；max_attempts 次全失败才返回原文。
+    接受条件：去括号逐字相等 且 所有键合法。任一不满足则重试。
+    召回重试：若原文明文含 body_position/tempo 线索词但本次输出漏标，视为疑似漏标，
+    继续重试（模型会随机漏标，重试常能补上）；攒下"最佳候选"，max_attempts 次内
+    若始终漏标则采纳最佳候选（模型确实判定不该标）。
     被采纳的输出必然满足铁律且键合法，安全性不受重试影响。
     """
     prompt = prompt_tmpl.replace('{{category_3}}', text)
     last_status = 'parse_fail'
+    best = None                      # (new_text, status) 满足铁律+合法但疑似漏标的候选
     for _ in range(max_attempts):
         try:
             raw = client.chat(messages=[{'role': 'user', 'content': prompt}],
@@ -51,9 +54,14 @@ def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 10) -> t
             last_status = 'illegal_key'
             continue
         new = ru.strip_bad_new_slots(new)   # 第1层门禁：剥离不合格新键标注
-        if new == text:
-            return text, 'unchanged'
-        return new, 'ok'
+        status = 'unchanged' if new == text else 'ok'
+        if ru.has_unmarked_cue(new):
+            best = (new, status)            # 疑似漏标：暂存，继续重试求更全的版本
+            last_status = status
+            continue
+        return new, status                  # 无漏标线索 → 直接采纳
+    if best is not None:
+        return best                          # 重试用尽仍有漏标，采纳最佳候选
     return text, last_status
 
 

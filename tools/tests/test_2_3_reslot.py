@@ -185,3 +185,32 @@ def test_reslot_one_keeps_good_new_slot():
     new, status = mod.reslot_one(old, StubClient(reply), "P {{category_3}}", max_attempts=1)
     assert status == 'ok'
     assert "[body_position:站立]" in new
+
+
+class SeqClient:
+    """按序返回多个回复，模拟重试中模型输出变化。"""
+    def __init__(self, replies):
+        self.replies=list(replies); self.calls=0
+    def chat(self, messages, **kw):
+        r=self.replies[min(self.calls,len(self.replies)-1)]; self.calls+=1; return r
+
+
+def test_reslot_one_retries_on_unmarked_cue_then_marks():
+    old="他站立进行训练"
+    miss='{"category_3_slotted_description": "他站立进行训练"}'        # 漏标 body_position
+    good='{"category_3_slotted_description": "他[body_position:站立]进行训练"}'
+    c=SeqClient([miss, miss, good])
+    new,status=mod.reslot_one(old, c, "P {{category_3}}", max_attempts=5)
+    assert "[body_position:站立]" in new        # 重试补上了
+    assert status=='ok'
+    assert c.calls==3                            # 前2次漏标触发重试，第3次中
+
+
+def test_reslot_one_accepts_best_when_cue_never_marked():
+    old="他站立进行训练"
+    miss='{"category_3_slotted_description": "他站立进行训练"}'        # 始终漏标
+    c=SeqClient([miss])
+    new,status=mod.reslot_one(old, c, "P {{category_3}}", max_attempts=3)
+    assert new==old                              # 用尽重试，采纳最佳候选(=原文,unchanged)
+    assert status=='unchanged'
+    assert c.calls==3                            # 确实重试满了

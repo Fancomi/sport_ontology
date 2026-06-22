@@ -93,3 +93,14 @@ def test_new_slot_value_ok_review_fixes():
     assert "节奏平稳" not in ru.TEMPO_VOCAB           # 已移除矛盾项
     assert ru.new_slot_value_ok("tempo", "缓慢") is True
     assert ru.new_slot_value_ok("tempo", "稳定") is False
+
+
+def test_has_unmarked_cue():
+    # 明文含体位词但未标 → 疑似漏标
+    assert ru.has_unmarked_cue("他站立进行训练") is True
+    assert ru.has_unmarked_cue("他缓慢下蹲") is True
+    # 已正确标注 → 不触发
+    assert ru.has_unmarked_cue("他[body_position:站立]训练") is False
+    assert ru.has_unmarked_cue("他[tempo:缓慢]下蹲[body_position:蹲]") is False
+    # 无任何线索词 → 不触发
+    assert ru.has_unmarked_cue("他用[equipment:哑铃]训练") is False
