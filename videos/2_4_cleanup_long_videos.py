@@ -7,46 +7,17 @@
   python3 2_4_cleanup_long_videos.py --workers 32 --apply
 """
 import argparse
-import os
 import sys
 import time
-import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import cv2
-
 sys.path.insert(0, str(Path(__file__).parent))
 from lib import config
+from lib import duration_filter
 
 VIDEOS_DIR = config.DATA_DIR / "videos"
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
-DEFAULT_MAX_DURATION = 480.0
-_CV2_LOCK = threading.Lock()
-
-
-def actual_duration(video_path: Path) -> float | None:
-    """读取视频实际时长；失败返回 None。"""
-    with _CV2_LOCK:
-        null = os.open(os.devnull, os.O_WRONLY)
-        saved2 = os.dup(2)
-        cap = None
-        try:
-            os.dup2(null, 2)
-            cap = cv2.VideoCapture(str(video_path))
-            if not cap.isOpened():
-                return None
-            frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-            fps = cap.get(cv2.CAP_PROP_FPS)
-        finally:
-            if cap is not None:
-                cap.release()
-            os.dup2(saved2, 2)
-            os.close(null)
-            os.close(saved2)
-    if not frames or not fps or fps <= 0:
-        return None
-    return float(frames) / float(fps)
 
 
 def iter_videos(limit: int = 0) -> list[Path]:
@@ -67,7 +38,7 @@ def inspect_video(path: Path, max_duration: float) -> dict:
         size = path.stat().st_size
     except FileNotFoundError:
         return {"path": path, "missing": True}
-    duration = actual_duration(path)
+    duration = duration_filter.actual_duration(path)
     return {
         "path": path,
         "vid": path.stem,
@@ -79,7 +50,7 @@ def inspect_video(path: Path, max_duration: float) -> dict:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--max-duration", type=float, default=DEFAULT_MAX_DURATION)
+    parser.add_argument("--max-duration", type=float, default=duration_filter.MAX_DURATION_SEC)
     parser.add_argument("-w", "--workers", type=int, default=32)
     parser.add_argument("--limit", type=int, default=0, help="只检查前 N 个文件，用于调试")
     parser.add_argument("--apply", action="store_true", help="写 blacklist 并删除超长视频")
