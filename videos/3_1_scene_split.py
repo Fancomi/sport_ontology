@@ -268,6 +268,17 @@ def select_push_names(stem: str, survivors: list, n_produced: int,
     return [f"{stem}_{i}.mp4" for i in sorted(survivors)], None
 
 
+def list_remote_segments(stem: str) -> list:
+    """live 列远端 REMOTE_DST 现存 <stem>_N.mp4 索引 (兜底/校验用; 大批量优先用 survivors_map)。"""
+    r = ssh_cmd(f"ls {REMOTE_DST}/{stem}_*.mp4 2>/dev/null", timeout=60)
+    idx = []
+    for line in r.stdout.strip().split("\n"):
+        mm = re.search(rf"/{re.escape(stem)}_(\d+)\.mp4$", line.strip())
+        if mm:
+            idx.append(int(mm.group(1)))
+    return sorted(idx)
+
+
 def _push_chunk(args: tuple[str, str]) -> int:
     file_list_path, shm_out = args
     cmd = (f"sshpass -e rsync -aW --inplace --timeout=300 "
@@ -316,6 +327,115 @@ def push_batch(shm_out: str, workers_push: int = 4) -> tuple[int, float]:
         f.writelines(name + "\n" for name in out_files)
 
     return len(out_files), total_mb
+
+
+def push_named(shm_out: str, names: list) -> int:
+    """rsync 指定文件名到 REMOTE_DST。--existing: 绝不创建新远端文件
+    (即便选名有误也不会复活已删段)。返回 rsync returncode。"""
+    if not names:
+        return 0
+    lp = os.path.join(shm_out, "_replace_list.txt")
+    with open(lp, "w") as f:
+        f.write("\n".join(names) + "\n")
+    cmd = (f"sshpass -e rsync -aW --inplace --existing --timeout=300 "
+           f"--files-from='{lp}' -e 'ssh {SSH_OPTS}' "
+           f"'{shm_out}/' '{REMOTE}:{REMOTE_DST}/'")
+    r = subprocess.run(cmd, shell=True, capture_output=True,
+                       env=os.environ.copy(), timeout=600)
+    os.unlink(lp)
+    return r.returncode
+
+
+def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> str:
+    """拉原片 -> 只检测算段数 -> 对齐闸 -> 只编码并覆盖幸存段。返回一行状态。
+    survivors/n_original 由调用方从本地清单预取 (大批量免逐个远端 ls)。"""
+    import cv2
+    if not survivors:
+        return f"{stem}: SKIP 无幸存段 (清单)"
+    shm = f"/dev/shm/replace_{stem.replace('/', '_')}"
+    shm_src, shm_out = os.path.join(shm, "src"), os.path.join(shm, "out")
+    shutil.rmtree(shm, ignore_errors=True)
+    os.makedirs(shm_src, exist_ok=True); os.makedirs(shm_out, exist_ok=True)
+    try:
+        name = stem + ".mp4"
+        dst = os.path.join(shm_src, name)
+        cmd = (f"sshpass -e rsync -aW --inplace --timeout=30 -e 'ssh {SSH_OPTS}' "
+               f"'{REMOTE}:{REMOTE_SRC}/{name}' '{dst}'")
+        subprocess.run(cmd, shell=True, capture_output=True,
+                       env=os.environ.copy(), timeout=70)
+        if not (os.path.exists(dst) and os.path.getsize(dst) > 0):
+            return f"{stem}: SKIP 原片拉取失败/不存在"
+        cap = cv2.VideoCapture(dst)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        nf = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = nf / fps if fps > 0 else 0
+        cap.release()
+        plan = detect_segments(dst, fps, duration)
+        n_produced = len(plan) if plan else (1 if duration >= 1.0 else 0)
+        names, err = select_push_names(stem, survivors, n_produced, n_original)
+        if err:
+            return f"{stem}: ABORT {err}"
+        if not names:
+            return f"{stem}: SKIP 无可推段 (produced={n_produced})"
+        if dry_run:
+            return f"{stem}: DRY-RUN 将覆盖 {len(names)}/{n_produced} 段 {names}"
+        keep = {int(re.search(r'_(\d+)\.mp4$', n).group(1)) for n in names}
+        for idx, start, end, end_is_cut in plan:
+            if idx not in keep:        # 跳过被删索引 -> 省 CPU
+                continue
+            out = os.path.join(shm_out, f"{stem}_{idx}.mp4")
+            subprocess.run(build_cut_cmd(dst, out, start, end, fps, end_is_cut),
+                           capture_output=True, timeout=120)
+        rc = push_named(shm_out, names)
+        ok = "OK" if rc == 0 else f"PUSH-FAIL(rc={rc})"
+        return f"{stem}: {ok} 覆盖 {len(names)}/{n_produced} 段"
+    except Exception as e:
+        return f"{stem}: ERROR {e}"
+    finally:
+        shutil.rmtree(shm, ignore_errors=True)
+
+
+def run_replace(args):
+    """按原片名重切+替换远端 (不跑全量 pipeline)。"""
+    here = Path(__file__).parent
+    nmap = n_original_map(str(here / "split_queue.txt"))
+    smap = survivors_map(str(here / "remote_split_list.txt"))
+
+    stems = []
+    for n in args.names:
+        stems.append(n[:-4] if n.endswith(".mp4") else n)
+    for fp in (args.file or []):
+        with open(fp, encoding="utf-8") as f:
+            for ln in f:
+                ln = ln.strip()
+                if ln and not ln.startswith("#"):
+                    stems.append(ln[:-4] if ln.endswith(".mp4") else ln)
+    if args.all:
+        stems.extend(sorted(smap.keys()))
+    seen, uniq = set(), []
+    for s in stems:
+        if s not in seen:
+            seen.add(s); uniq.append(s)
+    if args.limit:
+        uniq = uniq[:args.limit]
+    if not uniq:
+        print("无原片名: 用 --names / -f / --all"); return
+
+    print(f"═══ Replace: {len(uniq)} 原片 dry_run={args.dry_run} "
+          f"workers={args.workers_replace} ═══", flush=True)
+    tasks = [(s, smap.get(s, []), nmap.get(s, 0), args.dry_run) for s in uniq]
+    stats = {"OK": 0, "SKIP": 0, "ABORT": 0, "ERROR": 0, "PUSH-FAIL": 0, "DRY-RUN": 0}
+    with Pool(args.workers_replace) as pool:
+        for line in pool.imap_unordered(_replace_star, tasks):
+            print(line, flush=True)
+            for k in stats:
+                if f": {k}" in line:
+                    stats[k] += 1; break
+    print(f"═══ 汇总: {stats} ═══", flush=True)
+
+
+def _replace_star(t):
+    return replace_one(*t)
 
 
 # ═══════════════════════════ Pipeline ═══════════════════════════
@@ -458,6 +578,18 @@ def main():
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--max-batches", type=int, default=0,
                         help="最多跑 N 批次 (0=不限)")
+    parser.add_argument("--replace", action="store_true",
+                        help="按原片名重切+只覆盖远端幸存段 (不跑全量 pipeline)")
+    parser.add_argument("--names", nargs="*", default=[],
+                        help="--replace: 原片名 (带不带 .mp4 都行)")
+    parser.add_argument("-f", "--file", action="append", default=[],
+                        help="--replace: 原片名清单文件 (可多次)")
+    parser.add_argument("--all", action="store_true",
+                        help="--replace: 取 remote_split_list.txt 全部有幸存段的原片")
+    parser.add_argument("--limit", type=int, default=0,
+                        help="--replace: 只处理前 N 个原片 (0=不限)")
+    parser.add_argument("--workers-replace", type=int, default=16,
+                        help="--replace: 并发原片数 (default 16)")
     args = parser.parse_args()
 
     global SCENE_THRESHOLD
@@ -467,7 +599,10 @@ def main():
         print("请设置 SSHPASS: SSHPASS='3dvision' python3 3_1_scene_split.py")
         sys.exit(1)
 
-    run_pipeline(args)
+    if args.replace:
+        run_replace(args)
+    else:
+        run_pipeline(args)
 
 
 if __name__ == "__main__":
