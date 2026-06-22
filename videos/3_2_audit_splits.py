@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import cv2
 from llm_client import build_vlm_endpoints, call_vlm_raw, frames_to_img_bytes, parse_ports
+from representative_frame import representative_frame_from_video
 from lib.vlm_prompts import SYSTEM, PROMPT
 
 # ═══════════════════════════ 配置 ═══════════════════════════
@@ -115,22 +116,9 @@ def pull_batch(files: list[str], shm: str, workers=16) -> list[str]:
 
 def audit_one(path: str, eps, pick_ep, release_ep) -> bool:
     """抽中位帧 → VLM 判断，返回是否通过。走共享 call_vlm_raw(raw httpx)。"""
-    null = os.open(os.devnull, os.O_WRONLY)
-    saved = os.dup(2); os.dup2(null, 2)
-    try:
-        cap = cv2.VideoCapture(path)
-        n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, n // 2))
-        ret, frame = cap.read()
-        cap.release()
-    finally:
-        os.dup2(saved, 2); os.close(null); os.close(saved)
-    if not ret:
+    frame, _idx, _n = representative_frame_from_video(path, fps=1.0, max_side=480)
+    if frame is None:
         return False
-    h, w = frame.shape[:2]
-    s = min(1.0, 480 / max(h, w))
-    if s < 1.0:
-        frame = cv2.resize(frame, (int(w*s), int(h*s)))
     _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
     img_b = frames_to_img_bytes([base64.b64encode(buf).decode()])
     i = pick_ep()
