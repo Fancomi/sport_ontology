@@ -350,11 +350,13 @@ def push_named(shm_out: str, names: list) -> int:
     return r.returncode
 
 
-def _purge_remote(stem: str) -> int:
-    """整源删除超长视频: 远端原片 + 全部切片。返回删除的切片数 (best-effort 估计)。
-    用 stdin-bash 形式 (仿 3_2_audit_splits._ssh) 避开 ssh_cmd 的单引号包裹冲突;
+def _purge_remote(stem: str) -> tuple[bool, int]:
+    """整源删除超长视频: 远端原片 + 全部切片。返回 (是否确实删净, 删除前切片数)。
+    删除后用 ls 复核: 原片与全部切片都不存在才算成功 (ok=True); 否则 ok=False,
+    调用方不写 blacklist/log, 留待下次重试 (防瞬时 ssh 失败被误记为已清除)。
+    用 stdin-bash 形式 (仿 3_2_audit_splits._ssh) 避开 ssh_cmd 单引号包裹冲突;
     './' 前缀防 dash 开头 stem 被当 rm 选项。"""
-    # 先数切片数 (供回报)
+    # 删除前数切片数 (供回报)
     r = ssh_cmd(f"ls {REMOTE_DST}/{stem}_*.mp4 2>/dev/null | wc -l", timeout=60)
     try:
         k = int(r.stdout.strip())
@@ -362,10 +364,21 @@ def _purge_remote(stem: str) -> int:
         k = 0
     script = (f"cd '{REMOTE_SRC}' && rm -f -- './{stem}.mp4'; "
               f"cd '{REMOTE_DST}' && rm -f -- './{stem}'_*.mp4")
-    subprocess.run(f"sshpass -e ssh {SSH_OPTS} {REMOTE} bash",
-                   shell=True, input=script, capture_output=True, text=True,
-                   env=os.environ.copy(), timeout=60)
-    return k
+    try:
+        subprocess.run(f"sshpass -e ssh {SSH_OPTS} {REMOTE} bash",
+                       shell=True, input=script, capture_output=True, text=True,
+                       env=os.environ.copy(), timeout=60)
+    except (subprocess.TimeoutExpired, OSError):
+        return False, k
+    # 删除后复核: 原片 + 任一切片仍在 => 未删净
+    chk = ssh_cmd(
+        f"ls {REMOTE_SRC}/{stem}.mp4 {REMOTE_DST}/{stem}_*.mp4 2>/dev/null | wc -l",
+        timeout=60)
+    try:
+        remaining = int(chk.stdout.strip())
+    except (ValueError, AttributeError):
+        remaining = 1   # 复核读不出 -> 保守判未删净
+    return remaining == 0, k
 
 
 def _pull_original(stem: str, dst: str, retries: int = 10) -> bool:
@@ -410,7 +423,10 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
         if duration_filter.should_purge(duration):
             if dry_run:
                 return f"{stem}: PURGED(dry-run) 将删原片+全部切片 (超长{duration:.0f}s)"
-            k = _purge_remote(stem)
+            ok, k = _purge_remote(stem)
+            if not ok:
+                # 删除未确认 (瞬时 ssh/rm 失败 / 复核读不出): 不写 blacklist/log, 留待重试
+                return f"{stem}: PURGE-FAIL 超长{duration:.0f}s 删除未确认, 未记录待重试"
             config.append_blacklist(stem)
             purged_log = Path(__file__).parent / "purged_too_long.txt"
             with open(purged_log, "a") as f:
@@ -487,8 +503,8 @@ def run_replace(args):
     print(f"═══ Replace: {len(uniq)} 原片 dry_run={args.dry_run} "
           f"workers={args.workers_replace} ═══", flush=True)
     tasks = [(s, smap.get(s, []), nmap.get(s, 0), args.dry_run) for s in uniq]
-    stats = {"OK": 0, "SKIP": 0, "ABORT": 0, "PURGED": 0, "ENCODE-FAIL": 0,
-             "ERROR": 0, "PUSH-FAIL": 0, "DRY-RUN": 0}
+    stats = {"OK": 0, "SKIP": 0, "ABORT": 0, "PURGED": 0, "PURGE-FAIL": 0,
+             "ENCODE-FAIL": 0, "ERROR": 0, "PUSH-FAIL": 0, "DRY-RUN": 0}
     with Pool(args.workers_replace) as pool:
         for line in pool.imap_unordered(_replace_star, tasks):
             print(line, flush=True)
