@@ -119,3 +119,17 @@ def test_new_slot_value_ok_review_fixes():
     assert "节奏平稳" not in ru.TEMPO_VOCAB           # 已移除矛盾项
     assert ru.new_slot_value_ok("tempo", "缓慢") is True
     assert ru.new_slot_value_ok("tempo", "稳定") is False
+
+
+def test_new_slot_value_ok_limb_state_contact_support_excluded():
+    # 接触/支撑地面的肢体动作应归 contact 类，不是 limb_state → 拒
+    assert ru.new_slot_value_ok("limb_state", "单脚踩地") is False
+    assert ru.new_slot_value_ok("limb_state", "单手撑地") is False
+    assert ru.new_slot_value_ok("limb_state", "一手扶地") is False
+    assert ru.new_slot_value_ok("limb_state", "左臂支撑地面") is False
+    assert ru.new_slot_value_ok("limb_state", "双手支撑身体") is False
+    assert ru.new_slot_value_ok("limb_state", "后腿膝盖着地") is False
+    # 真·悬空/配置姿态仍放行
+    assert ru.new_slot_value_ok("limb_state", "另一只脚悬空") is True
+    assert ru.new_slot_value_ok("limb_state", "对侧手臂向上伸直") is True
+    assert ru.new_slot_value_ok("limb_state", "左手叉腰") is True

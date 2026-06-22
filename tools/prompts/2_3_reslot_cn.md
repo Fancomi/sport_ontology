@@ -40,6 +40,8 @@
 ✗ [limb_state:控制节奏]   （节奏词，应归 tempo 或不标）
 ✗ [limb_state:双手]       （纯部位无姿态）
 ✗ [limb_state:离心下降]   （轨迹词，属 trajectory）
+✗ [limb_state:单脚踩地]   （接触地面，应归 contact_part+contact_type，不是 limb_state）
+✗ [limb_state:单手撑地]   （撑地是接触/支撑动作，归 contact 类）
 ✗ [tempo:动作节奏平稳且控制良好]  （整句，且含力学评价词）
 ✗ [tempo:动态]            （泛词，非速度档）
 ✗ [tempo:稳定]            （力学评价，非速度）
