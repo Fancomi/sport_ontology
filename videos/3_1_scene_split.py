@@ -371,9 +371,12 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
         duration = nf / fps if fps > 0 else 0
         cap.release()
         plan = detect_segments(dst, fps, duration)
-        # n_produced: None=no_cut→1 段(_0); []=有切点但全 <MIN_SEGMENT_SEC→0 段;
-        # 否则 len(plan). 用 `is None` 而非真值判断, 才能区分 [] 与 None (与 _split_one 一致)。
-        n_produced = 1 if plan is None else len(plan)
+        # no_cut (plan is None): 整片无切点 -> 无关键帧吸附头部粘连 -> 无需修复.
+        # 重编码整片(常 >100s)既浪费 CPU 又有损, 直接跳过 (远端 _0 保持原样, 下游审核照旧有效)。
+        if plan is None:
+            return f"{stem}: SKIP no_cut 无切点无需修复"
+        # n_produced: []=有切点但全 <MIN_SEGMENT_SEC→0 段; 否则 len(plan).
+        n_produced = len(plan)
         names, err = select_push_names(stem, survivors, n_produced, n_original)
         if err:
             return f"{stem}: ABORT {err}"
@@ -382,7 +385,7 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
         if dry_run:
             return f"{stem}: DRY-RUN 将覆盖 {len(names)}/{n_produced} 段 {names}"
         keep = {int(re.search(r'_(\d+)\.mp4$', n).group(1)) for n in names}
-        for idx, start, end, end_is_cut in (plan or []):
+        for idx, start, end, end_is_cut in plan:
             if idx not in keep:        # 跳过被删索引 -> 省 CPU
                 continue
             out = os.path.join(shm_out, f"{stem}_{idx}.mp4")

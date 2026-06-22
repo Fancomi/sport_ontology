@@ -162,6 +162,29 @@ def test_fetch_gallery_no_duration_label():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_detect_segments_none_for_no_cut():
+    """no_cut 视频 (单色无切点) detect_segments 必须返回 None, 这样 --replace 才能 SKIP
+    (整片无关键帧吸附头部粘连, 无需重编码)。"""
+    m = load_mod()
+    tmp = tempfile.mkdtemp()
+    try:
+        src = os.path.join(tmp, "solid.mp4")
+        subprocess.run(
+            ["ffmpeg", "-nostdin", "-f", "lavfi",
+             "-i", "color=c=green:s=320x240:d=4:r=30",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-y", src],
+            capture_output=True, timeout=60)
+        import cv2
+        cap = cv2.VideoCapture(src)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        nf = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        dur = nf / fps if fps > 0 else 0
+        cap.release()
+        assert m.detect_segments(src, fps, dur) is None, "单色无切点应返回 None (no_cut)"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
