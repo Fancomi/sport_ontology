@@ -101,6 +101,53 @@ def test_copy_baseline_does_snap():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_select_push_names_exact_count_ok():
+    m = load_mod()
+    survivors = [0, 1, 2, 3, 4, 5, 6, 8, 10, 11]   # Bq: 删了 7,9
+    names, err = m.select_push_names("Bq", survivors, n_produced=12, n_original=12)
+    assert err is None, f"段数精确相等应通过, got {err}"
+    assert names == [f"Bq_{i}.mp4" for i in survivors], "只推幸存段名"
+    assert "Bq_7.mp4" not in names and "Bq_9.mp4" not in names, "被删段不复活"
+
+
+def test_select_push_names_count_mismatch_aborts():
+    m = load_mod()
+    # 重切 11 段但原始 12 => 段数不等 => 错位风险 => 中止 (即便 survivors 子集成立)
+    names, err = m.select_push_names("X", [0, 1, 10], n_produced=11, n_original=12)
+    assert names == [] and err is not None and "11" in err and "12" in err, \
+        f"段数不等必须中止, got names={names} err={err}"
+
+
+def test_select_push_names_subset_trap_aborts():
+    m = load_mod()
+    # 子集陷阱: 原13 重切12, max(survivor)=11<12 子集会误过; 但段数 12!=13 必须中止
+    names, err = m.select_push_names("Y", [0, 5, 11], n_produced=12, n_original=13)
+    assert names == [] and err is not None, "子集成立但段数不等 => 仍中止 (防中间合并错位)"
+
+
+def test_select_push_names_empty_survivors():
+    m = load_mod()
+    names, err = m.select_push_names("Z", [], n_produced=5, n_original=5)
+    assert names == [] and err is None, "无幸存段则跳过, 不算错"
+
+
+def test_survivors_and_original_maps():
+    m = load_mod()
+    d = tempfile.mkdtemp()
+    try:
+        sq = os.path.join(d, "split_queue.txt")
+        rl = os.path.join(d, "remote_split_list.txt")
+        open(sq, "w").write("Bq_0.mp4\nBq_1.mp4\nBq_2.mp4\nOther_0.mp4\n")
+        open(rl, "w").write("Bq_0.mp4\nBq_2.mp4\nOther_0.mp4\n")
+        nmap = m.n_original_map(sq)
+        smap = m.survivors_map(rl)
+        assert nmap["Bq"] == 3, f"原始段数, got {nmap.get('Bq')}"
+        assert smap["Bq"] == [0, 2], f"幸存索引排序, got {smap.get('Bq')}"
+        assert nmap["Other"] == 1 and smap["Other"] == [0]
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

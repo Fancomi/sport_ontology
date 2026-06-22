@@ -229,6 +229,45 @@ def split_batch(files: list[str], shm_src: str, shm_out: str,
 
 # ═══════════════════════════ Push ═══════════════════════════
 
+def n_original_map(split_queue_path: str) -> dict:
+    """从 split_queue.txt (审核前全部产出段名) 建 stem -> 原始段数。"""
+    cnt = {}
+    with open(split_queue_path, encoding="utf-8") as f:
+        for ln in f:
+            mm = re.match(r"^(.*)_(\d+)\.mp4$", ln.strip())
+            if mm:
+                cnt[mm.group(1)] = cnt.get(mm.group(1), 0) + 1
+    return cnt
+
+
+def survivors_map(remote_list_path: str) -> dict:
+    """从 remote_split_list.txt (审核后幸存段名) 建 stem -> 幸存索引(升序)。"""
+    d = {}
+    with open(remote_list_path, encoding="utf-8") as f:
+        for ln in f:
+            mm = re.match(r"^(.*)_(\d+)\.mp4$", ln.strip())
+            if mm:
+                d.setdefault(mm.group(1), []).append(int(mm.group(2)))
+    return {k: sorted(v) for k, v in d.items()}
+
+
+def select_push_names(stem: str, survivors: list, n_produced: int,
+                      n_original: int) -> tuple:
+    """对齐闸 + 决定推哪些段名。
+    精确闸: 重切产出段数必须 == 原始产出段数 (n_original), 否则判定检测漂移/边界
+    增减 -> 中止不推 (防中间合并/分裂导致 _N 错位, 把 A 镜头审核套到 B 镜头)。
+    通过后只推 survivors 段名 (被删索引不复活)。返回 (要推的文件名, 错误或 None)。"""
+    if not survivors:
+        return [], None
+    if n_produced != n_original:
+        return [], (f"{stem}: 段数不等 重切={n_produced} 原始={n_original}; "
+                    f"检测漂移可能致 _N 错位, 中止不推")
+    over = [i for i in survivors if i >= n_produced]
+    if over:
+        return [], f"{stem}: 幸存索引 {over} 越界 (重切 {n_produced} 段); 中止"
+    return [f"{stem}_{i}.mp4" for i in sorted(survivors)], None
+
+
 def _push_chunk(args: tuple[str, str]) -> int:
     file_list_path, shm_out = args
     cmd = (f"sshpass -e rsync -aW --inplace --timeout=300 "
