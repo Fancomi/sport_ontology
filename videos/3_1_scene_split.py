@@ -346,6 +346,24 @@ def push_named(shm_out: str, names: list) -> int:
     return r.returncode
 
 
+def _pull_original(stem: str, dst: str, retries: int = 10) -> bool:
+    """拉原片到 dst, 失败重试 (远端 sshd 并发上限会致瞬时失败)。
+    最多 retries+1 次, 每次失败后退避 sleep (1.5s 上限 8s)。成功(非空)即返回 True。"""
+    name = stem + ".mp4"
+    cmd = (f"sshpass -e rsync -aW --inplace --timeout=30 -e 'ssh {SSH_OPTS}' "
+           f"'{REMOTE}:{REMOTE_SRC}/{name}' '{dst}'")
+    for attempt in range(retries + 1):
+        try:
+            subprocess.run(cmd, shell=True, capture_output=True,
+                           env=os.environ.copy(), timeout=70)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+        if os.path.exists(dst) and os.path.getsize(dst) > 0:
+            return True
+        time.sleep(min(8.0, 1.5 * (attempt + 1)))   # 退避, 给远端 sshd 喘息
+    return False
+
+
 def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> str:
     """拉原片 -> 只检测算段数 -> 对齐闸 -> 只编码并覆盖幸存段。返回一行状态。
     survivors/n_original 由调用方从本地清单预取 (大批量免逐个远端 ls)。"""
@@ -359,12 +377,8 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
     try:
         name = stem + ".mp4"
         dst = os.path.join(shm_src, name)
-        cmd = (f"sshpass -e rsync -aW --inplace --timeout=30 -e 'ssh {SSH_OPTS}' "
-               f"'{REMOTE}:{REMOTE_SRC}/{name}' '{dst}'")
-        subprocess.run(cmd, shell=True, capture_output=True,
-                       env=os.environ.copy(), timeout=70)
-        if not (os.path.exists(dst) and os.path.getsize(dst) > 0):
-            return f"{stem}: SKIP 原片拉取失败/不存在"
+        if not _pull_original(stem, dst):
+            return f"{stem}: SKIP 原片拉取失败/不存在 (重试 10 次仍失败)"
         cap = cv2.VideoCapture(dst)
         fps = cap.get(cv2.CAP_PROP_FPS)
         nf = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
