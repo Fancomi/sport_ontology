@@ -371,7 +371,9 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
         duration = nf / fps if fps > 0 else 0
         cap.release()
         plan = detect_segments(dst, fps, duration)
-        n_produced = len(plan) if plan else (1 if duration >= 1.0 else 0)
+        # n_produced: None=no_cut→1 段(_0); []=有切点但全 <MIN_SEGMENT_SEC→0 段;
+        # 否则 len(plan). 用 `is None` 而非真值判断, 才能区分 [] 与 None (与 _split_one 一致)。
+        n_produced = 1 if plan is None else len(plan)
         names, err = select_push_names(stem, survivors, n_produced, n_original)
         if err:
             return f"{stem}: ABORT {err}"
@@ -380,12 +382,24 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
         if dry_run:
             return f"{stem}: DRY-RUN 将覆盖 {len(names)}/{n_produced} 段 {names}"
         keep = {int(re.search(r'_(\d+)\.mp4$', n).group(1)) for n in names}
-        for idx, start, end, end_is_cut in plan:
+        for idx, start, end, end_is_cut in (plan or []):
             if idx not in keep:        # 跳过被删索引 -> 省 CPU
                 continue
             out = os.path.join(shm_out, f"{stem}_{idx}.mp4")
             subprocess.run(build_cut_cmd(dst, out, start, end, fps, end_is_cut),
                            capture_output=True, timeout=120)
+        # 校验每个幸存段都成功编码(非空); 缺失=ffmpeg 失败, 不能谎报 OK 让远端留旧粘连段。
+        def _encoded_ok(n):
+            p = os.path.join(shm_out, n)
+            return os.path.exists(p) and os.path.getsize(p) > 0
+        ok_names = [n for n in names if _encoded_ok(n)]
+        if len(ok_names) != len(names):
+            missing = sorted(set(names) - set(ok_names))
+            if not ok_names:
+                return f"{stem}: ENCODE-FAIL 全部 {len(names)} 段编码失败, 未推"
+            push_named(shm_out, ok_names)   # 已成功的仍各自对齐, 照推; 缺的留旧待重试
+            return (f"{stem}: ENCODE-FAIL {len(missing)}/{len(names)} 段缺失"
+                    f" (已推 {len(ok_names)}, 缺 {missing})")
         rc = push_named(shm_out, names)
         ok = "OK" if rc == 0 else f"PUSH-FAIL(rc={rc})"
         return f"{stem}: {ok} 覆盖 {len(names)}/{n_produced} 段"
@@ -424,7 +438,8 @@ def run_replace(args):
     print(f"═══ Replace: {len(uniq)} 原片 dry_run={args.dry_run} "
           f"workers={args.workers_replace} ═══", flush=True)
     tasks = [(s, smap.get(s, []), nmap.get(s, 0), args.dry_run) for s in uniq]
-    stats = {"OK": 0, "SKIP": 0, "ABORT": 0, "ERROR": 0, "PUSH-FAIL": 0, "DRY-RUN": 0}
+    stats = {"OK": 0, "SKIP": 0, "ABORT": 0, "ENCODE-FAIL": 0, "ERROR": 0,
+             "PUSH-FAIL": 0, "DRY-RUN": 0}
     with Pool(args.workers_replace) as pool:
         for line in pool.imap_unordered(_replace_star, tasks):
             print(line, flush=True)
