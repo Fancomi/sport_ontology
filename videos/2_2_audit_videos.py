@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from representative_frame import representative_frame_from_video
 from lib import config
+from lib import duration_filter
 from llm_client import build_vlm_endpoints, call_vlm_raw, frames_to_img_bytes, parse_ports
 from lib.vlm_prompts import SYSTEM, PROMPT
 
@@ -49,6 +50,8 @@ def extract_median_frame(video_path: Path, max_side: int = 480) -> str | None:
 
 def judge_video(video_path: Path, item: dict, eps, pick_ep, release_ep) -> tuple[bool, str]:
     """抽中位帧 + VLM 判断，返回 (passed, reason)。走共享 call_vlm_raw(raw httpx)。"""
+    if duration_filter.is_too_long(video_path):
+        return False, "too_long"
     img_b64 = extract_median_frame(video_path)
     if not img_b64:
         return False, "extract_failed"
