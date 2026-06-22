@@ -20,7 +20,6 @@ import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import os as _os, sys as _sys
 import cv2
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
