@@ -9,19 +9,18 @@ import json
 import os
 import random
 import time
-import threading
 import urllib.request
 import shutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import yt_dlp
-import cv2
 
 import sys
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 from lib import config
+from lib import duration_filter
 
 logger = config.get_logger(__name__, "pipeline.log")
 
@@ -44,8 +43,6 @@ FILTERED = config.FILTERED
 VIDEOS_DIR = DATA_DIR / "videos"
 DL_PROGRESS = DATA_DIR / "dl_progress.txt"
 DISK_LIMIT_GB = 500
-MAX_ACTUAL_DURATION = 480.0
-_CV2_LOCK = threading.Lock()
 
 # === 机器 peers ===
 PEERS = [
@@ -92,38 +89,14 @@ def _pname(proxy):
     return proxy.split('//')[1].split('/')[0]
 
 
-def actual_duration(video_path: Path) -> float | None:
-    """读取视频实际时长；失败返回 None。"""
-    with _CV2_LOCK:
-        null = os.open(os.devnull, os.O_WRONLY)
-        saved2 = os.dup(2)
-        cap = None
-        try:
-            os.dup2(null, 2)
-            cap = cv2.VideoCapture(str(video_path))
-            if not cap.isOpened():
-                return None
-            frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-            fps = cap.get(cv2.CAP_PROP_FPS)
-        finally:
-            if cap is not None:
-                cap.release()
-            os.dup2(saved2, 2)
-            os.close(null)
-            os.close(saved2)
-    if not frames or not fps or fps <= 0:
-        return None
-    return float(frames) / float(fps)
-
-
 def downloaded_file(out_dir: Path, vid: str) -> Path | None:
     files = [p for p in out_dir.glob(f"{vid}.*") if ".part" not in p.name]
     return files[0] if files else None
 
 
 def reject_if_too_long(video_path: Path, vid: str) -> tuple[bool, str]:
-    duration = actual_duration(video_path)
-    if duration is None or duration <= MAX_ACTUAL_DURATION:
+    duration = duration_filter.actual_duration(video_path)
+    if duration is None or duration <= duration_filter.MAX_DURATION_SEC:
         return False, ""
     config.append_blacklist(vid)
     video_path.unlink(missing_ok=True)
