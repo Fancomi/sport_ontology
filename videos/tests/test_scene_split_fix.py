@@ -185,6 +185,14 @@ def test_detect_segments_none_for_no_cut():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_replace_purge_decision_uses_480():
+    """replace 侧的 PURGE 判定走 duration_filter.should_purge (阈值 480)。"""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib", "duration_filter.py")
+    df = load(p, "duration_filter")
+    assert df.should_purge(4483.0) is True, "75min 必删"
+    assert df.should_purge(300.0) is False, "5min 不删"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

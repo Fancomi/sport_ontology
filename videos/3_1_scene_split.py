@@ -26,6 +26,10 @@ import time
 from multiprocessing import Pool
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+from lib import config
+from lib import duration_filter
+
 # ═══════════════════════════ 配置 ═══════════════════════════
 
 REMOTE = "ral@10.109.83.30"
@@ -346,6 +350,24 @@ def push_named(shm_out: str, names: list) -> int:
     return r.returncode
 
 
+def _purge_remote(stem: str) -> int:
+    """整源删除超长视频: 远端原片 + 全部切片。返回删除的切片数 (best-effort 估计)。
+    用 stdin-bash 形式 (仿 3_2_audit_splits._ssh) 避开 ssh_cmd 的单引号包裹冲突;
+    './' 前缀防 dash 开头 stem 被当 rm 选项。"""
+    # 先数切片数 (供回报)
+    r = ssh_cmd(f"ls {REMOTE_DST}/{stem}_*.mp4 2>/dev/null | wc -l", timeout=60)
+    try:
+        k = int(r.stdout.strip())
+    except (ValueError, AttributeError):
+        k = 0
+    script = (f"cd '{REMOTE_SRC}' && rm -f -- './{stem}.mp4'; "
+              f"cd '{REMOTE_DST}' && rm -f -- './{stem}'_*.mp4")
+    subprocess.run(f"sshpass -e ssh {SSH_OPTS} {REMOTE} bash",
+                   shell=True, input=script, capture_output=True, text=True,
+                   env=os.environ.copy(), timeout=60)
+    return k
+
+
 def _pull_original(stem: str, dst: str, retries: int = 10) -> bool:
     """拉原片到 dst, 失败重试 (远端 sshd 并发上限会致瞬时失败)。
     最多 retries+1 次, 每次失败后退避 sleep (1.5s 上限 8s)。成功(非空)即返回 True。"""
@@ -384,6 +406,16 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
         nf = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = nf / fps if fps > 0 else 0
         cap.release()
+        # 时长闸 (在 detect 前, 故 no_cut 超长也堵得住): 超长 -> 整源清除
+        if duration_filter.should_purge(duration):
+            if dry_run:
+                return f"{stem}: PURGED(dry-run) 将删原片+全部切片 (超长{duration:.0f}s)"
+            k = _purge_remote(stem)
+            config.append_blacklist(stem)
+            purged_log = Path(__file__).parent / "purged_too_long.txt"
+            with open(purged_log, "a") as f:
+                f.write(stem + "\n")
+            return f"{stem}: PURGED 超长{duration:.0f}s 删原片+{k}切片"
         plan = detect_segments(dst, fps, duration)
         # no_cut (plan is None): 整片无切点 -> 无关键帧吸附头部粘连 -> 无需修复.
         # 重编码整片(常 >100s)既浪费 CPU 又有损, 直接跳过 (远端 _0 保持原样, 下游审核照旧有效)。
@@ -455,8 +487,8 @@ def run_replace(args):
     print(f"═══ Replace: {len(uniq)} 原片 dry_run={args.dry_run} "
           f"workers={args.workers_replace} ═══", flush=True)
     tasks = [(s, smap.get(s, []), nmap.get(s, 0), args.dry_run) for s in uniq]
-    stats = {"OK": 0, "SKIP": 0, "ABORT": 0, "ENCODE-FAIL": 0, "ERROR": 0,
-             "PUSH-FAIL": 0, "DRY-RUN": 0}
+    stats = {"OK": 0, "SKIP": 0, "ABORT": 0, "PURGED": 0, "ENCODE-FAIL": 0,
+             "ERROR": 0, "PUSH-FAIL": 0, "DRY-RUN": 0}
     with Pool(args.workers_replace) as pool:
         for line in pool.imap_unordered(_replace_star, tasks):
             print(line, flush=True)
