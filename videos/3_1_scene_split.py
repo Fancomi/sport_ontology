@@ -128,6 +128,50 @@ def pull_batch(files: list[str], shm_src: str, workers: int) -> list[str]:
 
 # ═══════════════════════════ Split ═══════════════════════════
 
+def build_cut_cmd(src: str, out: str, start: float, end: float,
+                  fps: float, end_is_cut: bool) -> list[str]:
+    """帧级精确切割命令: -ss 前置 + libx264 重编码 (消除关键帧吸附)。
+    end_is_cut=True (end 是镜头切点) 时 -t 减 1/fps 干掉段尾下一镜头那一帧;
+    末段 (end 是视频结尾) 或 fps<=0 不减。"""
+    dur = end - start
+    if end_is_cut and fps > 0:
+        dur -= 1.0 / fps
+    return [
+        "ffmpeg", "-nostdin", "-ss", f"{start:.3f}", "-i", src,
+        "-t", f"{dur:.3f}", "-c:v", "libx264", "-preset", "veryfast",
+        "-crf", "23", "-c:a", "aac", "-avoid_negative_ts", "1", "-y", out,
+    ]
+
+
+def detect_segments(src: str, fps: float, duration: float) -> list[tuple]:
+    """只做 scene 检测 + 段计划 (不编码)。返回 [(idx, start, end, end_is_cut), ...]
+    与原 _split_one 的 MIN_SEGMENT_SEC/count 逻辑完全一致, 用于重切前算 n_produced。"""
+    cmd = ["ffmpeg", "-nostdin", "-i", src, "-vf",
+           f"select='gt(scene,{SCENE_THRESHOLD})',metadata=print:file=/dev/stdout",
+           "-an", "-f", "null", "-"]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    timestamps = [0.0]
+    for line in result.stdout.split('\n'):
+        if 'pts_time' in line:
+            mm = re.search(r'pts_time:([\d.]+)', line)
+            if mm:
+                timestamps.append(float(mm.group(1)))
+    timestamps.append(duration)
+    if len(timestamps) <= 2:
+        return []   # no_cut: 调用方走整片拷贝路径
+    plan = []
+    n_bounds = len(timestamps)
+    count = 0
+    for i in range(n_bounds - 1):
+        start, end = timestamps[i], timestamps[i + 1]
+        if end - start < MIN_SEGMENT_SEC:
+            continue
+        end_is_cut = (i + 1) != (n_bounds - 1)
+        plan.append((count, start, end, end_is_cut))
+        count += 1
+    return plan
+
+
 def _split_one(args: tuple[str, str, str]) -> tuple[str, int, str]:
     """对单个视频做场景检测+切割。"""
     video_name, shm_src, shm_out = args
@@ -145,40 +189,21 @@ def _split_one(args: tuple[str, str, str]) -> tuple[str, int, str]:
         if duration < 1.0:
             return (video_name, 0, "too_short")
 
-        # ffmpeg scene detect
-        cmd = [
-            "ffmpeg", "-nostdin", "-i", src,
-            "-vf", f"select='gt(scene,{SCENE_THRESHOLD})',metadata=print:file=/dev/stdout",
-            "-an", "-f", "null", "-"
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        # 检测 + 段计划 (只检测, 不编码)
+        plan = detect_segments(src, fps, duration)
 
-        timestamps = [0.0]
-        for line in result.stdout.split('\n'):
-            if 'pts_time' in line:
-                m = re.search(r'pts_time:([\d.]+)', line)
-                if m:
-                    timestamps.append(float(m.group(1)))
-        timestamps.append(duration)
-
-        # 无切割点
-        if len(timestamps) <= 2:
+        # 无切割点 -> 整片拷贝 (路径不变)
+        if not plan:
             out = os.path.join(shm_out, f"{stem}_0.mp4")
             shutil.copy2(src, out)
             return (video_name, 1, "no_cut")
 
-        # stream copy split
+        # 帧级精确切割 (重编码消除关键帧吸附; 段尾切点减 1 帧)
         count = 0
-        for i in range(len(timestamps) - 1):
-            start, end = timestamps[i], timestamps[i + 1]
-            if end - start < MIN_SEGMENT_SEC:
-                continue
-            out = os.path.join(shm_out, f"{stem}_{count}.mp4")
-            subprocess.run(
-                ["ffmpeg", "-nostdin", "-ss", f"{start:.3f}", "-i", src,
-                 "-t", f"{end - start:.3f}", "-c", "copy",
-                 "-avoid_negative_ts", "1", "-y", out],
-                capture_output=True, timeout=60)
+        for idx, start, end, end_is_cut in plan:
+            out = os.path.join(shm_out, f"{stem}_{idx}.mp4")
+            subprocess.run(build_cut_cmd(src, out, start, end, fps, end_is_cut),
+                           capture_output=True, timeout=120)
             if os.path.exists(out) and os.path.getsize(out) > 0:
                 count += 1
         return (video_name, count, "split")
