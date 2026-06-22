@@ -14,8 +14,7 @@
     "force_type": "force pattern (pull / push / hold / squat, etc.)",
     "laterality": "anatomical side (left / right / bilateral / alternating)",
     "body_position": "overall body posture type (standing / seated / kneeling / supine / prone / hanging / lunge)",
-    "tempo": "movement speed / cadence (fast / slow / explosive / steady / controlled / paused / isometric hold)",
-    "limb_state": "posture of the non-dominant limb (e.g. other leg bent, opposite arm raised overhead)"
+    "tempo": "movement speed / cadence (fast / slow / explosive / steady / controlled / paused / isometric hold)"
   },
   "slot_examples": {
     "gender": [
@@ -571,25 +570,6 @@
           "incompatibility": [
             "explosive"
           ]
-        }
-      }
-    ],
-    "limb_state": [
-      {
-        "word": "other leg bent",
-        "expected": {
-          "en": "other leg bent",
-          "definition": "Non-dominant leg in a flexed posture.",
-          "synonyms": [],
-          "hypernym": [
-            "limb posture"
-          ],
-          "hyponyms": [],
-          "antonyms": [
-            "other leg straight"
-          ],
-          "confusable_siblings": [],
-          "incompatibility": []
         }
       }
     ]

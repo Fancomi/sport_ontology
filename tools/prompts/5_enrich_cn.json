@@ -14,8 +14,7 @@
     "force_type": "发力方式（如拉、推、保持、旋转、下蹲）",
     "laterality": "解剖学左右侧（如左侧、右侧、双侧、交替）",
     "body_position": "被摄者整体身姿类型（如站立、坐姿、跪姿、仰卧、俯卧、悬垂、弓步）",
-    "tempo": "动作速度/节奏（如快速、缓慢、爆发、控制、停顿、静态保持）",
-    "limb_state": "非主导肢体的姿态（如另一条腿屈膝、对侧手臂向上伸直）"
+    "tempo": "动作速度/节奏（如快速、缓慢、爆发、控制、停顿、静态保持）"
   },
   "slot_examples": {
     "gender": [
@@ -590,25 +589,6 @@
           "incompatibility": [
             "爆发"
           ]
-        }
-      }
-    ],
-    "limb_state": [
-      {
-        "word": "另一条腿屈膝",
-        "expected": {
-          "en": "other leg bent",
-          "definition": "非主导侧腿部弯曲的姿态",
-          "synonyms": [],
-          "hypernym": [
-            "肢体姿态"
-          ],
-          "hyponyms": [],
-          "antonyms": [
-            "另一条腿伸直"
-          ],
-          "confusable_siblings": [],
-          "incompatibility": []
         }
       }
     ]

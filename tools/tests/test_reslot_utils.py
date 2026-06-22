@@ -5,10 +5,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import reslot_utils as ru
 
 
-def test_slots_has_14_keys():
-    assert len(ru.SLOTS) == 14
-    for k in ('body_position', 'tempo', 'limb_state'):
+def test_slots_has_13_keys():
+    assert len(ru.SLOTS) == 13
+    for k in ('body_position', 'tempo'):
         assert k in ru.SLOTS
+    assert 'limb_state' not in ru.SLOTS
 
 
 def test_strip_markup_preserves_text_exactly():
@@ -17,20 +18,15 @@ def test_strip_markup_preserves_text_exactly():
 
 
 def test_invariant_holds_when_only_brackets_added():
-    old = "他抬起另一条腿屈膝保持平衡"
-    new = "他抬起[limb_state:另一条腿屈膝]保持平衡"
+    old = "她站立完成训练"
+    new = "她[body_position:站立]完成训练"
     assert ru.invariant_ok(old, new) is True
 
 
 def test_invariant_fails_when_text_changed():
-    old = "他抬起另一条腿屈膝保持平衡"
-    new = "他抬起[limb_state:非工作腿:屈膝]保持平衡"
+    old = "她站立完成训练"
+    new = "她[body_position:坐姿]完成训练"
     assert ru.invariant_ok(old, new) is False
-
-
-def test_limb_state_format_rejects_colon_composite():
-    assert ru.limb_state_value_ok("另一条腿屈膝") is True
-    assert ru.limb_state_value_ok("非工作腿:屈膝") is False
 
 
 def test_keys_legal_accepts_valid():
@@ -42,25 +38,11 @@ def test_keys_legal_rejects_invalid():
     assert ru.keys_legal("[temo:快速]") is False
 
 
-def test_limb_state_legal():
-    assert ru.limb_state_legal("[limb_state:另一条腿屈膝][body_position:站立]") is True
-    assert ru.limb_state_legal("[limb_state:非工作腿:屈膝]") is False
-    assert ru.limb_state_legal("[force_type:推]") is True  # 无 limb_state 视为合法
-
-
 def test_new_slot_value_ok_tempo_blacklist():
     assert ru.new_slot_value_ok("tempo", "缓慢") is True
     assert ru.new_slot_value_ok("tempo", "稳定") is False
     assert ru.new_slot_value_ok("tempo", "控制良好") is False
     assert ru.new_slot_value_ok("tempo", "动作节奏平稳且控制良好") is False  # 超长
-
-
-def test_new_slot_value_ok_limb_state_anchor():
-    assert ru.new_slot_value_ok("limb_state", "另一条腿屈膝") is True
-    assert ru.new_slot_value_ok("limb_state", "控制节奏") is False   # 无部位 + 黑名单
-    assert ru.new_slot_value_ok("limb_state", "双手") is False       # 纯部位无姿态
-    assert ru.new_slot_value_ok("limb_state", "缓慢") is False       # 无部位
-    assert ru.new_slot_value_ok("limb_state", "手臂离心下降") is False # 含部位但带轨迹黑名单
 
 
 def test_new_slot_value_ok_body_position_blacklist():
@@ -81,55 +63,33 @@ def test_new_slot_value_ok_old_keys_always_pass():
 
 
 def test_strip_bad_new_slots_removes_only_bad_new_keys():
-    text = "他[limb_state:控制节奏]进行[body_position:站立]训练，[tempo:稳定]"
+    text = "他进行[body_position:站立]训练，[tempo:稳定]"
     out = ru.strip_bad_new_slots(text)
-    assert "[limb_state:控制节奏]" not in out
-    assert "控制节奏" in out
     assert "[body_position:站立]" in out      # 合格，保留
     assert "[tempo:稳定]" not in out           # 黑名单，剥离
     assert "稳定" in out
 
 
 def test_strip_bad_new_slots_keeps_old_keys_untouched():
-    text = "他[equipment:哑铃][force_type:蹬伸][limb_state:双手]"
+    text = "他[equipment:哑铃][force_type:蹬伸][tempo:稳定]"
     out = ru.strip_bad_new_slots(text)
     assert "[equipment:哑铃]" in out
     assert "[force_type:蹬伸]" in out          # 旧键不受门禁
-    assert "[limb_state:双手]" not in out       # 纯部位，剥离
-    assert "双手" in out
+    assert "[tempo:稳定]" not in out            # 黑名单，剥离
+    assert "稳定" in out
 
 
 def test_strip_bad_new_slots_preserves_invariant():
-    text = "他[limb_state:控制节奏]站立[tempo:稳定]保持"
+    text = "他站立[tempo:稳定]保持"
     out = ru.strip_bad_new_slots(text)
     assert ru.invariant_ok(text, out)
 
 
 def test_new_slot_value_ok_review_fixes():
-    # 长度上限 8：部位+姿态常达 8 字应放行
-    assert ru.new_slot_value_ok("limb_state", "对侧手臂向上伸直") is True   # 8 字
-    assert ru.new_slot_value_ok("limb_state", "单腿抬至与地面平行") is False  # 9 字超限
-    # 黑名单不再单字误杀 推/拉
-    assert ru.new_slot_value_ok("limb_state", "单手推墙") is True
-    assert ru.new_slot_value_ok("limb_state", "对侧手臂下拉") is True
-    assert ru.new_slot_value_ok("limb_state", "手臂水平外展") is True   # "水平" 不再单独黑名单
-    # 但完整轨迹整词仍拦
-    assert ru.new_slot_value_ok("limb_state", "手臂离心下降") is False
+    # body_position 长度上限 8
+    assert ru.new_slot_value_ok("body_position", "低弓步") is True
+    assert ru.new_slot_value_ok("body_position", "双脚与肩同宽站立姿势") is False  # ≥8
     # tempo 黑名单去掉"平稳"单字，但词表/黑名单不再自相矛盾
     assert "节奏平稳" not in ru.TEMPO_VOCAB           # 已移除矛盾项
     assert ru.new_slot_value_ok("tempo", "缓慢") is True
     assert ru.new_slot_value_ok("tempo", "稳定") is False
-
-
-def test_new_slot_value_ok_limb_state_contact_support_excluded():
-    # 接触/支撑地面的肢体动作应归 contact 类，不是 limb_state → 拒
-    assert ru.new_slot_value_ok("limb_state", "单脚踩地") is False
-    assert ru.new_slot_value_ok("limb_state", "单手撑地") is False
-    assert ru.new_slot_value_ok("limb_state", "一手扶地") is False
-    assert ru.new_slot_value_ok("limb_state", "左臂支撑地面") is False
-    assert ru.new_slot_value_ok("limb_state", "双手支撑身体") is False
-    assert ru.new_slot_value_ok("limb_state", "后腿膝盖着地") is False
-    # 真·悬空/配置姿态仍放行
-    assert ru.new_slot_value_ok("limb_state", "另一只脚悬空") is True
-    assert ru.new_slot_value_ok("limb_state", "对侧手臂向上伸直") is True
-    assert ru.new_slot_value_ok("limb_state", "左手叉腰") is True

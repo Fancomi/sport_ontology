@@ -13,16 +13,16 @@ class StubClient:
 
 
 def test_reslot_one_accepts_valid_bracket_add():
-    old = "他抬起另一条腿屈膝保持平衡"
-    reply = '{"category_3_slotted_description": "他抬起[limb_state:另一条腿屈膝]保持平衡"}'
+    old = "她站立完成训练"
+    reply = '{"category_3_slotted_description": "她[body_position:站立]完成训练"}'
     new, status = mod.reslot_one(old, StubClient(reply), "PROMPT {{category_3}}")
     assert status == 'ok'
-    assert new == "他抬起[limb_state:另一条腿屈膝]保持平衡"
+    assert new == "她[body_position:站立]完成训练"
 
 
 def test_reslot_one_reverts_when_text_changed():
-    old = "他抬起另一条腿屈膝保持平衡"
-    reply = '{"category_3_slotted_description": "他抬起[limb_state:非工作腿:屈膝]保持平衡"}'
+    old = "她站立完成训练"
+    reply = '{"category_3_slotted_description": "她[body_position:坐姿]完成训练"}'
     new, status = mod.reslot_one(old, StubClient(reply), "PROMPT {{category_3}}")
     assert status == 'reverted'
     assert new == old
@@ -54,19 +54,19 @@ class SeqClient:
 
 
 def test_reslot_one_retry_salvages_after_bad_attempt():
-    old = "他抬起另一条腿屈膝保持平衡"
-    bad = '{"category_3_slotted_description": "他抬起[limb_state:非工作腿:屈膝]保持平衡"}'  # 改字→reverted
-    good = '{"category_3_slotted_description": "他抬起[limb_state:另一条腿屈膝]保持平衡"}'
+    old = "她站立完成训练"
+    bad = '{"category_3_slotted_description": "她[body_position:坐姿]完成训练"}'  # 改字→reverted
+    good = '{"category_3_slotted_description": "她[body_position:站立]完成训练"}'
     client = SeqClient([bad, bad, good])
     new, status = mod.reslot_one(old, client, "P {{category_3}}", max_attempts=4)
     assert status == 'ok'
-    assert new == "他抬起[limb_state:另一条腿屈膝]保持平衡"
+    assert new == "她[body_position:站立]完成训练"
     assert client.calls == 3  # 第3次才成功
 
 
 def test_reslot_one_gives_up_after_max_attempts():
-    old = "他抬起另一条腿屈膝保持平衡"
-    bad = '{"category_3_slotted_description": "他抬起[limb_state:非工作腿:屈膝]保持平衡"}'
+    old = "她站立完成训练"
+    bad = '{"category_3_slotted_description": "她[body_position:坐姿]完成训练"}'
     client = SeqClient([bad])  # 永远改字
     new, status = mod.reslot_one(old, client, "P {{category_3}}", max_attempts=3)
     assert status == 'reverted'
@@ -109,12 +109,12 @@ class RaisingClient:
 
 
 def test_reslot_one_survives_transient_exception_then_succeeds():
-    old = "他抬起另一条腿屈膝保持平衡"
-    good = '{"category_3_slotted_description": "他抬起[limb_state:另一条腿屈膝]保持平衡"}'
+    old = "她站立完成训练"
+    good = '{"category_3_slotted_description": "她[body_position:站立]完成训练"}'
     client = RaisingClient(raises_first=2, good_reply=good)
     new, status = mod.reslot_one(old, client, "P {{category_3}}", max_attempts=4)
     assert status == 'ok'
-    assert new == "他抬起[limb_state:另一条腿屈膝]保持平衡"
+    assert new == "她[body_position:站立]完成训练"
     assert client.calls == 3
 
 
@@ -159,11 +159,11 @@ def test_process_file_leaves_file_untouched_on_revert(tmp_path):
     import json as _json
     from pathlib import Path as _Path
     p = tmp_path / "augment_front_cn.json"
-    original = {"category_3_slotted_description": "他抬起另一条腿屈膝保持平衡", "other": "keep"}
+    original = {"category_3_slotted_description": "他站立保持平衡", "other": "keep"}
     p.write_text(_json.dumps(original, ensure_ascii=False, indent=2), "utf-8")
     before = p.read_text("utf-8")
     # LLM 改字 → invariant 破坏 → reverted，不应写回
-    bad = '{"category_3_slotted_description": "他抬起[limb_state:非工作腿:屈膝]保持平衡"}'
+    bad = '{"category_3_slotted_description": "他[body_position:坐姿]保持平衡"}'
     status = mod.process_file(_Path(str(p)), StubClient(bad), "P {{category_3}}", 2)
     assert status == 'reverted'
     after = p.read_text("utf-8")
@@ -172,16 +172,16 @@ def test_process_file_leaves_file_untouched_on_revert(tmp_path):
 
 
 def test_reslot_one_strips_bad_new_slot_before_accept():
-    old = "他控制节奏进行训练"
-    reply = '{"category_3_slotted_description": "他[limb_state:控制节奏]进行训练"}'
+    old = "他稳定进行训练"
+    reply = '{"category_3_slotted_description": "他[tempo:稳定]进行训练"}'
     new, status = mod.reslot_one(old, StubClient(reply), "P {{category_3}}", max_attempts=1)
-    assert "[limb_state:控制节奏]" not in new   # 坏新键被门禁剥离
+    assert "[tempo:稳定]" not in new   # 坏新键被门禁剥离（tempo 黑名单）
     assert ru.invariant_ok(old, new)
 
 
 def test_reslot_one_keeps_good_new_slot():
-    old = "他另一条腿屈膝保持平衡"
-    reply = '{"category_3_slotted_description": "他[limb_state:另一条腿屈膝]保持平衡"}'
+    old = "他站立保持平衡"
+    reply = '{"category_3_slotted_description": "他[body_position:站立]保持平衡"}'
     new, status = mod.reslot_one(old, StubClient(reply), "P {{category_3}}", max_attempts=1)
     assert status == 'ok'
-    assert "[limb_state:另一条腿屈膝]" in new
+    assert "[body_position:站立]" in new

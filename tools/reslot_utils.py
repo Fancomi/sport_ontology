@@ -1,16 +1,16 @@
 # tools/reslot_utils.py
-"""14 槽位常量、不变量校验、新键闭词表 —— 被 2_3 / 2_4 共用。"""
+"""13 槽位常量、不变量校验、新键闭词表 —— 被 2_3 / 2_4 共用。"""
 import re
 
-# 原 11 键 + 3 新键。顺序固定，下游 collect/enrich 依赖。
+# 原 11 键 + 2 新键。顺序固定，下游 collect/enrich 依赖。
 SLOTS = (
     "gender", "camera_view", "equipment", "contact_part", "contact_type",
     "posture_alignment", "trajectory", "exercise", "force_part",
     "force_type", "laterality",
-    "body_position", "tempo", "limb_state",
+    "body_position", "tempo",
 )
 SLOT_SET = frozenset(SLOTS)
-NEW_SLOTS = frozenset({"body_position", "tempo", "limb_state"})
+NEW_SLOTS = frozenset({"body_position", "tempo"})
 
 # 与 ontology_utils.strip_slots 不同：这里【不压缩空格】，用于逐字不变量校验。
 _MARKUP_RE = re.compile(r"\[(\w+):([^\]]+)\]")
@@ -26,19 +26,9 @@ def invariant_ok(old: str, new: str) -> bool:
     return strip_markup(old) == strip_markup(new)
 
 
-def limb_state_value_ok(value: str) -> bool:
-    """limb_state 值必须是自然短语，不得是 部位:状态 复合值（不含冒号）。"""
-    return ":" not in value and "：" not in value
-
-
 def keys_legal(text: str) -> bool:
-    """文本中所有 [key:value] 的 key 必须都是 14 个合法槽位键之一。"""
+    """文本中所有 [key:value] 的 key 必须都是 13 个合法槽位键之一。"""
     return all(k in SLOT_SET for k, _ in _MARKUP_RE.findall(text))
-
-
-def limb_state_legal(text: str) -> bool:
-    """文本中所有 limb_state 值必须是自然短语（不含冒号），不得为 部位:状态 复合值。"""
-    return all(limb_state_value_ok(v) for k, v in _MARKUP_RE.findall(text) if k == "limb_state")
 
 
 # ── 新键闭词表（已按 6229 条全量重标的真实词频收敛）──────────────────────────────
@@ -58,17 +48,9 @@ TEMPO_VOCAB = frozenset({
 
 # ── 第1层写入门禁：黑名单 + 结构锚点（黑名单制，保 LLM 泛化）──────────────────────
 TEMPO_BLACKLIST = frozenset({"稳定", "受控", "协调", "流畅", "控制良好", "身体稳定"})
-LIMB_STATE_BLACKLIST = frozenset({
-    "离心下降", "向心上升", "顶峰收缩", "旋转",                          # 轨迹（用整词，避免误杀"手臂水平外展"等）
-    "控制节奏", "节奏", "轻快", "缓慢", "快速", "爆发力", "停顿", "静态",  # 节奏
-    "蹬伸", "保持稳定", "发力",                                        # 发力（移除单字 推/拉，避免误杀"推墙/下拉"）
-    "踩地", "撑地", "扶地", "着地", "点地", "支撑地面", "支撑身体", "支撑",  # 接触/支撑（应归 contact_part+contact_type）
-})
 BODY_POSITION_BLACKLIST = frozenset({"姿势", "姿态", "保持", "动作"})
-LIMB_PARTS = ("腿", "臂", "手", "脚", "膝", "肘", "肩", "髋", "踝", "腕", "颈", "背")
-PURE_PART = frozenset({"双手", "单手", "双脚", "单脚", "双腿", "单腿", "双臂", "背部", "手"})
 
-MAX_NEW_SLOT_LEN = 8   # 新键 value 上限字符数；>8 视为整句误标（limb_state 部位+姿态常达 8 字）
+MAX_NEW_SLOT_LEN = 8   # 新键 value 上限字符数；>8 视为整句误标
 
 
 def new_slot_value_ok(slot: str, value: str) -> bool:
@@ -82,14 +64,6 @@ def new_slot_value_ok(slot: str, value: str) -> bool:
         return not any(b in v for b in TEMPO_BLACKLIST)
     if slot == "body_position":
         return not any(b in v for b in BODY_POSITION_BLACKLIST)
-    if slot == "limb_state":
-        if any(b in v for b in LIMB_STATE_BLACKLIST):
-            return False
-        if not any(p in v for p in LIMB_PARTS):
-            return False
-        if v in PURE_PART:
-            return False
-        return True
     return True
 
 

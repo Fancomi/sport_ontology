@@ -22,8 +22,6 @@ def audit_text(text: str) -> list:
         if key not in ru.SLOT_SET:
             issues.append(f'非法槽位键[{key}]')
             continue
-        if key == 'limb_state' and not ru.limb_state_value_ok(val):
-            issues.append(f'limb_state 复合值非法[{val}]（须自然短语，不含冒号）')
         if not ru.new_slot_value_ok(key, val):
             issues.append(f'新键门禁违规[{key}:{val}]')
     return issues
@@ -39,7 +37,7 @@ def main() -> None:
     all_aug = sorted(DATA_ROOT.rglob('augment_*_cn.json'))
     report = {'total': 0, 'reslotted': 0, 'with_issues': 0, 'stripped': 0,
               'issue_counts': {}, 'samples': [],
-              'new_slot_values': {k: {} for k in ('body_position', 'tempo', 'limb_state')}}
+              'new_slot_values': {k: {} for k in ('body_position', 'tempo')}}
     for p in all_aug:
         try:
             d = json.loads(p.read_text('utf-8'))

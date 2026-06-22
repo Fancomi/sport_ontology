@@ -1,6 +1,6 @@
 # tools/2_3_reslot_augment.py
 #!/usr/bin/env python3
-"""存量重标：给已有 category_3 补 body_position/tempo/limb_state 并修复漏标。
+"""存量重标：给已有 category_3 补 body_position/tempo 并修复漏标。
 只增删方括号，绝不改文字（代码层强制校验，违规回退原文）。
 
 用法：python 2_3_reslot_augment.py --port 8001,8002 [-w 8] [--limit N]
@@ -48,9 +48,6 @@ def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 10) -> t
             last_status = 'reverted'
             continue
         if not ru.keys_legal(new):
-            last_status = 'illegal_key'
-            continue
-        if not ru.limb_state_legal(new):
             last_status = 'illegal_key'
             continue
         new = ru.strip_bad_new_slots(new)   # 第1层门禁：剥离不合格新键标注
