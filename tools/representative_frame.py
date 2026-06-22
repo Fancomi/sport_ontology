@@ -17,6 +17,8 @@ import os
 import numpy as np
 import cv2
 
+_EPS = 1e-6   # near-zero scale/weight floor (gaussian background)
+
 
 def temporal_background(stack, method="median", sigma=None):
     """stack: [N,H,W,3] (uint8/float) -> 背景 [H,W,3] float32.
@@ -40,11 +42,11 @@ def temporal_background(stack, method="median", sigma=None):
         scale = mad
     else:
         scale = np.full(dist.shape[1:], float(sigma), np.float32)
-    safe = scale > 1e-6
-    w = np.where(safe[None], np.exp(-(dist ** 2) / (2 * np.maximum(scale, 1e-6)[None] ** 2)), 0.0)  # [N,H,W]
+    safe = scale > _EPS
+    w = np.where(safe[None], np.exp(-(dist ** 2) / (2 * np.maximum(scale, _EPS)[None] ** 2)), 0.0)  # [N,H,W]
     wsum = w.sum(axis=0)                              # [H,W]
     weighted = (w[..., None] * s).sum(axis=0)         # [H,W,3]
-    bg = np.where((wsum > 1e-6)[..., None], weighted / np.maximum(wsum, 1e-6)[..., None], med)
+    bg = np.where((wsum > _EPS)[..., None], weighted / np.maximum(wsum, _EPS)[..., None], med)
     return bg.astype(np.float32)
 
 
@@ -80,8 +82,9 @@ def representative_frame_from_video(video_path, fps=1.0, max_side=480,
     """解码 1fps 帧 (已按 max_side 缩放) -> medoid。
     返回 (frame_bgr, idx, n_frames); 空/损坏 -> (None,-1,0)。
     抑制 ffmpeg fd=2 噪音 (不动 fd=1)。"""
-    null = os.open(os.devnull, os.O_WRONLY); saved = os.dup(2); os.dup2(null, 2)
+    null = None; saved = None
     try:
+        null = os.open(os.devnull, os.O_WRONLY); saved = os.dup(2); os.dup2(null, 2)
         cap = cv2.VideoCapture(str(video_path))
         src_fps = cap.get(cv2.CAP_PROP_FPS) or 0
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -96,7 +99,10 @@ def representative_frame_from_video(video_path, fps=1.0, max_side=480,
                     frames.append(_resize(fr, max_side))
         cap.release()
     finally:
-        os.dup2(saved, 2); os.close(null); os.close(saved)
+        if saved is not None:
+            os.dup2(saved, 2); os.close(saved)
+        if null is not None:
+            os.close(null)
     if not frames:
         return None, -1, 0
     stack = np.stack(frames, axis=0)   # 同一视频同尺寸, 可堆叠

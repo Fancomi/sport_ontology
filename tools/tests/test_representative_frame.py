@@ -47,7 +47,8 @@ def test_gaussian_method_runs_and_shapes_ok():
     assert bg.shape == (16, 16, 3)
     assert np.isfinite(bg).all()
     frame, idx = rf.representative_frame_from_stack(stack, method="gaussian")
-    assert frame.shape == (16, 16, 3) and 0 <= idx < len(stack)
+    assert frame.shape == (16, 16, 3)
+    assert idx == 7, f"gaussian medoid 也应选纯背景末帧(7), 实际 {idx}"
 
 
 def test_single_frame_stack():
