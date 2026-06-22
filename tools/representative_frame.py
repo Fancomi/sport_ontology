@@ -89,11 +89,12 @@ def representative_frame_from_video(video_path, fps=1.0, max_side=480,
         src_fps = cap.get(cv2.CAP_PROP_FPS) or 0
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         frames = []
-        if total > 0 and src_fps > 0:
+        if total > 0 and src_fps > 0 and fps > 0:
             dur = total / src_fps
-            n_sec = min(max_frames, max(1, int(dur)))
-            for sec in range(n_sec):
-                cap.set(cv2.CAP_PROP_POS_FRAMES, min(total - 1, int(sec * src_fps)))
+            step = src_fps / fps                       # 每 step 源帧取一帧 (即 fps 帧/秒)
+            n = min(max_frames, max(1, int(dur * fps)))
+            for i in range(n):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, min(total - 1, int(i * step)))
                 ret, fr = cap.read()
                 if ret:
                     frames.append(_resize(fr, max_side))

@@ -76,3 +76,16 @@ def test_from_video_roundtrip(tmp_path):
     frame, idx, n = rf.representative_frame_from_video(p, fps=1.0, max_side=32)
     assert frame is not None and frame.shape[2] == 3
     assert n >= 1 and 0 <= idx < n
+
+
+def test_from_video_honors_fps(tmp_path):
+    import cv2
+    p = str(tmp_path / "fps.mp4")
+    vw = cv2.VideoWriter(p, cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (32, 32))
+    assert vw.isOpened()
+    for _ in range(100):  # 10s @10fps
+        vw.write(np.full((32, 32, 3), 70, np.uint8))
+    vw.release()
+    _f, _i, n1 = rf.representative_frame_from_video(p, fps=1.0, max_side=32, max_frames=64)
+    _f, _i, n2 = rf.representative_frame_from_video(p, fps=2.0, max_side=32, max_frames=64)
+    assert n2 > n1, f"fps=2.0 应比 fps=1.0 取更多帧: n1={n1} n2={n2}"
