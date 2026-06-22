@@ -148,6 +148,20 @@ def test_survivors_and_original_maps():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_fetch_gallery_no_duration_label():
+    ff = load(FFBN_PATH, "ffbn")
+    d = tempfile.mkdtemp()
+    try:
+        out_html = os.path.join(d, "index.html")
+        ff.write_html([("clipX", [], 414.0)], out_html)   # dur=414 不应出现
+        body = open(out_html, encoding="utf-8").read()
+        assert "clipX" in body, "clip 名应在"
+        assert "414" not in body, "不应再渲染时长 (scene-detect 前原长, 误导)"
+        assert "帧" in body, "应只显示帧数"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
