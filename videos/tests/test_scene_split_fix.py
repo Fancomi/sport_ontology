@@ -44,6 +44,15 @@ def test_build_cut_cmd_zero_fps_safe():
     assert abs(float(cmd[ti]) - 3.0) < 1e-3, "fps=0 不减帧"
 
 
+def test_build_cut_cmd_low_fps_no_negative_dur():
+    m = load_mod()
+    # 病态: fps=2 (1/fps=0.5) 且段长仅 0.4s -> 减 1/fps 会变负; 应兜底不减, -t 仍 0.4
+    cmd = m.build_cut_cmd("src.mp4", "out.mp4", 1.0, 1.4, 2.0, end_is_cut=True)
+    ti = cmd.index("-t") + 1
+    assert float(cmd[ti]) > 0, f"-t 不能为负/零, got {cmd[ti]}"
+    assert abs(float(cmd[ti]) - 0.4) < 1e-3, f"减帧致负时应不减, got {cmd[ti]}"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

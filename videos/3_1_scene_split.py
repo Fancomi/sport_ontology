@@ -132,10 +132,13 @@ def build_cut_cmd(src: str, out: str, start: float, end: float,
                   fps: float, end_is_cut: bool) -> list[str]:
     """帧级精确切割命令: -ss 前置 + libx264 重编码 (消除关键帧吸附)。
     end_is_cut=True (end 是镜头切点) 时 -t 减 1/fps 干掉段尾下一镜头那一帧;
-    末段 (end 是视频结尾) 或 fps<=0 不减。"""
+    末段 (end 是视频结尾) 或 fps<=0 不减。
+    低 fps 兜底: 若减 1/fps 会使时长 <=0 (病态 fps<=2 的极短段), 则不减以防 -t 负值。"""
     dur = end - start
     if end_is_cut and fps > 0:
-        dur -= 1.0 / fps
+        trimmed = dur - 1.0 / fps
+        if trimmed > 0:
+            dur = trimmed
     return [
         "ffmpeg", "-nostdin", "-ss", f"{start:.3f}", "-i", src,
         "-t", f"{dur:.3f}", "-c:v", "libx264", "-preset", "veryfast",
@@ -143,9 +146,12 @@ def build_cut_cmd(src: str, out: str, start: float, end: float,
     ]
 
 
-def detect_segments(src: str, fps: float, duration: float) -> list[tuple]:
-    """只做 scene 检测 + 段计划 (不编码)。返回 [(idx, start, end, end_is_cut), ...]
-    与原 _split_one 的 MIN_SEGMENT_SEC/count 逻辑完全一致, 用于重切前算 n_produced。"""
+def detect_segments(src: str, fps: float, duration: float):
+    """只做 scene 检测 + 段计划 (不编码)。
+    返回: None 表示无切割点 (no_cut, 调用方走整片拷贝); 否则返回
+    [(idx, start, end, end_is_cut), ...] (可能为空: 有切点但段全 <MIN_SEGMENT_SEC,
+    与原逻辑一致 -> 0 段输出且非 no_cut)。与原 _split_one 的 MIN_SEGMENT_SEC/count
+    逻辑完全一致, 用于重切前算 n_produced。"""
     cmd = ["ffmpeg", "-nostdin", "-i", src, "-vf",
            f"select='gt(scene,{SCENE_THRESHOLD})',metadata=print:file=/dev/stdout",
            "-an", "-f", "null", "-"]
@@ -158,7 +164,7 @@ def detect_segments(src: str, fps: float, duration: float) -> list[tuple]:
                 timestamps.append(float(mm.group(1)))
     timestamps.append(duration)
     if len(timestamps) <= 2:
-        return []   # no_cut: 调用方走整片拷贝路径
+        return None   # no_cut: 调用方走整片拷贝路径
     plan = []
     n_bounds = len(timestamps)
     count = 0
@@ -192,13 +198,14 @@ def _split_one(args: tuple[str, str, str]) -> tuple[str, int, str]:
         # 检测 + 段计划 (只检测, 不编码)
         plan = detect_segments(src, fps, duration)
 
-        # 无切割点 -> 整片拷贝 (路径不变)
-        if not plan:
+        # 无切割点 -> 整片拷贝 (路径不变; plan is None 专表 no_cut)
+        if plan is None:
             out = os.path.join(shm_out, f"{stem}_0.mp4")
             shutil.copy2(src, out)
             return (video_name, 1, "no_cut")
 
         # 帧级精确切割 (重编码消除关键帧吸附; 段尾切点减 1 帧)
+        # plan 可能为空 (有切点但段全 <MIN_SEGMENT_SEC): 0 段输出, 与原逻辑一致.
         count = 0
         for idx, start, end, end_is_cut in plan:
             out = os.path.join(shm_out, f"{stem}_{idx}.mp4")
