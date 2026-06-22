@@ -26,6 +26,7 @@ import cv2
 sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 sys.path.insert(0, str(Path(__file__).parent))
 
+from representative_frame import representative_frame_from_video
 from lib import config
 from llm_client import build_vlm_endpoints, call_vlm_raw, frames_to_img_bytes, parse_ports
 from lib.vlm_prompts import SYSTEM, PROMPT
@@ -38,28 +39,11 @@ VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 
 
 def extract_median_frame(video_path: Path, max_side: int = 480) -> str | None:
-    """抽中位帧，缩放后返回 base64；失败返回 None"""
-    # 压住 ffmpeg fd=2 噪音（不压 fd=1，避免影响 print 输出）
-    null = _os.open(_os.devnull, _os.O_WRONLY)
-    saved2 = _os.dup(2)
-    _os.dup2(null, 2)
-    try:
-        cap = cv2.VideoCapture(str(video_path))
-        if not cap.isOpened():
-            return None
-        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, total // 2))
-        ret, frame = cap.read()
-        cap.release()
-    finally:
-        _os.dup2(saved2, 2)
-        _os.close(null); _os.close(saved2)
-    if not ret:
+    """抽时间中值代表帧 (medoid), 缩放后返回 base64; 失败返回 None。
+    (原"取正中央帧"已修正为 1fps 抽 N 帧 -> 时间中值背景 -> L2 最近真实帧。)"""
+    frame, _idx, _n = representative_frame_from_video(video_path, fps=1.0, max_side=max_side)
+    if frame is None:
         return None
-    h, w = frame.shape[:2]
-    scale = min(1.0, max_side / max(h, w))
-    if scale < 1.0:
-        frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
     ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
     return base64.b64encode(buf).decode() if ok else None
 
