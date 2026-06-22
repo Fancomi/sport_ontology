@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 sys.path.insert(0, str(Path(__file__).parent))
 import cv2
 from llm_client import LLMClient, parse_ports
+from representative_frame import representative_frame_from_video
 
 REMOTE     = "ral@10.109.83.30"
 REMOTE_DIR = "/root/back_2/penghaotian/datas/yt-dlp-downloads/videos_split"
@@ -62,20 +63,10 @@ def pull_all(names, shm, workers=24):
 
 
 def extract_median_frame(path, max_side=480):
-    null = os.open(os.devnull, os.O_WRONLY); saved = os.dup(2); os.dup2(null, 2)
-    try:
-        cap = cv2.VideoCapture(path)
-        n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, n // 2))
-        ret, frame = cap.read(); cap.release()
-    finally:
-        os.dup2(saved, 2); os.close(null); os.close(saved)
-    if not ret:
+    """时间中值代表帧 (medoid) -> base64; 失败 None。(原 midpoint 已修正。)"""
+    frame, _idx, _n = representative_frame_from_video(path, fps=1.0, max_side=max_side)
+    if frame is None:
         return None
-    h, w = frame.shape[:2]
-    s = min(1.0, max_side / max(h, w))
-    if s < 1.0:
-        frame = cv2.resize(frame, (int(w * s), int(h * s)))
     ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
     return base64.b64encode(buf).decode() if ok else None
 
