@@ -272,16 +272,6 @@ def select_push_names(stem: str, survivors: list, n_produced: int,
     return [f"{stem}_{i}.mp4" for i in sorted(survivors)], None
 
 
-def list_remote_segments(stem: str) -> list:
-    """live 列远端 REMOTE_DST 现存 <stem>_N.mp4 索引 (兜底/校验用; 大批量优先用 survivors_map)。"""
-    r = ssh_cmd(f"ls {REMOTE_DST}/{stem}_*.mp4 2>/dev/null", timeout=60)
-    idx = []
-    for line in r.stdout.strip().split("\n"):
-        mm = re.search(rf"/{re.escape(stem)}_(\d+)\.mp4$", line.strip())
-        if mm:
-            idx.append(int(mm.group(1)))
-    return sorted(idx)
-
 
 def _push_chunk(args: tuple[str, str]) -> int:
     file_list_path, shm_out = args
@@ -350,35 +340,23 @@ def push_named(shm_out: str, names: list) -> int:
     return r.returncode
 
 
-def _purge_remote(stem: str) -> tuple[bool, int]:
-    """整源删除超长视频: 远端原片 + 全部切片。返回 (是否确实删净, 删除前切片数)。
-    删除后用 ls 复核: 原片与全部切片都不存在才算成功 (ok=True); 否则 ok=False,
-    调用方不写 blacklist/log, 留待下次重试 (防瞬时 ssh 失败被误记为已清除)。
-    用 stdin-bash 形式 (仿 3_2_audit_splits._ssh) 避开 ssh_cmd 单引号包裹冲突;
-    './' 前缀防 dash 开头 stem 被当 rm 选项。"""
-    # 删除前数切片数 (供回报)
-    r = ssh_cmd(f"ls {REMOTE_DST}/{stem}_*.mp4 2>/dev/null | wc -l", timeout=60)
+def _purge_remote(stem: str, seg_names: list) -> tuple[bool, int]:
+    """整源删除超长视频: 远端原片 + 指定切片 (按本地名单精确删, 不让远端做 ls/glob)。
+    返回 (rm 命令是否成功, 删除的切片数)。
+    seg_names 来自本地 remote_split_list (幸存段名), 即远端现存的全部切片;
+    用绝对路径逐名删除 (开头为 '/' 不会被当 rm 选项, 故无需 cd/'./' 技巧),
+    成功判定走 rm 退出码 (set -e), 不再远端复核 ls —— 远端硬盘扛不住 ls。"""
+    paths = [f"{REMOTE_SRC}/{stem}.mp4"] + [f"{REMOTE_DST}/{n}" for n in seg_names]
+    # YouTube id + _N.mp4 仅含 [A-Za-z0-9_-.], 无 shell 特殊字符; 单引号兜底。
+    quoted = " ".join("'" + p + "'" for p in paths)
+    script = f"set -e; rm -f -- {quoted}"
     try:
-        k = int(r.stdout.strip())
-    except (ValueError, AttributeError):
-        k = 0
-    script = (f"cd '{REMOTE_SRC}' && rm -f -- './{stem}.mp4'; "
-              f"cd '{REMOTE_DST}' && rm -f -- './{stem}'_*.mp4")
-    try:
-        subprocess.run(f"sshpass -e ssh {SSH_OPTS} {REMOTE} bash",
-                       shell=True, input=script, capture_output=True, text=True,
-                       env=os.environ.copy(), timeout=60)
+        r = subprocess.run(f"sshpass -e ssh {SSH_OPTS} {REMOTE} bash",
+                           shell=True, input=script, capture_output=True, text=True,
+                           env=os.environ.copy(), timeout=60)
     except (subprocess.TimeoutExpired, OSError):
-        return False, k
-    # 删除后复核: 原片 + 任一切片仍在 => 未删净
-    chk = ssh_cmd(
-        f"ls {REMOTE_SRC}/{stem}.mp4 {REMOTE_DST}/{stem}_*.mp4 2>/dev/null | wc -l",
-        timeout=60)
-    try:
-        remaining = int(chk.stdout.strip())
-    except (ValueError, AttributeError):
-        remaining = 1   # 复核读不出 -> 保守判未删净
-    return remaining == 0, k
+        return False, len(seg_names)
+    return r.returncode == 0, len(seg_names)
 
 
 def _pull_original(stem: str, dst: str, retries: int = 10) -> bool:
@@ -421,11 +399,13 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
         cap.release()
         # 时长闸 (在 detect 前, 故 no_cut 超长也堵得住): 超长 -> 整源清除
         if duration_filter.should_purge(duration):
+            seg_names = [f"{stem}_{i}.mp4" for i in survivors]
             if dry_run:
-                return f"{stem}: PURGED(dry-run) 将删原片+全部切片 (超长{duration:.0f}s)"
-            ok, k = _purge_remote(stem)
+                return (f"{stem}: PURGED(dry-run) 将删原片+{len(seg_names)}切片 "
+                        f"(超长{duration:.0f}s)")
+            ok, k = _purge_remote(stem, seg_names)
             if not ok:
-                # 删除未确认 (瞬时 ssh/rm 失败 / 复核读不出): 不写 blacklist/log, 留待重试
+                # 删除未确认 (瞬时 ssh/rm 失败): 不写 blacklist/log, 留待重试
                 return f"{stem}: PURGE-FAIL 超长{duration:.0f}s 删除未确认, 未记录待重试"
             config.append_blacklist(stem)
             purged_log = Path(__file__).parent / "purged_too_long.txt"
