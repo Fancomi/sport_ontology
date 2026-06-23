@@ -20,11 +20,17 @@
   禁止标力学评价词：稳定、平稳、受控、协调、流畅、控制良好（这些不是速度档）。
 - value 一般不超过 8 字；超过说明圈了整句，应只圈核心短语。
 
-<!-- PLACEHOLDER_REST -->
+# 复合短语必须拆出体位词（重要）
+当体位词与对齐词连在一起（如"双脚与肩同宽站立"），【必须】拆成相邻两个标注，体位词单独成 body_position：
+✗ 错误：[posture_alignment:双脚与肩同宽站立]   （把"站立"埋进 posture，body_position 漏了）
+✓ 正确：[posture_alignment:双脚与肩同宽][body_position:站立]   （相邻拆分，去括号后仍=原文）
+同理：「双膝跪地」→[posture_alignment:双膝][body_position:跪地] 或直接 [body_position:双膝跪地]（含体位）；
+凡句中出现独立体位词，务必让它落在某个 body_position 标注内，不要被 posture_alignment 整体吞掉。
 
 # posture_alignment（旧键，本轮放宽吸收非主导肢体姿态）
 posture_alignment 现承载两类：整体对齐（腰背挺直、双脚与肩同宽）+ 单侧/非主导肢体配置姿态。
 - 原文若描述【非主导肢体】（不发力、起平衡/配置作用的那条手或腿）的姿态，如"双手置于头侧""另一条腿屈膝""对侧手臂向上伸直"，标 `[posture_alignment:…]`。
+- 但 posture_alignment 里【不应包含独立体位词】——体位词要拆给 body_position（见上）。
 - 不要为这类内容新造键；不再使用 limb_state（已废除）。
 
 # 正面示例
