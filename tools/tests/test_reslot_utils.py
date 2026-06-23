@@ -104,3 +104,23 @@ def test_has_unmarked_cue():
     assert ru.has_unmarked_cue("他[tempo:缓慢]下蹲[body_position:蹲]") is False
     # 无任何线索词 → 不触发
     assert ru.has_unmarked_cue("他用[equipment:哑铃]训练") is False
+
+
+def test_has_unmarked_cue_bare_text_only():
+    # cue 在 exercise 动作名内 → 不算漏标（已被 exercise 承载）
+    assert ru.has_unmarked_cue("她进行[exercise:平板支撑后抬腿]训练") is False
+    assert ru.has_unmarked_cue("[exercise:跪姿单臂弹力带下拉]") is False
+    # cue 已标进 body_position → 不算漏标
+    assert ru.has_unmarked_cue("双脚与肩同宽[body_position:站立]") is False
+    # cue 在裸文字里没标 → 真漏标，触发重试
+    assert ru.has_unmarked_cue("他站在低箱子前训练") is True
+    assert ru.has_unmarked_cue("他坐在训练凳上") is True
+
+
+def test_has_unmarked_cue_tempo_no_节奏():
+    # "节奏"已从 cue 删除：控制节奏/节奏感不再触发重试
+    assert ru.has_unmarked_cue("随后控制节奏进行离心下降") is False
+    assert ru.has_unmarked_cue("动作过程具有节奏感") is False
+    assert "节奏" not in ru.TEMPO_CUES
+    # 纯速度词裸露仍触发
+    assert ru.has_unmarked_cue("他快速交替脚尖") is True

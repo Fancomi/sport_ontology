@@ -83,19 +83,18 @@ BODY_POSITION_CUES = (
     "站立", "站姿", "站在", "坐姿", "坐在", "跪", "仰卧", "俯卧", "侧卧", "平躺",
     "悬垂", "悬挂", "弓步", "深蹲", "俯卧撑", "平板支撑", "四点支撑", "俯身",
 )
-TEMPO_CUES = ("缓慢", "快速", "迅速", "爆发", "停顿", "静态", "匀速", "节奏")
+TEMPO_CUES = ("缓慢", "快速", "迅速", "爆发", "停顿", "静态", "匀速")
+
+
+def _bare_text(text: str) -> str:
+    """返回所有 [k:v] 标注【之外】的裸连接文字（标注整体替换为分隔符）。
+    用于召回判定：只有落在任何槽位之外的 cue 才算"未标"。"""
+    return _MARKUP_RE.sub("\u0001", text)
 
 
 def has_unmarked_cue(text: str) -> bool:
-    """文本明文含 body_position/tempo 线索词，但该词未被对应新键标注覆盖 → True（疑似漏标）。
+    """裸文字（所有方括号之外）含 body_position/tempo 线索词 → True（疑似漏标，触发重试）。
+    已被任何槽位（body_position / exercise / posture_alignment 等）承载的 cue 不算漏标。
     仅作重试触发信号：误判只多花重试，不影响正确性（重试仍漏则接受）。"""
-    marked_bp = " ".join(v for k, v in _MARKUP_RE.findall(text) if k == "body_position")
-    marked_tp = " ".join(v for k, v in _MARKUP_RE.findall(text) if k == "tempo")
-    plain = strip_markup(text)
-    for w in BODY_POSITION_CUES:
-        if w in plain and w not in marked_bp:
-            return True
-    for w in TEMPO_CUES:
-        if w in plain and w not in marked_tp:
-            return True
-    return False
+    bare = _bare_text(text)
+    return any(w in bare for w in BODY_POSITION_CUES) or any(w in bare for w in TEMPO_CUES)
