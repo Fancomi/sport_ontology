@@ -5,7 +5,7 @@
 
 用法：python 2_3_reslot_augment.py --port 8001,8002 [-w 8] [--limit N]
 """
-import argparse, json, sys
+import argparse, json, re, sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import Lock
@@ -19,20 +19,44 @@ RESLOT_KEY  = '_cat3_reslotted'
 PROMPT_PATH = PROMPTS_DIR / '2_3_reslot_cn.md'
 MAX_OUT_TOKENS = 2048   # 上限：正常输出（原文+括号）远低于此；防止模型跑飞到 16384 拖慢并压垮服务
 
+_MARKUP_RE = re.compile(r"\[(\w+):([^\]]+)\]")
+
+
+def audit_one(text: str) -> tuple[bool, str]:
+    """确定性审核（镜像 2_4_audit_reslot.audit_text 的规则层）。
+    返回 (True, "") 表示干净；否则 (False, "<问题拼接>")。
+    复用 ru 的键合法性与新键门禁判定，作为环内审核层。"""
+    issues = []
+    for key, val in _MARKUP_RE.findall(text):
+        if key not in ru.SLOT_SET:
+            issues.append(f'非法槽位键[{key}]')
+            continue
+        if not ru.new_slot_value_ok(key, val):
+            issues.append(f'新键门禁违规[{key}:{val}]')
+    if issues:
+        return False, '; '.join(issues)
+    return True, ''
+
+
 
 def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 10) -> tuple[str, str]:
     """返回 (new_text, status)。status: ok|unchanged|reverted|illegal_key|parse_fail
 
     接受条件：去括号逐字相等 且 所有键合法。任一不满足则重试。
-    召回重试：若原文明文含 body_position/tempo 线索词但本次输出漏标，视为疑似漏标，
-    继续重试（模型会随机漏标，重试常能补上）；攒下"最佳候选"，max_attempts 次内
-    若始终漏标则采纳最佳候选（模型确实判定不该标）。
+    环内审核：strip 后跑确定性 audit_one；仅当 audit_one 通过【且】无漏标线索时采纳。
+    审核失败或疑似漏标 → 攒"最佳候选"（优先存通过 audit 的候选），并把失败原因
+    回灌进下一轮 prompt，让模型知道要修什么。max_attempts 次内若始终不满足则采纳最佳候选。
     被采纳的输出必然满足铁律且键合法，安全性不受重试影响。
     """
-    prompt = prompt_tmpl.replace('{{category_3}}', text)
+    base_prompt = prompt_tmpl.replace('{{category_3}}', text)
     last_status = 'parse_fail'
-    best = None                      # (new_text, status) 满足铁律+合法但疑似漏标的候选
+    best = None                      # (new_text, status) 满足铁律+合法但审核未过/疑似漏标的候选
+    best_audited = False             # 当前 best 是否已通过 audit_one（优先保留通过审核的候选）
+    retry_reason = ''                # 上一轮失败原因，回灌进 prompt
     for _ in range(max_attempts):
+        prompt = base_prompt
+        if retry_reason:
+            prompt = base_prompt + f'\n\n# 上一轮问题（请修正后重新输出，仍遵守铁律）\n{retry_reason}'
         try:
             raw = client.chat(messages=[{'role': 'user', 'content': prompt}],
                                max_tokens=MAX_OUT_TOKENS)
@@ -55,13 +79,18 @@ def reslot_one(text: str, client, prompt_tmpl: str, max_attempts: int = 10) -> t
             continue
         new = ru.strip_bad_new_slots(new)   # 第1层门禁：剥离不合格新键标注
         status = 'unchanged' if new == text else 'ok'
-        if ru.has_unmarked_cue(new):
-            best = (new, status)            # 疑似漏标：暂存，继续重试求更全的版本
-            last_status = status
-            continue
-        return new, status                  # 无漏标线索 → 直接采纳
+        passed, reason = audit_one(new)     # 环内确定性审核
+        cue = ru.has_unmarked_cue(new)
+        if passed and not cue:
+            return new, status              # 审核通过且无漏标线索 → 采纳
+        # 未采纳：攒最佳候选（优先保留通过 audit 的），回灌原因进下一轮 prompt
+        if best is None or (passed and not best_audited):
+            best = (new, status)
+            best_audited = passed
+        last_status = status
+        retry_reason = reason if not passed else '疑似漏标 body_position/tempo 线索词，请补全槽位标注'
     if best is not None:
-        return best                          # 重试用尽仍有漏标，采纳最佳候选
+        return best                          # 重试用尽，采纳最佳候选
     return text, last_status
 
 

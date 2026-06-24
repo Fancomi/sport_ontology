@@ -214,3 +214,24 @@ def test_reslot_one_accepts_best_when_cue_never_marked():
     assert new==old                              # 用尽重试，采纳最佳候选(=原文,unchanged)
     assert status=='unchanged'
     assert c.calls==3                            # 确实重试满了
+
+
+def test_audit_one_passes_clean():
+    ok, reason = mod.audit_one("[body_position:站立][tempo:缓慢]")
+    assert ok is True and reason == ""
+
+
+def test_audit_one_flags_illegal_key():
+    ok, reason = mod.audit_one("[rotation:旋转]")
+    assert ok is False and "非法" in reason
+
+
+def test_reslot_one_feeds_reason_into_retry_prompt():
+    # SeqClient returns a missing-cue output first, then a good one; assert it retried and final is good
+    old = "他站立进行训练"
+    miss = '{"category_3_slotted_description": "他站立进行训练"}'
+    good = '{"category_3_slotted_description": "他[body_position:站立]进行训练"}'
+    c = SeqClient([miss, good])
+    new, status = mod.reslot_one(old, c, "P {{category_3}}", max_attempts=4)
+    assert "[body_position:站立]" in new
+    assert c.calls == 2
