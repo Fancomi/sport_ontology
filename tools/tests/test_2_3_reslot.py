@@ -235,3 +235,85 @@ def test_reslot_one_feeds_reason_into_retry_prompt():
     new, status = mod.reslot_one(old, c, "P {{category_3}}", max_attempts=4)
     assert "[body_position:站立]" in new
     assert c.calls == 2
+
+
+# ── 环内 LLM 语义审核（audit_fn 依赖注入）────────────────────────────────────────
+def test_make_llm_audit_pass(monkeypatch=None):
+    class AC:
+        def chat(self, messages, **kw): return '{"pass": true}'
+    fn = mod.make_llm_audit(AC())
+    assert fn("[body_position:站立]") == (True, "")
+
+
+def test_make_llm_audit_fail():
+    class AC:
+        def chat(self, messages, **kw): return '{"pass": false, "reason": "碎裂"}'
+    fn = mod.make_llm_audit(AC())
+    ok, reason = fn("[body_position:弓步]")
+    assert ok is False and "碎裂" in reason
+
+
+def test_make_llm_audit_safe_on_error():
+    class AC:
+        def chat(self, messages, **kw): raise RuntimeError("boom")
+    fn = mod.make_llm_audit(AC())
+    assert fn("x") == (True, "")   # 调用失败放行
+
+
+def test_reslot_one_retries_on_semantic_fail_then_accepts():
+    old = "他低弓步训练"
+    # generation always returns a valid-but-fragmented tag; audit_fn fails 3x then we accept best
+    gen = '{"category_3_slotted_description": "他低[body_position:弓步]训练"}'
+    class GenClient:
+        def chat(self, messages, **kw): return gen
+    calls = {"n": 0}
+    def audit_fn(t):
+        calls["n"] += 1
+        return (False, "碎裂：应含'低'")
+    new, status = mod.reslot_one(old, GenClient(), "P {{category_3}}", max_attempts=10, audit_fn=audit_fn)
+    # invariant holds, and after 3 semantic fails we stop calling audit and accept best
+    import reslot_utils as ru
+    assert ru.invariant_ok(old, new)
+    assert calls["n"] == 3            # capped at 3 semantic-audit attempts
+
+
+def test_reslot_one_audit_none_unchanged_behavior():
+    old = "他另一条腿屈膝保持平衡"
+    good = '{"category_3_slotted_description": "他另一条腿屈膝保持平衡"}'
+    class C:
+        def chat(self, messages, **kw): return good
+    new, status = mod.reslot_one(old, C(), "P {{category_3}}", max_attempts=2, audit_fn=None)
+    assert status in ('unchanged', 'ok')   # None audit_fn = current behavior, no crash
+
+
+def test_reslot_one_accepts_when_semantic_audit_passes():
+    old = "他站立保持平衡"
+    good = '{"category_3_slotted_description": "他[body_position:站立]保持平衡"}'
+    class C:
+        def chat(self, messages, **kw): return good
+    calls = {"n": 0}
+    def audit_fn(t):
+        calls["n"] += 1
+        return (True, "")
+    new, status = mod.reslot_one(old, C(), "P {{category_3}}", max_attempts=5, audit_fn=audit_fn)
+    assert status == 'ok'
+    assert "[body_position:站立]" in new
+    assert calls["n"] == 1            # 仅在可采纳候选上调用一次
+
+
+def test_process_file_threads_audit_fn(tmp_path):
+    import json as _json
+    from pathlib import Path as _Path
+    p = tmp_path / "augment_front_cn.json"
+    p.write_text(_json.dumps({"category_3_slotted_description": "他站立训练"},
+                             ensure_ascii=False, indent=2), "utf-8")
+    good = '{"category_3_slotted_description": "他[body_position:站立]训练"}'
+    class C:
+        def chat(self, messages, **kw): return good
+    seen = {"n": 0}
+    def audit_fn(t):
+        seen["n"] += 1
+        return (True, "")
+    status = mod.process_file(_Path(str(p)), C(), "P {{category_3}}", 5, audit_fn)
+    assert status == 'ok'
+    assert seen["n"] == 1            # audit_fn 被 process_file 透传并调用
