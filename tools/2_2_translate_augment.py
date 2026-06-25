@@ -274,19 +274,25 @@ def process_one(meta_cn_path: Path, client: LLMClient | None,
                 print(f'  {cn_name}: 已有译文，直接 QC...')
 
         # ── QC ────────────────────────────────────────────────────────────
+        passed = False
         if do_qc:
             dummy = translated or {k: _CONTENT_DEFS.get(k, '(placeholder)') for k in _CONTENT_KEYS}
             if dry_run:
                 _print_prompt(f"QC  {cn_name}", _QC_SYSTEM, _qc_payload(aug_cn, dummy, []))
             else:
                 translated, passed = run_qc_loop(aug_cn, translated, client)
-                print(f'  {cn_name} QC: {"✓ 通过" if passed else "→ 未通过，继续"}')
+                print(f'  {cn_name} QC: {"✓ 通过" if passed else "→ 未通过，跳过(不写盘)"}')
 
         if dry_run:
             continue
 
+        # 开启 QC 时，仅 QC 通过(含确定性槽位键集对齐)才写盘；未通过保留 EN 定版不覆盖。
+        if do_qc and not passed:
+            skip += 1
+            continue
+
         out = {**translated, TRANSLATE_KEY: True}
-        if do_qc and passed:
+        if passed:
             out[QC_KEY] = True
         en_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), 'utf-8')
         ok += 1
