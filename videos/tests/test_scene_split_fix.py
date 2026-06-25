@@ -206,7 +206,8 @@ def test_is_terminal_status():
     assert m._is_terminal_status("-0p: ABORT -0p: 段数不等 重切=6 原始=5; ...") is True
     assert m._is_terminal_status("--6: SKIP no_cut 无切点无需修复") is True
     assert m._is_terminal_status("xy: SKIP 无幸存段 (清单)") is True
-    assert m._is_terminal_status("ab: SKIP 原片拉取失败/不存在 (重试 10 次仍失败)") is False
+    assert m._is_terminal_status("pq: SKIP 无可推段 (produced=0)") is True
+    assert m._is_terminal_status("rs: SKIP 原片拉取失败/不存在 (重试 10 次仍失败)") is False
     assert m._is_terminal_status("cd: PUSH-FAIL(rc=255) 覆盖 9/10 段") is False
     assert m._is_terminal_status("ef: PURGE-FAIL 超长523s 删除未确认, 未记录待重试") is False
     assert m._is_terminal_status("gh: ENCODE-FAIL 全部 1 段编码失败, 未推") is False
