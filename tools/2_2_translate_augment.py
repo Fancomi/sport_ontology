@@ -41,6 +41,13 @@ If a more natural/accurate English expression exists for the context, prefer it 
        contact_type, posture_alignment, trajectory, exercise, force_part, force_type, laterality,
        body_position, tempo)
        are ALREADY in English — copy them verbatim, do NOT translate or alter them in any way.
+     • CRITICAL — do NOT confuse look-alike keys. These pairs are DISTINCT and must each be
+       copied exactly as in the source, never swapped:
+         - force_part (a muscle/body part exerting force) vs force_type (a way of exerting force)
+         - contact_part (a body part in contact) vs contact_type (how contact is made)
+         - body_position (overall posture) vs posture_alignment (alignment detail)
+       If the source has [force_type:...], the output MUST also be [force_type:...], NOT [force_part:...].
+       The SET and COUNT of slot keys must be byte-identical to the source.
      • Slot VALUES (the part after the colon) must be translated from Chinese to English.
      • Translate the natural-language text surrounding the brackets normally.
      • Fluency check: when slot tags are mentally removed, the remaining sentence must read
