@@ -248,6 +248,34 @@ def test_run_replace_skips_done_and_records():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_backfill_done_set():
+    import tempfile, importlib.util
+    bp = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                      "..", "tools", "backfill_replace_progress.py")
+    spec = importlib.util.spec_from_file_location("backfill", bp)
+    bf = importlib.util.module_from_spec(spec); spec.loader.exec_module(bf)
+    d = tempfile.mkdtemp()
+    try:
+        log = os.path.join(d, "r.log")
+        out = os.path.join(d, "prog.txt")
+        open(log, "w").write(
+            "═══ Replace: 3 原片 ═══\n"
+            "aaa: OK 覆盖 2/2 段\n"
+            "bbb: SKIP no_cut 无切点无需修复\n"
+            "ccc: PUSH-FAIL(rc=255) 覆盖 1/2 段\n"
+            "ddd: SKIP 原片拉取失败/不存在 (重试 10 次仍失败)\n"
+            "eee: PURGED 超长500s 删原片+3切片\n"
+            "fff: ABORT fff: 段数不等 ...\n"
+            "aaa: OK 覆盖 2/2 段\n"
+            "═══ 汇总: {...} ═══\n")
+        n = bf.backfill(log, out)
+        got = sorted(open(out).read().split())
+        assert got == ["aaa", "bbb", "eee", "fff"], f"got {got}"
+        assert n == 4
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
