@@ -7,7 +7,7 @@ import os, sys, subprocess, tempfile, shutil, importlib.util
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODULE_PATH = os.path.join(HERE, "..", "3_1_scene_split.py")
-FFBN_PATH = "/root/paddlejob/workspace/env_run/penghaotian/llm_infer/llm_train/tools/fetch_frames_by_name.py"
+FFBN_PATH = "/root/paddlejob/workspace/env_run/penghaotian/llm_infer/llm_train/muscle_wiki/lib/fetch_frames_by_name.py"
 
 
 def load(path, name):
@@ -152,12 +152,18 @@ def test_fetch_gallery_no_duration_label():
     ff = load(FFBN_PATH, "ffbn")
     d = tempfile.mkdtemp()
     try:
+        # 把模块的 OUT_DIR 指到临时目录, 造一个切片目录含 2 帧 (无 mp4)
+        ff.OUT_DIR = d
+        clip = os.path.join(d, "clipX")
+        os.makedirs(clip)
+        open(os.path.join(clip, "000.jpg"), "wb").write(b"\xff\xd8\xff\xd9")
+        open(os.path.join(clip, "001.jpg"), "wb").write(b"\xff\xd8\xff\xd9")
         out_html = os.path.join(d, "index.html")
-        ff.write_html([("clipX", [], 414.0)], out_html)   # dur=414 不应出现
+        ff.write_html(out_html)           # 1-arg, 扫描 OUT_DIR
         body = open(out_html, encoding="utf-8").read()
-        assert "clipX" in body, "clip 名应在"
-        assert "414" not in body, "不应再渲染时长 (scene-detect 前原长, 误导)"
-        assert "帧" in body, "应只显示帧数"
+        assert "clipX" in body, "clip 名应在 gallery"
+        assert "414" not in body, "不应出现任何时长数字 (该列已删)"
+        assert "帧" in body, "应显示帧数 (如 '2 帧')"
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -191,6 +197,29 @@ def test_replace_purge_decision_uses_480():
     df = load(p, "duration_filter")
     assert df.should_purge(4483.0) is True, "75min 必删"
     assert df.should_purge(300.0) is False, "5min 不删"
+
+
+def test_is_terminal_status():
+    m = load_mod()
+    assert m._is_terminal_status("abc: OK 覆盖 3/3 段") is True
+    assert m._is_terminal_status("00z: PURGED 超长492s 删原片+28切片") is True
+    assert m._is_terminal_status("-0p: ABORT -0p: 段数不等 重切=6 原始=5; ...") is True
+    assert m._is_terminal_status("--6: SKIP no_cut 无切点无需修复") is True
+    assert m._is_terminal_status("xy: SKIP 无幸存段 (清单)") is True
+    assert m._is_terminal_status("ab: SKIP 原片拉取失败/不存在 (重试 10 次仍失败)") is False
+    assert m._is_terminal_status("cd: PUSH-FAIL(rc=255) 覆盖 9/10 段") is False
+    assert m._is_terminal_status("ef: PURGE-FAIL 超长523s 删除未确认, 未记录待重试") is False
+    assert m._is_terminal_status("gh: ENCODE-FAIL 全部 1 段编码失败, 未推") is False
+    assert m._is_terminal_status("ij: ERROR Command '...' timed out") is False
+    assert m._is_terminal_status("kl: PURGED(dry-run) 将删原片+2切片 (超长4486s)") is False
+    assert m._is_terminal_status("mn: DRY-RUN 将覆盖 10/12 段 [...]") is False
+
+
+def test_stem_of():
+    m = load_mod()
+    assert m._stem_of("-L1yIZqIZws: PURGED 超长4486s 删原片+2切片") == "-L1yIZqIZws"
+    assert m._stem_of("Bq-D1sSJgKI: OK 覆盖 10/12 段") == "Bq-D1sSJgKI"
+    assert m._stem_of("_4rdls-fHc8: SKIP no_cut 无切点无需修复") == "_4rdls-fHc8"
 
 
 if __name__ == "__main__":

@@ -45,6 +45,7 @@ SSH_OPTS = (
 )
 
 PROGRESS_FILE = Path(__file__).parent / "scene_split_progress.txt"
+REPLACE_PROGRESS = Path(__file__).parent / "replace_progress.txt"
 SCENE_THRESHOLD = 0.3
 MIN_SEGMENT_SEC = 0.5
 
@@ -232,6 +233,36 @@ def split_batch(files: list[str], shm_src: str, shm_out: str,
 
 
 # ═══════════════════════════ Push ═══════════════════════════
+
+# replace_one 返回一行状态 "<stem>: <STATUS> ...". 续跑时据此判定:
+# terminal = 这次已得到确定结果 (成功/明确不需处理/确定性中止), 记进度, 下次跳过;
+# recoverable = 瞬时/可恢复失败 (拉取失败/推送失败/编码失败/超时/dry-run), 不记, 下次重试。
+_TERMINAL_MARKERS = (
+    "OK",                       # 成功覆盖
+    "PURGED 超长",              # 真删确认 (非 dry-run / 非 PURGE-FAIL)
+    "ABORT",                    # 对齐闸确定性中止 (段数不等), 重试结果不变
+    "SKIP no_cut",              # 整片无切点, 确定无需修复
+    "SKIP 无幸存段",            # 清单无幸存段, 确定跳过
+)
+
+
+def _is_terminal_status(line: str) -> bool:
+    """该状态行是否为终态 (应记进度、续跑跳过)。
+    非终态: 拉取失败 SKIP / PUSH-FAIL / PURGE-FAIL / ENCODE-FAIL / ERROR /
+    任何 dry-run 行 (PURGED(dry-run) / DRY-RUN), 均留待重试。"""
+    if "(dry-run)" in line or ": DRY-RUN" in line:
+        return False
+    try:
+        body = line.split(":", 1)[1].strip()
+    except IndexError:
+        return False
+    return any(body.startswith(m) for m in _TERMINAL_MARKERS)
+
+
+def _stem_of(line: str) -> str:
+    """从状态行 '<stem>: <STATUS> ...' 取回 stem (stem 自身可能含 '-'/'_'/前导 '-')。"""
+    return line.split(":", 1)[0].strip()
+
 
 def n_original_map(split_queue_path: str) -> dict:
     """从 split_queue.txt (审核前全部产出段名) 建 stem -> 原始段数。"""
