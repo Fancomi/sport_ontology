@@ -491,6 +491,7 @@ def run_replace(args):
     here = Path(__file__).parent
     nmap = n_original_map(str(here / "split_queue.txt"))
     smap = survivors_map(str(here / "remote_split_list.txt"))
+    done = config.read_lines(REPLACE_PROGRESS)
 
     stems = []
     for n in args.names:
@@ -507,6 +508,9 @@ def run_replace(args):
     for s in stems:
         if s not in seen:
             seen.add(s); uniq.append(s)
+    n_before = len(uniq)
+    uniq = [s for s in uniq if s not in done]
+    print(f"已完成 {len(done)} 跳过 {n_before - len(uniq)}, 待处理 {len(uniq)}", flush=True)
     if args.limit:
         uniq = uniq[:args.limit]
     if not uniq:
@@ -517,12 +521,35 @@ def run_replace(args):
     tasks = [(s, smap.get(s, []), nmap.get(s, 0), args.dry_run) for s in uniq]
     stats = {"OK": 0, "SKIP": 0, "ABORT": 0, "PURGED": 0, "PURGE-FAIL": 0,
              "ENCODE-FAIL": 0, "ERROR": 0, "PUSH-FAIL": 0, "DRY-RUN": 0}
-    with Pool(args.workers_replace) as pool:
-        for line in pool.imap_unordered(_replace_star, tasks):
-            print(line, flush=True)
-            for k in stats:
-                if f": {k}" in line:
-                    stats[k] += 1; break
+    buf = []
+    BATCH = 50
+
+    def flush_progress():
+        if not buf:
+            return
+        with open(REPLACE_PROGRESS, "a") as f:
+            f.write("".join(s + "\n" for s in buf))
+            f.flush(); os.fsync(f.fileno())
+        buf.clear()
+
+    def handle(line):
+        print(line, flush=True)
+        for k in stats:
+            if f": {k}" in line:
+                stats[k] += 1; break
+        if not args.dry_run and _is_terminal_status(line):
+            buf.append(_stem_of(line))
+            if len(buf) >= BATCH:
+                flush_progress()
+
+    if args.workers_replace <= 1:
+        for t in tasks:
+            handle(_replace_star(t))
+    else:
+        with Pool(args.workers_replace) as pool:
+            for line in pool.imap_unordered(_replace_star, tasks):
+                handle(line)
+    flush_progress()
     print(f"═══ 汇总: {stats} ═══", flush=True)
 
 

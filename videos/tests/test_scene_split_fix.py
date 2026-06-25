@@ -223,6 +223,31 @@ def test_stem_of():
     assert m._stem_of("_4rdls-fHc8: SKIP no_cut 无切点无需修复") == "_4rdls-fHc8"
 
 
+def test_run_replace_skips_done_and_records():
+    import tempfile, types
+    m = load_mod()
+    d = tempfile.mkdtemp()
+    try:
+        prog = os.path.join(d, "replace_progress.txt")
+        open(prog, "w").write("DONEvid\n")   # DONEvid 已完成
+        m.REPLACE_PROGRESS = __import__("pathlib").Path(prog)
+        calls = []
+        def fake_replace_one(stem, survivors, n_original, dry_run):
+            calls.append(stem)
+            return f"{stem}: OK 覆盖 1/1 段"
+        m.replace_one = fake_replace_one
+        m.n_original_map = lambda p: {"DONEvid": 1, "NEWvid": 1}
+        m.survivors_map = lambda p: {"DONEvid": [0], "NEWvid": [0]}
+        args = types.SimpleNamespace(names=[], file=[], all=True, limit=0,
+                                     workers_replace=1, dry_run=False)
+        m.run_replace(args)
+        assert calls == ["NEWvid"], f"应只处理未完成的 NEWvid, got {calls}"
+        done_after = set(open(prog).read().split())
+        assert "NEWvid" in done_after and "DONEvid" in done_after, done_after
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
