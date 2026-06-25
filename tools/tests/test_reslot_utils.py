@@ -124,3 +124,10 @@ def test_has_unmarked_cue_tempo_no_节奏():
     assert "节奏" not in ru.TEMPO_CUES
     # 纯速度词裸露仍触发
     assert ru.has_unmarked_cue("他快速交替脚尖") is True
+
+
+def test_slot_key_counts():
+    # 返回槽位键的 multiset(Counter)，用于 CN/EN 键集确定性比对
+    c = ru.slot_key_counts("[gender:男][contact_part:双手][contact_part:双脚]")
+    assert c == {"gender": 1, "contact_part": 2}
+    assert ru.slot_key_counts("无标注") == {}

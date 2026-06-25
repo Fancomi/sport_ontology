@@ -1,6 +1,7 @@
 # tools/reslot_utils.py
 """13 槽位常量、不变量校验、新键闭词表 —— 被 2_3 / 2_4 共用。"""
 import re
+from collections import Counter
 
 # 原 11 键 + 2 新键。顺序固定，下游 collect/enrich 依赖。
 SLOTS = (
@@ -29,6 +30,11 @@ def invariant_ok(old: str, new: str) -> bool:
 def keys_legal(text: str) -> bool:
     """文本中所有 [key:value] 的 key 必须都是 13 个合法槽位键之一。"""
     return all(k in SLOT_SET for k, _ in _MARKUP_RE.findall(text))
+
+
+def slot_key_counts(text: str) -> dict:
+    """返回 [key:value] 槽位键的 multiset（Counter→dict），用于 CN/EN 键集确定性比对。"""
+    return dict(Counter(k for k, _ in _MARKUP_RE.findall(text)))
 
 
 # ── 新键闭词表（已按 6229 条全量重标的真实词频收敛）──────────────────────────────
