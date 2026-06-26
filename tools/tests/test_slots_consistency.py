@@ -14,22 +14,22 @@ def _flatten(pairs):
     return {a or b for a, b in pairs}
 
 
-def test_collect_slots_has_14():
+def test_collect_slots_has_13():
     vals = _flatten(_extract_tuple('3_collect_slots.py', 'SLOTS'))
     assert vals == set(ru.SLOTS)
 
 
-def test_enrich_slots_has_14():
+def test_enrich_slots_has_13():
     vals = _flatten(_extract_tuple('5_enrich_with_llm.py', 'SLOTS'))
     assert vals == set(ru.SLOTS)
 
 
-def test_clean_ontology_slots_has_14():
+def test_clean_ontology_slots_has_13():
     vals = _flatten(_extract_tuple('5_1_clean_ontology.py', 'SLOTS'))
     assert vals == set(ru.SLOTS)
 
 
-def test_check_augment_valid_slots_has_14():
+def test_check_augment_valid_slots_has_13():
     vals = _flatten(_extract_tuple('2_1_check_augment.py', 'VALID_SLOTS'))
     assert vals == set(ru.SLOTS)
 

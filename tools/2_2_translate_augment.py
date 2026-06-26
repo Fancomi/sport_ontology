@@ -13,12 +13,14 @@ from threading import Lock
 
 from config import DATA_ROOT, LangPaths
 from llm_client import LLMClient, parse_ports, parse_json_response
+import reslot_utils as ru
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
 VIEWS         = [('front', 'augment_front_cn.json', 'augment_front_en.json'),
                  ('side',  'augment_side_cn.json',  'augment_side_en.json')]
 TRANSLATE_KEY = '_translated'
 QC_KEY        = '_validated'
+FIELD         = 'category_3_slotted_description'   # 槽位描述字段名（与 CN 脚本一致）
 _META_KEYS    = ('exercise', 'equipment', 'muscle', 'category', 'Force', 'Grips', 'Mechanic')
 _CONTENT_KEYS = ('category_3_slotted_description', 'category_1_visual_description',
                  'category_2_sports_guidance')
@@ -37,8 +39,15 @@ If a more natural/accurate English expression exists for the context, prefer it 
    - category_3_slotted_description: Keep [slot_key:slot_value] bracket format exactly.
      • Slot KEYS (the part before the colon, e.g. camera_view, gender, equipment, contact_part,
        contact_type, posture_alignment, trajectory, exercise, force_part, force_type, laterality,
-       body_position, tempo, limb_state)
+       body_position, tempo)
        are ALREADY in English — copy them verbatim, do NOT translate or alter them in any way.
+     • CRITICAL — do NOT confuse look-alike keys. These pairs are DISTINCT and must each be
+       copied exactly as in the source, never swapped:
+         - force_part (a muscle/body part exerting force) vs force_type (a way of exerting force)
+         - contact_part (a body part in contact) vs contact_type (how contact is made)
+         - body_position (overall posture) vs posture_alignment (alignment detail)
+       If the source has [force_type:...], the output MUST also be [force_type:...], NOT [force_part:...].
+       The SET and COUNT of slot keys must be byte-identical to the source.
      • Slot VALUES (the part after the colon) must be translated from Chinese to English.
      • Translate the natural-language text surrounding the brackets normally.
      • Fluency check: when slot tags are mentally removed, the remaining sentence must read
@@ -182,20 +191,28 @@ def _qc_once(aug_cn: dict, translated: dict, client: LLMClient,
 
 def run_qc_loop(aug_cn: dict, translated: dict,
                 client: LLMClient) -> tuple[dict, bool]:
-    """QC 自校正循环，最多 12 轮。返回 (最终 translated, 是否通过)。"""
+    """QC 自校正循环，最多 12 轮。返回 (最终 translated, 是否通过)。
+
+    通过条件：LLM 判 pass 【且】EN/CN 槽位键 multiset 确定性一致（C5 不靠 LLM 软判断）。
+    键集不齐时把差异作为 reason 喂回下一轮，逼模型补齐/去除，直到对齐或轮次耗尽。
+    """
+    cn_keys = ru.slot_key_counts(aug_cn.get(FIELD, ''))
     history: list = []
     for n in range(1, 13):
         ok, corrected, reason = _qc_once(aug_cn, translated, client, history)
+        if ok and ru.slot_key_counts(translated.get(FIELD, '')) != cn_keys:
+            # LLM 报 pass 但键集不齐 → 确定性 gate 否决，把差异作为问题喂回下一轮
+            ok, corrected, reason = False, None, (
+                f'槽位键集与源不一致，必须完全对齐 源={cn_keys} '
+                f'译={ru.slot_key_counts(translated.get(FIELD, ""))}')
         if ok:
             return translated, True
         print(f'    QC({n}): ✗ {reason[:120]}')
         if not corrected:
-            # LLM 声称有问题但给不出修正 → 自相矛盾，保留译文但不写 _validated
             print(f'    QC({n}): 无修正内容，保留译文')
             return translated, False
-        merged = {**translated, **corrected}
-        history.append({'round': n, 'reason': reason, 'corrected_full': merged})
-        translated = merged
+        history.append({'round': n, 'reason': reason})
+        translated = {**translated, **corrected}
     return translated, False
 
 
@@ -264,19 +281,25 @@ def process_one(meta_cn_path: Path, client: LLMClient | None,
                 print(f'  {cn_name}: 已有译文，直接 QC...')
 
         # ── QC ────────────────────────────────────────────────────────────
+        passed = False
         if do_qc:
             dummy = translated or {k: _CONTENT_DEFS.get(k, '(placeholder)') for k in _CONTENT_KEYS}
             if dry_run:
                 _print_prompt(f"QC  {cn_name}", _QC_SYSTEM, _qc_payload(aug_cn, dummy, []))
             else:
                 translated, passed = run_qc_loop(aug_cn, translated, client)
-                print(f'  {cn_name} QC: {"✓ 通过" if passed else "→ 未通过，继续"}')
+                print(f'  {cn_name} QC: {"✓ 通过" if passed else "→ 未通过，跳过(不写盘)"}')
 
         if dry_run:
             continue
 
+        # 开启 QC 时，仅 QC 通过(含确定性槽位键集对齐)才写盘；未通过保留 EN 定版不覆盖。
+        if do_qc and not passed:
+            skip += 1
+            continue
+
         out = {**translated, TRANSLATE_KEY: True}
-        if do_qc and passed:
+        if passed:
             out[QC_KEY] = True
         en_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), 'utf-8')
         ok += 1

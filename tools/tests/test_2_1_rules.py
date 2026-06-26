@@ -5,10 +5,10 @@ mod = importlib.import_module('2_1_check_augment')
 
 
 def test_check_rules_accepts_new_keys():
-    issues = mod.check_rules("[body_position:站立][tempo:快速][limb_state:另一条腿屈膝]")
+    issues = mod.check_rules("[body_position:站立][tempo:快速]")
     assert issues == []
 
 
-def test_check_rules_flags_limb_state_composite():
-    issues = mod.check_rules("[limb_state:非工作腿:屈膝]")
-    assert any('limb_state' in i for i in issues)
+def test_check_rules_flags_illegal_key():
+    issues = mod.check_rules("[limb_state:另一条腿屈膝]")
+    assert any('非法槽位键' in i for i in issues)
