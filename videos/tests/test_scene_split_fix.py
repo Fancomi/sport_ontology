@@ -276,6 +276,26 @@ def test_backfill_done_set():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_blacklisted_status_is_terminal():
+    m = load_mod()
+    # 源已删(在黑名单) -> 终态, 记进度跳过, 不再重试
+    assert m._is_terminal_status("xyz: SKIP 源已删(黑名单) 不可重切") is True
+
+
+def test_replace_one_skips_blacklisted_before_pull():
+    import types
+    m = load_mod()
+    # 桩: 黑名单命中 -> 不应调用 _pull_original
+    pulled = []
+    m.config.is_blacklisted = lambda stem: stem == "DEADvid"
+    def fake_pull(stem, dst, retries=10):
+        pulled.append(stem); return False
+    m._pull_original = fake_pull
+    out = m.replace_one("DEADvid", [0, 1], 2, dry_run=False)
+    assert "源已删" in out and m._is_terminal_status(out), f"应终态跳过, got {out}"
+    assert pulled == [], f"黑名单 stem 不应尝试拉取, but pulled={pulled}"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

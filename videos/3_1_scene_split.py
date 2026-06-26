@@ -244,6 +244,7 @@ _TERMINAL_MARKERS = (
     "SKIP no_cut",              # 整片无切点, 确定无需修复
     "SKIP 无幸存段",            # 清单无幸存段, 确定跳过
     "SKIP 无可推段",            # 对齐后 0 段可推, 确定性结果, 跳过 (≠ 拉取失败)
+    "SKIP 源已删",              # 原片在黑名单(上游审核/时长剔除), 永不可重切, 终态跳过
 )
 
 
@@ -415,6 +416,9 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
     import cv2
     if not survivors:
         return f"{stem}: SKIP 无幸存段 (清单)"
+    # 源已被上游删除(黑名单: 审核拒绝/时长剔除) -> 永不可重切, 终态跳过, 不浪费拉取重试
+    if config.is_blacklisted(stem):
+        return f"{stem}: SKIP 源已删(黑名单) 不可重切"
     shm = f"/dev/shm/replace_{stem.replace('/', '_')}"
     shm_src, shm_out = os.path.join(shm, "src"), os.path.join(shm, "out")
     shutil.rmtree(shm, ignore_errors=True)
