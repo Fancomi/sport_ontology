@@ -32,3 +32,27 @@ def test_run_qc_loop_passes_when_slot_keys_aligned():
     client = _QCClient(['{"pass": true}'])
     final, passed = mod.run_qc_loop(aug_cn, translated, client)
     assert passed is True                             # 键集一致 + LLM pass → 通过
+
+
+def test_run_until_converged_stops_on_two_zero_rounds(monkeypatch=None):
+    # run_until_converged: 反复调 run_once 直到连续2轮空缺无下降或归零；返回轮次记录
+    seq = iter([100, 40, 27, 27, 27])     # 每轮结束后的空缺数：40降、27降、27平(0)、27平(0)→停
+    calls = {'n': 0}
+    def fake_count():
+        return next(seq)
+    def fake_run_once():
+        calls['n'] += 1
+    rounds = mod.run_until_converged(fake_run_once, fake_count, max_rounds=8, patience=2)
+    # 起点100→40→27→27→27：第3、4轮补回0,连续2次→停。run_once 调了4次
+    assert calls['n'] == 4
+    assert rounds[-1]['empty'] == 27
+
+
+def test_run_until_converged_stops_when_zero_empty():
+    seq = iter([10, 0])
+    def fake_count(): return next(seq)
+    calls = {'n': 0}
+    def fake_run_once(): calls['n'] += 1
+    rounds = mod.run_until_converged(fake_run_once, fake_count, max_rounds=8, patience=2)
+    assert rounds[-1]['empty'] == 0
+    assert calls['n'] == 1                 # 一轮就清零,立即停
