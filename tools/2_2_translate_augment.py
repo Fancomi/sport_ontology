@@ -307,6 +307,42 @@ def process_one(meta_cn_path: Path, client: LLMClient | None,
     return ok, skip
 
 
+def count_empty_en() -> int:
+    """统计所有 augment_*_en.json 中无 category_3_slotted_description 的（待补译）。"""
+    n = 0
+    for _, _, en_name in VIEWS:
+        for p in DATA_ROOT.rglob(en_name):
+            try:
+                if not json.loads(p.read_text('utf-8')).get(FIELD):
+                    n += 1
+            except Exception:
+                pass
+    return n
+
+
+def run_until_converged(run_once, count_empty, max_rounds: int = 8,
+                        patience: int = 2) -> list:
+    """多轮补译至收敛：反复 run_once，统计 count_empty()；空缺归零或连续 patience
+    轮无下降即停。返回每轮记录 [{round, empty, filled}]。run_once/count_empty 注入便于测试。
+    count_empty 每轮调用一次（起点 1 次 + 每轮后 1 次）。"""
+    prev = count_empty()
+    if prev == 0:
+        return []
+    rounds, stale = [], 0
+    for r in range(1, max_rounds + 1):
+        run_once()
+        cur = count_empty()
+        filled = prev - cur
+        rounds.append({'round': r, 'empty': cur, 'filled': filled})
+        prev = cur
+        if cur == 0:
+            break
+        stale = stale + 1 if filled <= 0 else 0
+        if stale >= patience:
+            break
+    return rounds
+
+
 # ── 入口 ──────────────────────────────────────────────────────────────────────
 def main() -> None:
     parser = argparse.ArgumentParser(description='将 augment_*_cn.json 翻译为英文 augment_{view}_en.json')
@@ -327,6 +363,10 @@ def main() -> None:
                         help='清除所有 _validated 标记，使 --check 可对已译文件重跑 QC')
     parser.add_argument('--reverse',           action='store_true',
                         help='从末尾向前处理，避免与正向机器重叠')
+    parser.add_argument('--loop',              action='store_true',
+                        help='多轮补译至收敛（空缺归零或连续 2 轮无下降即停，最多 8 轮）')
+    parser.add_argument('--max-rounds',        type=int, default=8, dest='max_rounds',
+                        help='--loop 最大轮数（默认 8）')
     args = parser.parse_args()
 
     # ── --reset-qc：独立操作，清除标记后退出 ─────────────────────────────────
@@ -338,22 +378,6 @@ def main() -> None:
         )
         print(f'✓ 已清除 {n} 个文件的 {QC_KEY} 标记，可重新运行 --check')
         return
-
-    all_meta = sorted(DATA_ROOT.rglob('metadata_cn.json'))
-
-    def _needs_work(p: Path) -> bool:
-        return any(_check_en(p.parent / en, args.check)[1] != 'skip'
-                   for _, cn, en in VIEWS if (p.parent / cn).exists())
-
-    pending = [p for p in all_meta if _needs_work(p)]
-    if args.reverse:
-        pending = list(reversed(pending))
-    if args.limit:
-        pending = pending[:args.limit]
-
-    print(f'共 {len(all_meta)} 个动作，待处理 {len(pending)} 个，已完成 {len(all_meta)-len(pending)} 个')
-    if not pending:
-        print('全部已完成'); return
 
     try:
         client = None if args.dry_run else (
@@ -367,26 +391,58 @@ def main() -> None:
     except Exception as e:
         print(f'连接失败: {e}', file=sys.stderr); sys.exit(1)
 
-    total_ok = total_skip = 0
     print_lock = Lock()
-    workers = min(args.workers, len(pending))
 
-    def _worker(idx_path: tuple[int, Path]) -> tuple[int, int]:
-        i, meta_path = idx_path
-        t0 = time.time()
-        ok, skip = process_one(meta_path, client, do_qc=args.check, dry_run=args.dry_run)
-        if not args.dry_run:
-            with print_lock:
-                print(f'[{i}/{len(pending)}] {meta_path.parent.relative_to(DATA_ROOT)}'
-                      f'  ⏱ {time.time()-t0:.1f}s')
-        return ok, skip
+    def _needs_work(p: Path) -> bool:
+        return any(_check_en(p.parent / en, args.check)[1] != 'skip'
+                   for _, cn, en in VIEWS if (p.parent / cn).exists())
 
-    if workers == 1:
-        for item in enumerate(pending, 1):
-            ok, skip = _worker(item)
-            total_ok += ok; total_skip += skip
+    def _run_pass() -> tuple[int, int]:
+        """跑一遍待处理动作（重新扫描 pending，因上一轮可能已填补部分）。返回 (写出, 跳过)。"""
+        all_meta = sorted(DATA_ROOT.rglob('metadata_cn.json'))
+        pend = [p for p in all_meta if _needs_work(p)]
+        if args.reverse:
+            pend = list(reversed(pend))
+        if args.limit:
+            pend = pend[:args.limit]
+        if not pend:
+            print('全部已完成'); return 0, 0
+        print(f'本轮待处理 {len(pend)} 个')
+        ok_n = sk_n = 0
+        workers = min(args.workers, len(pend))
+
+        def _worker(idx_path):
+            i, meta_path = idx_path
+            t0 = time.time()
+            o, s = process_one(meta_path, client, do_qc=args.check, dry_run=args.dry_run)
+            if not args.dry_run:
+                with print_lock:
+                    print(f'[{i}/{len(pend)}] {meta_path.parent.relative_to(DATA_ROOT)}'
+                          f'  ⏱ {time.time()-t0:.1f}s')
+            return o, s
+
+        if workers == 1:
+            for item in enumerate(pend, 1):
+                o, s = _worker(item); ok_n += o; sk_n += s
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futs = {pool.submit(_worker, item): item[1] for item in enumerate(pend, 1)}
+                for fut in as_completed(futs):
+                    try:
+                        o, s = fut.result(); ok_n += o; sk_n += s
+                    except Exception as e:
+                        with print_lock:
+                            print(f'  ✗ {futs[fut]}: {e}')
+        return ok_n, sk_n
+
+    if args.loop and not args.dry_run:
+        rounds = run_until_converged(_run_pass, count_empty_en, max_rounds=args.max_rounds)
+        for r in rounds:
+            print(f"  [轮{r['round']}] 空缺={r['empty']} 补回={r['filled']}")
+        print(f"\n✓ 多轮收敛完成: {len(rounds)} 轮, 最终空缺 {count_empty_en()}")
     else:
-        print(f'并发 workers={workers}')
+        ok, skip = _run_pass()
+        print(f'\n✓ 完成: 新增 {ok} 个，跳过 {skip} 个')
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(_worker, item): item[1]
                        for item in enumerate(pending, 1)}
