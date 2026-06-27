@@ -113,7 +113,7 @@ def audit_node(slot: str, word: str, node: dict, slot_pool: set,
     p = load_prompts('5_3_audit_negatives', lang)
     result = client.chat([
         {"role": "system", "content": p['system']},
-        {"role": "user",   "content": build_user(slot, word, node, list(slot_pool), lang)},
+        {"role": "user",   "content": build_user(slot, word, pre, list(slot_pool), lang)},
     ])
     if not result:
         return pre                                  # LLM 失败 → 退化为去重原值
