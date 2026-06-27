@@ -48,42 +48,59 @@
 
 ### LLM 审查逻辑（prompt 设计）
 
-逐节点喂入 `{word, slot, slot_desc, confusable_siblings, incompatibility, 同槽位候选池}`，要求 LLM 输出修正后的两个列表 + 每项的 action 标记。判据：
+逐节点喂入 `{word, slot, slot_desc, confusable_siblings, incompatibility, 去噪后的同槽候选池}`，要求 LLM 输出**对现有列表的增删动作**（不是完整列表，避免内部互斥强的槽位列表膨胀爆 token）：
+
+```json
+{"add_confusable": [...], "del_confusable": [...],
+ "add_incompatibility": [...], "del_incompatibility": [...]}
+```
+
+判据：
 
 **confusable_siblings（目标：替换后是"视觉易混淆的硬负样本"）**
-- C-ADD：同槽位池中存在、与 word 在 12 秒健身视频里**视觉高度相似但不同**的兄弟 → 补入。
-- C-DEL：视觉一眼可辨（替换后负样本太简单，无对比学习价值）→ 删（与 5_1 R3 重叠，5_3 先做一遍，5_1 兜底）。
-- C-MOVE←：当前在 incompatibility 但其实是"可共现但易混淆"→ 移入 confusable。
+- add_confusable：去噪池中存在、与 word 在 12 秒健身视频里**视觉高度相似但不同**的兄弟 → 加入。
+- del_confusable：视觉一眼可辨（替换后负样本太简单，无对比学习价值）、或同义/上下位 → 删除。
+- MOVE←（incompatibility→confusable）：用 `del_incompatibility` + `add_confusable` 两个动作表达。
 
 **incompatibility（目标：替换后是"逻辑上不可能共现的负样本"）**
-- I-ADD：同槽位池中存在、与 word **逻辑互斥/不可同时为真**（正面↔背面、双侧↔单侧、男↔女）→ 补入。
-- I-DEL：实际可合法共现 → 删（与 5_1 I2 重叠）。
-- I-MOVE→：当前在 incompatibility 但其实只是易混淆、可共现 → 移入 confusable。
+- add_incompatibility：去噪池中存在、与 word **逻辑互斥/不可同时为真**（正面↔背面、双侧↔单侧、男↔女）→ 加入。
+- del_incompatibility：实际可合法共现 → 删除。
+- MOVE→（confusable→incompatibility）：用 `del_confusable` + `add_incompatibility` 表达。
 
-**候选池约束**：ADD 只能从**同槽位已存在的 word**里选（不凭空造词，保证替换值在数据中真实出现过，采样才有意义）。这是确定性护栏，prompt 里给出该槽位全部 word 列表，LLM 只能引用。
+**为什么增量而非全列表**：body_position 这类"站/坐/躺/跪两两互斥"的槽位，完整 incompatibility ≈ 全部非同类位姿，LLM 输出完整列表必然逼近全池（实测最大 174/176），既爆 token 又使负样本失去"难"。增量动作让 LLM 只判"该加哪些、该删哪些"，列表规模由封顶控制。
+
+**候选池约束 + 去噪**：
+- add 项只能从**去噪后的同槽候选池**里选（不凭空造词，且不引入长尾碎片）。这是确定性护栏。
+- **去噪规则**：候选池 = 该槽位 vocab 中 `count >= POOL_MIN_COUNT`（默认 3）的值。vocab 本身保持如实重建不动，仅 5_3 构池时过滤长尾——data 里 reslot 阶段的碎片（如 body_position 的 `轻快`/`姿`/`慢慢回到坐姿`，60% 是 count≤2 的噪声）不该当负样本骨干。
+
+**单节点封顶**：confusable ≤ `MAX_CONFUSABLE`(默认 6)、incompatibility ≤ `MAX_INCOMPATIBILITY`(默认 8)。施加增量后若超限，**保留高频项**（按候选池 count 降序，count 缺失者排后）截断。互斥词太多本就不必全塞负样本池——采样时随机取几个足矣。
 
 ### 工程实现（复用 5_1/5_enrich 基座）
 
 - 复用 `LLMClient` / `parse_ports` / `parse_json_response` / `load_prompts` / `LangPaths`，与 5_1 同构。
-- 新增 prompt 文件 `prompts/5_3_audit_negatives_cn.json`（system + slot_desc + few-shot examples），与 5_1_clean 同结构。
+- 新增 prompt 文件 `prompts/5_3_audit_negatives_cn.json`（system + slot_desc + few-shot examples，输出增量动作四元组），与 5_1_clean 同结构。
 - 进度文件 `5_3_progress.json`，支持中断续跑（同 5_1）。
 - 并发：`-w` workers + 多端口，ontology dict 每 `(slot,word)` 唯一无竞争，直接写内存，末尾一次性落盘（同 5_1）。
 - **确定性护栏**（代码层，不靠 LLM 自觉）：
-  - ADD 项必须 ∈ 同槽位 word 池，否则丢弃（防造词）。
-  - 输出列表对自身 + synonyms 去重（复用 5_1 `preclean_node` 思路）。
-  - MOVE 两端不得同时出现同一词（一个词不能既 confusable 又 incompatibility）。
-- 入参 `--slots` 可限定槽位；默认审查**关系敏感槽位**（camera_view/equipment/contact_part/contact_type/force_type/laterality/body_position/tempo），跳过 exercise（1781 节点、专有名词混淆由专门流程处理）与 gender（2 值平凡）。
+  - add 项必须 ∈ 去噪后同槽候选池，否则丢弃（防造词 + 防长尾）。
+  - 施加增量后对自身 + synonyms 去重（复用 5_1 `preclean_node` 思路）。
+  - 同词不得同时在两列表（若 add 到一侧又出现在另一侧原列表，以 add 目标为准、另一端删）。
+  - 超封顶按候选池频次降序截断。
+- 入参 `--slots` 可限定槽位；`--pool-min-count` 可调去噪阈值。默认审查**关系敏感槽位**（camera_view/equipment/contact_part/contact_type/force_type/laterality/body_position/tempo），跳过 exercise（1781 节点、专有名词混淆由专门流程处理）与 gender（2 值平凡）。
 
 ## TDD 测试设计
 
 5_3 纯函数先行（无 LLM 的确定性部分）：
-- `_apply_audit(word, node, llm_out, slot_pool)`：给定 LLM 裁决 + 候选池，输出修正后 confusable/incompatibility。
-  - ADD 不在池中 → 丢弃；ADD 在池中 → 纳入。
-  - DEL → 移除；MOVE→ → 从 incompatibility 删、入 confusable；MOVE← 反向。
+- `_apply_audit(word, node, actions, pool_counts, max_conf, max_inco)`：给定 LLM 增量动作 + 去噪池（带频次）+ 封顶，输出修正后 confusable/incompatibility。
+  - add 不在池中 → 丢弃；add 在池中 → 纳入。
+  - del → 从对应列表移除。
+  - MOVE（del 一侧 + add 另一侧）→ 词正确换边。
   - 自身/synonyms → 去重剔除。
-  - 同词不同时出现在两列表（MOVE 冲突 → 以 LLM 指定方向为准，另一端删）。
-- `clean_node` 风格的 LLM 失败兜底：LLM 无结果 → 返回 preclean 后原值（不破坏基座）。
-- 集成断言：跑完 5_3 后，所有 ADD 项可在对应槽位 vocab 中找到（无造词）。
+  - 同词不同时出现在两列表（add 一侧时若原在另一侧 → 另一侧删）。
+  - 超封顶 → 按 pool_counts 频次降序保留 top-N 截断。
+- `_build_pool(slot_vocab, min_count)`：返回 `{word: count}` 仅含 count≥min_count（去噪）。
+- LLM 失败兜底：LLM 无结果 → 返回 preclean 后原值（不破坏基座、不施加增量）。
+- 集成断言：跑完 5_3 后，所有列表项 ∈ 去噪池或原列表（无造词/无长尾新增）、每节点 ≤ 封顶。
 
 ## 验收阈值（前置定义，避免事后凑数）
 
@@ -93,7 +110,8 @@
 | vocab | 各键值计数 | 等于当前数据 `3_collect` 实际统计（机械，必然相等）|
 | ontology | 死值（在 onto 不在 vocab）| 0（5_enrich 清理后）|
 | ontology | 新键 body_position/tempo 节点覆盖 | 100%（vocab 中每个值都有节点）|
-| ontology | confusable ADD 造词率（ADD 项不在同槽 vocab）| 0%（确定性护栏挡净）|
+| ontology | confusable ADD 造词率（ADD 项不在去噪同槽池且不在原列表）| 0%（确定性护栏挡净）|
+| ontology | 单节点列表规模 | confusable ≤6、incompatibility ≤8（封顶必守）|
 | ontology | 5_1 结构违规残留（同义/上下位混入 confusable；非真互斥混入 incompatibility）| 抽样 ≤2% |
 | ontology | 负样本合理性 | 抽样 30 条替换负样本，人工/LLM 复核"高难度混淆 or 真互斥"达标率 ≥85% |
 | ontology | 5_2 收敛 | 正常收敛（delta→0，非达上限）|

@@ -5,8 +5,11 @@
 抓手锁定"作为 negative 替换时是否合理"：
   confusable_siblings → 替换后应是"视觉易混淆的硬负样本"
   incompatibility     → 替换后应是"逻辑不可共现的负样本"
-确定性护栏：新增项必须 ∈ 同槽位词池（防造词）；剔除自身/同义；
-同词不得同时在两列表（confusable 优先，避免可共现却被当互斥的假负样本）。
+
+LLM 输出**增量动作**（add/del 四元组）而非完整列表——body_position 这类内部
+互斥强的槽位，完整列表会逼近全池(实测最大174/176)，既爆 token 又使负样本失去"难"。
+确定性护栏：add 项必须 ∈ 去噪后同槽候选池(防造词+防长尾碎片)；剔除自身/同义；
+同词不得同时在两列表(add 一侧时另一侧删)；单节点列表按池频次降序封顶。
 
 进度：5_3_progress.json，支持中断续跑。
 """
@@ -21,6 +24,10 @@ from llm_client import LLMClient, parse_ports, parse_json_response
 
 PROGRESS_PATH = Path(__file__).parent / "5_3_progress.json"
 
+POOL_MIN_COUNT       = 3      # 候选池去噪：仅保留 vocab 中 count>=此值的词
+MAX_CONFUSABLE       = 6      # 单节点 confusable 封顶
+MAX_INCOMPATIBILITY  = 8      # 单节点 incompatibility 封顶
+
 SLOTS = (
     "gender", "camera_view", "equipment", "contact_part", "contact_type",
     "posture_alignment", "trajectory", "exercise", "force_part",
@@ -34,36 +41,66 @@ DEFAULT_SLOTS = (
 )
 
 
-def _apply_audit(word: str, node: dict, llm_out: dict, slot_pool: set) -> dict:
-    """套护栏产出最终 confusable/incompatibility。
-    - 新增项(不在原列表)必须 ∈ slot_pool，否则丢弃(防造词)
-    - 剔除自身 + synonyms，保序去重
-    - 同词不得同时在两列表 → confusable 优先(避免假互斥负样本)
-    """
-    banned    = {word} | set(node.get("synonyms", []))
-    orig_conf = set(node.get("confusable_siblings", []))
-    orig_inco = set(node.get("incompatibility", []))
+def _build_pool(slot_vocab: dict, min_count: int = POOL_MIN_COUNT) -> dict:
+    """候选池去噪：返回 {word: count} 仅含 count>=min_count 的词。
+    vocab 本身保持如实重建不动；仅 5_3 构池时滤掉长尾碎片(reslot 噪声)。"""
+    return {w: c for w, c in slot_vocab.items() if c >= min_count}
 
-    def _filter(items, orig_set):
+
+def _apply_audit(word: str, node: dict, actions: dict, pool_counts: dict,
+                 max_conf: int = MAX_CONFUSABLE,
+                 max_inco: int = MAX_INCOMPATIBILITY) -> dict:
+    """在现有列表上施加 LLM 增量动作，套护栏 + 封顶产出最终两列表。
+    actions: {add_confusable, del_confusable, add_incompatibility, del_incompatibility}
+    pool_counts: 去噪后 {word: count}，用于护栏(add 须在池)与封顶(频次降序保留)。
+    护栏：
+      - add 项不在 pool_counts 且不在原列表 → 丢弃(防造词/长尾)
+      - 剔除自身 + synonyms，保序去重
+      - 同词不得同时在两列表 → add 目标侧优先，另一侧删
+      - 超封顶 → 按 pool_counts 频次降序(缺失者排后)保留 top-N
+    """
+    banned = {word} | set(node.get("synonyms", []))
+    pool   = set(pool_counts)
+
+    def _apply(orig, adds, dels):
+        orig_set = set(orig)
+        dels_set = set(dels)
         seen, out = set(), []
-        for v in items:
+        for v in orig:                              # 原列表先过(去重/去自身/施 del)
+            if v in banned or v in seen or v in dels_set:
+                continue
+            out.append(v); seen.add(v)
+        for v in adds:                              # 再施 add(护栏:须在池或原列表)
             if v in banned or v in seen:
                 continue
-            if v not in orig_set and v not in slot_pool:   # 新增项须在池中
-                continue
+            if v not in pool and v not in orig_set:
+                continue                            # 不在池且非原有 → 防造词丢弃
             out.append(v); seen.add(v)
         return out
 
-    conf = _filter(llm_out.get("confusable_siblings", []), orig_conf)
-    inco = _filter(llm_out.get("incompatibility", []),     orig_inco)
-    conf_set = set(conf)
-    inco = [v for v in inco if v not in conf_set]           # 冲突→confusable 优先
-    return {"confusable_siblings": conf, "incompatibility": inco}
+    conf = _apply(node.get("confusable_siblings", []),
+                  actions.get("add_confusable", []),
+                  actions.get("del_confusable", []))
+    inco = _apply(node.get("incompatibility", []),
+                  actions.get("add_incompatibility", []),
+                  actions.get("del_incompatibility", []))
+
+    conf_set = set(conf)                            # 冲突→confusable 优先
+    inco = [v for v in inco if v not in conf_set]
+
+    def _cap(lst, limit):
+        if len(lst) <= limit:
+            return lst
+        ranked = sorted(lst, key=lambda v: pool_counts.get(v, 0), reverse=True)
+        return ranked[:limit]
+
+    return {"confusable_siblings": _cap(conf, max_conf),
+            "incompatibility":     _cap(inco, max_inco)}
 
 
 # ── Prompt 构建 ───────────────────────────────────────────────────────────────
 
-def build_user(slot: str, word: str, node: dict, slot_pool: list, lang: str) -> str:
+def build_user(slot: str, word: str, node: dict, pool_counts: dict, lang: str) -> str:
     p = load_prompts('5_3_audit_negatives', lang)
     slot_desc = p['slot_desc'].get(slot, slot)
     examples  = p['examples'].get(slot, [])
@@ -73,7 +110,7 @@ def build_user(slot: str, word: str, node: dict, slot_pool: list, lang: str) -> 
             f'word="{ex["word"]}"\n'
             f'候选池: {json.dumps(ex.get("pool", []), ensure_ascii=False)}\n'
             f'输入: {json.dumps({"confusable_siblings": ex["before"]["confusable_siblings"], "incompatibility": ex["before"]["incompatibility"]}, ensure_ascii=False)}\n'
-            f'输出: {json.dumps(ex["after"], ensure_ascii=False)}\n'
+            f'输出: {json.dumps(ex["actions"], ensure_ascii=False)}\n'
             f'理由: {ex["reason"]}'
         )
     few_shot = ("\n\n".join(ex_parts) + "\n\n") if ex_parts else ""
@@ -81,14 +118,15 @@ def build_user(slot: str, word: str, node: dict, slot_pool: list, lang: str) -> 
         "confusable_siblings": node.get("confusable_siblings", []),
         "incompatibility":     node.get("incompatibility", []),
     }
+    pool_sorted = sorted(pool_counts, key=lambda w: pool_counts[w], reverse=True)
     return (
         f"# 参考示例（槽位 {slot}：{slot_desc}）\n\n"
         f"{few_shot}"
         f"# 待审核节点\n\n"
         f'word="{word}"\n'
-        f"候选池(ADD 只能从中选): {json.dumps(sorted(slot_pool), ensure_ascii=False)}\n"
-        f"输入: {json.dumps(cur, ensure_ascii=False)}\n"
-        f"输出:"
+        f"候选池(add 只能从中选，已按频次降序): {json.dumps(pool_sorted, ensure_ascii=False)}\n"
+        f"当前: {json.dumps(cur, ensure_ascii=False)}\n"
+        f"输出增量动作:"
     )
 
 
@@ -105,22 +143,22 @@ def _preclean(word: str, node: dict) -> dict:
     return out
 
 
-def audit_node(slot: str, word: str, node: dict, slot_pool: set,
+def audit_node(slot: str, word: str, node: dict, pool_counts: dict,
                client: LLMClient, lang: str = 'cn') -> dict:
     pre = _preclean(word, node)
-    if not pre["confusable_siblings"] and not pre["incompatibility"] and len(slot_pool) <= 1:
+    if not pre["confusable_siblings"] and not pre["incompatibility"] and len(pool_counts) == 0:
         return pre                                  # 无关系可审且无可增 → 跳过 LLM
     p = load_prompts('5_3_audit_negatives', lang)
     result = client.chat([
         {"role": "system", "content": p['system']},
-        {"role": "user",   "content": build_user(slot, word, pre, list(slot_pool), lang)},
+        {"role": "user",   "content": build_user(slot, word, pre, pool_counts, lang)},
     ])
     if not result:
         return pre                                  # LLM 失败 → 退化为去重原值
     parsed = parse_json_response(result)
     if not parsed:
         return pre
-    return _apply_audit(word, node, parsed, slot_pool)
+    return _apply_audit(word, node, parsed, pool_counts)
 
 
 # ── 主流程 ────────────────────────────────────────────────────────────────────
@@ -136,6 +174,8 @@ def main() -> None:
     ap.add_argument("--host",  default="127.0.0.1")
     ap.add_argument("--port",  default=None, help="逗号分隔多端口")
     ap.add_argument("--workers", "-w", type=int, default=1)
+    ap.add_argument("--pool-min-count", type=int, default=POOL_MIN_COUNT, dest="pool_min_count",
+                    help=f"候选池去噪阈值：仅 count>=此值的 vocab 词进池（默认 {POOL_MIN_COUNT}）")
     ap.add_argument("--think", action="store_true", default=None)
     args = ap.parse_args()
 
@@ -158,10 +198,11 @@ def main() -> None:
     for slot in args.slots:
         if slot not in ontology:
             print(f"[跳过] {slot}: 不在 ontology"); continue
-        pool = set(vocab.get(slot, {}).keys())      # 候选池 = vocab 中该槽全部值
+        pool = _build_pool(vocab.get(slot, {}), args.pool_min_count)  # 去噪候选池 {word:count}
         done = set(progress.get(slot, []))
         pend = {w: n for w, n in ontology[slot].items() if args.force or w not in done}
-        print(f"[{slot}] {len(ontology[slot])} 节点，待审 {len(pend)}，候选池 {len(pool)}")
+        print(f"[{slot}] {len(ontology[slot])} 节点，待审 {len(pend)}，"
+              f"候选池 {len(pool)}/{len(vocab.get(slot, {}))}(去噪>={args.pool_min_count})")
         for word, node in pend.items():
             items.append((slot, word, node, pool))
 
