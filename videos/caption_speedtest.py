@@ -27,7 +27,7 @@ REMOTE_DIR = "/root/back_2/penghaotian/datas/yt-dlp-downloads/videos_split"
 SSH_OPTS   = ("-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
               "-o Compression=no -o ConnectTimeout=10 -c aes128-gcm@openssh.com")
 SHM         = "/dev/shm/caption_speedtest"
-SPLIT_QUEUE = Path(__file__).parent / "split_queue.txt"
+SPLIT_QUEUE = Path(__file__).parent / "data" / "pipeline_state" / "3_split_queue.txt"
 TOTAL_CLIPS = 2_881_839
 
 CAPTION_SYSTEM = "你是健身训练视频标注专家，擅长用精炼的中文描述训练画面。"

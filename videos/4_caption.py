@@ -41,10 +41,9 @@ SSH_OPTS   = ("-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
 SHM_BASE   = "/dev/shm/caption_pipe"
 
 CAP_DIR     = Path("/root/paddlejob/workspace/env_run/penghaotian/datas/videos/captions")
-PROGRESS    = Path(__file__).parent / "caption_progress.txt"
-SPLIT_QUEUE = Path(__file__).parent / "split_queue.txt"
-CANONICAL   = Path(__file__).parent / "canonical_segments.list"   # 唯一权威名单 = 远端∩kept
-REMOTE_LIST = Path(__file__).parent / "remote_split_list.txt"     # 兼容旧名单 (回退用)
+DATA        = Path(__file__).parent / "data"
+PROGRESS    = DATA / "pipeline_state" / "4_caption_progress.txt"
+CANONICAL   = DATA / "deliverables" / "3_canonical_segments.list"   # 唯一权威名单 = 远端∩kept
 
 SAMPLE_FPS = 1      # 每秒抽 1 帧
 WINDOW_SEC = 3      # 每 3 秒一个 caption 窗口
@@ -84,7 +83,7 @@ def pull_batch(files, shm, workers=24):
     return [f for f in os.listdir(shm) if f.endswith(".mp4")]
 
 
-MISSING_LOG = Path(__file__).parent / "caption_missing.txt"
+MISSING_LOG = Path(__file__).parent / "data" / "pipeline_state" / "4_caption_missing.txt"
 
 
 # ═══════════════════════════ 抽帧 ═══════════════════════════
@@ -217,9 +216,10 @@ def run(args):
             inflight[i] = max(0, inflight[i] - 1)
 
     CAP_DIR.mkdir(parents=True, exist_ok=True)
-    # 优先用唯一权威名单 canonical_segments.list (远端∩kept, audit 收口产物);
-    # 回退到旧 remote_split_list.txt, 再回退到 split_queue(2.88M, 含已删)
-    src = CANONICAL if CANONICAL.exists() else (REMOTE_LIST if REMOTE_LIST.exists() else SPLIT_QUEUE)
+    # 唯一权威名单 (远端∩kept, audit --finalize 产物)
+    if not CANONICAL.exists():
+        sys.exit(f"缺权威名单: {CANONICAL} (先跑 3_2 --finalize)")
+    src = CANONICAL
     print(f"切片清单来源: {src.name}")
     raw = [l.strip() for l in src.read_text().splitlines() if l.strip()]
     seen = set(); all_names = []
