@@ -21,22 +21,11 @@ books/datas/
 books/data/
 books/logs
 tools/9_1_progress.json
-videos/downloads
-videos/logs
-videos/results
 
-# videos audit/scene-split 运行态 (可由 --list/--finalize 重新生成, 不入库)；
-# 权威名单 canonical_segments.list 与 remote_split_list.txt 仍跟踪。
-videos/audit_progress.txt
-videos/audit_kept.txt
-videos/audit_deleted.txt
-videos/audit_splits_progress.txt
-videos/audit_splits_progress.preupgrade_*.txt
-videos/replace_progress.txt
-videos/purged_too_long.txt
-videos/_finalize_orphan.list
-videos/*.prefinalize.bak
-videos/*.preupgrade_*.txt
+# videos 流水线运行态 (可重生; 权威成果在 data/deliverables/ 仍跟踪)
+videos/data/pipeline_state/
+videos/data/logs/
+videos/data/downloads/
 
 # Distribution / packaging
 .Python
