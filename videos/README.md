@@ -4,9 +4,10 @@
 最终对每个切片按 **每 3 秒一个窗口** 生成中文 caption，产出用于
 sport_ontology 对比学习训练的视频-文本数据。
 
-> **当前进度（2026-06-16 快照）**：阶段 1-3 已完成，**阶段 4（caption）正在运行**。
-> 切片总量约 232 万（`remote_split_list.txt`），caption 已处理约 51.5 万
-> （`caption_progress.txt`），预计还需 ~56h 跑完。
+> **当前进度（2026-06-28）**：阶段 1-4 已完成一整轮。权威切片名单
+> `data/deliverables/3_canonical_segments.list`（1,961,084 切片，= 远端∩审核通过）。
+> caption 已与权威名单严格对齐：每个权威切片均有 caption，上一轮残留的
+> 363,863 个孤儿 caption 已移入 `captions/_orphan/`（待确认后清理）。
 
 ---
 
@@ -37,8 +38,8 @@ sport_ontology 对比学习训练的视频-文本数据。
                                            └── 2_4_cleanup_long_videos（清超长，按需）
                                                    │ 远端 videos/
                                                    ▼
-                            3_1_scene_split → split_queue.txt → 3_2_audit_splits（删劣质切片）
-                                                   │ 远端 videos_split/ + remote_split_list.txt
+                            3_1_scene_split → data/pipeline_state/3_split_queue.txt → 3_2_audit_splits（删劣质切片）
+                                                   │ 远端 videos_split/ + data/deliverables/3_canonical_segments.list
                                                    ▼
                             4_caption（连续流水：拉切片→抽帧→caption→落 json）
 ```
@@ -74,6 +75,26 @@ sport_ontology 对比学习训练的视频-文本数据。
 
 > `tools/llm_client.py` 是跨目录复用的 VLM 客户端，阶段1/3/4 通过
 > `sys.path` 注入 `../tools` 后 `import llm_client` 使用。
+
+---
+
+## 数据文件布局（data/）
+
+`videos/` 下只放编号脚本与共享 `lib/`；所有数据/进度/名单收进 `videos/data/`，
+按角色分目录、文件名带阶段号前缀，一眼可辨归属：
+
+- `data/seeds/` — 手写/外部种子（入库）：`keywords.txt`、`channels_seed.txt`、`datasets/`
+- `data/deliverables/` — 权威成果（入库，跨轮复用核心）：
+  - `3_canonical_segments.list` — 唯一权威切片名单（= 远端∩审核通过，1,961,084 条）
+  - `3_audit_kept.txt` / `3_audit_deleted.txt` — 审核留/删凭证
+- `data/pipeline_state/` — 过程账（gitignore，可重生；仅本轮续跑有意义）：
+  `3_split_queue.txt`、`3_scene_split_progress.txt`、`3_replace_progress.txt`、
+  `3_purged_too_long.txt`、`3_audit_progress.txt`、`4_caption_progress.txt`、`4_to_caption.list`
+- `data/logs/` — 运行日志（gitignore）
+
+下一轮从爬虫重启：清空 `data/pipeline_state/`（旧 stem 失效），
+`data/deliverables/` 与远端切片、`captions/` 跨轮复用；
+增量 caption 待办 = 新 canonical − 已有 caption（`tools/align_captions.py` 给出）。
 
 ---
 <!-- DETAIL_PLACEHOLDER -->
@@ -122,14 +143,16 @@ sport_ontology 对比学习训练的视频-文本数据。
 入口 `bash 3_scene_split.sh`（后台：`nohup bash 3_scene_split.sh > logs/scene_split.log 2>&1 &`）。
 
 - **`3_1_scene_split.py`** — 双缓冲 pipeline：从远端拉视频 → ffmpeg `scene` 滤镜检测镜头边界 → stream-copy 切片 →
-  推切片回远端 `videos_split/`。全程走 `/dev/shm` 内存零磁盘 IO；每推一批把切片名追加到 `split_queue.txt`。
-- **`3_2_audit_splits.py`** — 双缓冲 pipeline：消费 `split_queue.txt`，对每个切片抽中位帧 VLM 审核，
-  不通过则**远端删除**该切片。
+  推切片回远端 `videos_split/`。全程走 `/dev/shm` 内存零磁盘 IO；每推一批把切片名追加到 `data/pipeline_state/3_split_queue.txt`。
+- **`3_2_audit_splits.py`** — 双缓冲 pipeline：消费 `data/pipeline_state/3_split_queue.txt`（或通过 `--list` 指定远端清单），
+  对每个切片抽中位帧 VLM 审核，不通过则**远端删除**该切片；`--finalize` 将远端现存切片与审核记录取交集，
+  收敛为 `data/deliverables/3_canonical_segments.list`（= 远端∩审核通过）。
 
-**产物**：远端 `…/videos_split/`，以及切片清单 `split_queue.txt`（含已删，288 万）
-和审核后真实清单 `remote_split_list.txt`（232 万，阶段4 优先用它）。
+**产物**：远端 `…/videos_split/`，以及审核留/删凭证
+`data/deliverables/3_audit_kept.txt` / `3_audit_deleted.txt`，
+和唯一权威切片名单 `data/deliverables/3_canonical_segments.list`（1,961,084 切片，阶段4 的输入）。
 
-## 阶段 4：切片 caption（当前运行中）
+## 阶段 4：切片 caption
 
 目标：对每个切片按 3 秒窗口生成中文训练动作描述。
 
@@ -140,8 +163,8 @@ sport_ontology 对比学习训练的视频-文本数据。
   1. **pull 线程**：持续从远端拉切片入 `/dev/shm`；
   2. **extract 进程池**：1fps 抽帧，按 3 秒分窗，抽完即删 shm 文件；
   3. **caption 线程池**：整窗一次提交 VLM，某切片所有窗口完成即落一个 json。
-- 切片清单优先取 `remote_split_list.txt`（审核后真实存在的），回退 `split_queue.txt`。
-- 断点续跑：`caption_progress.txt` 记录已完成切片；caption 留本地不回传。
+- 切片清单读取 `data/deliverables/3_canonical_segments.list`（唯一权威名单，1,961,084 切片）。
+- 断点续跑：`data/pipeline_state/4_caption_progress.txt` 记录已完成切片；caption 留本地不回传。
 
 **产物**：`/datas/videos/captions/<2位shard>/<切片名>.json`，
 每个 json 含该切片的 `duration` 和按时间有序的 `captions: [{start, end, caption, n_frames}, …]`。
