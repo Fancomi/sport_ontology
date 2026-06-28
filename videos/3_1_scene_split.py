@@ -278,7 +278,7 @@ def n_original_map(split_queue_path: str) -> dict:
 
 
 def survivors_map(remote_list_path: str) -> dict:
-    """从 remote_split_list.txt (审核后幸存段名) 建 stem -> 幸存索引(升序)。"""
+    """从 canonical_segments.list (审核后幸存段名=远端∩kept) 建 stem -> 幸存索引(升序)。"""
     d = {}
     with open(remote_list_path, encoding="utf-8") as f:
         for ln in f:
@@ -376,7 +376,7 @@ def push_named(shm_out: str, names: list) -> int:
 def _purge_remote(stem: str, seg_names: list) -> tuple[bool, int]:
     """整源删除超长视频: 远端原片 + 指定切片 (按本地名单精确删, 不让远端做 ls/glob)。
     返回 (rm 命令是否成功, 删除的切片数)。
-    seg_names 来自本地 remote_split_list (幸存段名), 即远端现存的全部切片;
+    seg_names 来自本地 canonical_segments.list (幸存段名), 即远端现存的全部切片;
     用绝对路径逐名删除 (开头为 '/' 不会被当 rm 选项, 故无需 cd/'./' 技巧),
     成功判定走 rm 退出码 (set -e), 不再远端复核 ls —— 远端硬盘扛不住 ls。"""
     paths = [f"{REMOTE_SRC}/{stem}.mp4"] + [f"{REMOTE_DST}/{n}" for n in seg_names]
@@ -494,7 +494,7 @@ def run_replace(args):
     """按原片名重切+替换远端 (不跑全量 pipeline)。"""
     here = Path(__file__).parent
     nmap = n_original_map(str(here / "split_queue.txt"))
-    smap = survivors_map(str(here / "remote_split_list.txt"))
+    smap = survivors_map(str(here / "canonical_segments.list"))
     done = config.read_lines(REPLACE_PROGRESS)
 
     stems = []
@@ -708,7 +708,7 @@ def main():
     parser.add_argument("-f", "--file", action="append", default=[],
                         help="--replace: 原片名清单文件 (可多次)")
     parser.add_argument("--all", action="store_true",
-                        help="--replace: 取 remote_split_list.txt 全部有幸存段的原片")
+                        help="--replace: 取 canonical_segments.list 全部有幸存段的原片")
     parser.add_argument("--limit", type=int, default=0,
                         help="--replace: 只处理前 N 个原片 (0=不限)")
     parser.add_argument("--workers-replace", type=int, default=16,
