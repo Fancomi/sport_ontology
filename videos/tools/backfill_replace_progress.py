@@ -5,7 +5,7 @@
 
 用法:
   python3 tools/backfill_replace_progress.py [LOG] [OUT]
-默认: LOG=logs/replace_all2.log  OUT=replace_progress.txt (相对 videos/ 目录)。
+默认: LOG=data/logs/replace_all2.log  OUT=data/pipeline_state/3_replace_progress.txt (相对 videos/ 目录)。
 """
 import os
 import sys
@@ -42,8 +42,8 @@ def backfill(log_path: str, out_path: str) -> int:
 
 
 def main():
-    log = sys.argv[1] if len(sys.argv) > 1 else os.path.join(VIDEOS, "logs", "replace_all2.log")
-    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(VIDEOS, "replace_progress.txt")
+    log = sys.argv[1] if len(sys.argv) > 1 else os.path.join(VIDEOS, "data", "logs", "replace_all2.log")
+    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(VIDEOS, "data", "pipeline_state", "3_replace_progress.txt")
     n = backfill(log, out)
     print(f"backfilled {n} terminal stems -> {out}")
 
