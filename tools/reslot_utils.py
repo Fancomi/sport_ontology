@@ -58,6 +58,33 @@ BODY_POSITION_BLACKLIST = frozenset({"姿势", "姿态", "保持", "动作"})
 
 MAX_NEW_SLOT_LEN = 8   # 新键 value 上限字符数；>8 视为整句误标
 
+# body_position 结构锚点：合法位姿值须【含位姿词根】且【不含污染词根】。
+# 位姿词根=身体处于某固定形态的字；污染词根=纯节奏/力学评价/动作轨迹过程词。
+# 这样挡掉 reslot 阶段混入 body_position 的节奏词(平稳/缓慢)、力学词(稳定/爆发力)、
+# 轨迹词(抬升/下放/冲刺)，同时放行真位姿(站/坐/卧/跪/蹲/弓步/平板支撑/倒置…)。
+BODY_POSITION_ROOTS = (
+    "站", "坐", "卧", "跪", "蹲", "躺", "趴", "俯", "仰", "弓步", "平板", "悬",
+    "四点", "四足", "四肢", "桌面", "膝", "直立", "屈髋", "盘腿", "分腿", "交错",
+    "半跪", "箭步", "跨步", "倒置", "前倾", "后倾", "支撑", "桥", "挺直", "屈膝",
+)
+BODY_POSITION_POLLUTE = (
+    "缓慢", "慢慢", "快速", "迅速", "爆发", "停顿", "停留", "静态", "平稳", "轻快",
+    "紧凑", "节奏", "稳定", "均匀", "控制", "维持", "收缩", "发力",
+    "抬升", "抬离", "下放", "下降", "上升", "倾斜", "冲刺", "行走", "转身", "移动",
+    "回到", "准备", "起始", "起步", "落地", "贴紧", "贴地", "平铺", "面对", "踩",
+)
+_BODY_POSITION_FRAGMENT = frozenset({"姿", "并", "支撑", "着地", "静态支撑"})  # 无主体的残片/裸接触词
+
+# tempo 结构锚点：合法节奏值须【含节奏词根】且【不含位姿/发力词根】。
+TEMPO_ROOTS = (
+    "缓", "慢", "快", "迅", "爆发", "停", "静", "匀", "速", "节奏", "轻", "张力",
+    "离心", "向心", "秒", "片刻", "脉冲", "瞬", "动态", "持续", "连贯", "拉伸", "控制",
+)
+TEMPO_POLLUTE = (
+    "站", "坐", "卧", "跪", "蹲", "蹬", "推", "拉", "旋转", "屈", "伸", "支撑",
+    "部位", "肌",
+)
+
 
 def new_slot_value_ok(slot: str, value: str) -> bool:
     """第1层确定性门禁。非新键恒 True；新键按黑名单+结构锚点+超长判定。"""
@@ -67,9 +94,19 @@ def new_slot_value_ok(slot: str, value: str) -> bool:
     if len(v) > MAX_NEW_SLOT_LEN:
         return False
     if slot == "tempo":
-        return not any(b in v for b in TEMPO_BLACKLIST)
+        if any(b in v for b in TEMPO_BLACKLIST):
+            return False
+        if any(p in v for p in TEMPO_POLLUTE):          # 位姿/发力词侵入 → 拒
+            return False
+        return any(r in v for r in TEMPO_ROOTS)         # 须含节奏词根
     if slot == "body_position":
-        return not any(b in v for b in BODY_POSITION_BLACKLIST)
+        if any(b in v for b in BODY_POSITION_BLACKLIST):
+            return False
+        if v in _BODY_POSITION_FRAGMENT:                # 残片/裸接触词 → 拒
+            return False
+        if any(p in v for p in BODY_POSITION_POLLUTE):  # 节奏/力学/轨迹词 → 拒
+            return False
+        return any(r in v for r in BODY_POSITION_ROOTS) # 须含位姿词根
     return True
 
 
