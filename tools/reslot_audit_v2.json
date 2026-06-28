@@ -1,0 +1,473 @@
+{
+  "total": 6505,
+  "reslotted": 5522,
+  "with_issues": 226,
+  "stripped": 226,
+  "issue_counts": {
+    "新键门禁违规": 239
+  },
+  "samples": [
+    {
+      "file": "female/abdominals/abdominals-stretch-variation-one/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:平贴地面]"
+      ]
+    },
+    {
+      "file": "female/abdominals/alternating-bent-leg-raise/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[tempo:平稳]"
+      ]
+    },
+    {
+      "file": "female/abdominals/barbell-roll-outs/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:停顿]"
+      ]
+    },
+    {
+      "file": "female/abdominals/bosu-ball-forearm-plank/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:静态]"
+      ]
+    },
+    {
+      "file": "female/abdominals/bosu-ball-hand-plank/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:静态支撑]"
+      ]
+    },
+    {
+      "file": "female/abdominals/dead-bugs-same-side/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:缓慢]"
+      ]
+    },
+    {
+      "file": "female/abdominals/dumbbell-hollow-hold/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:静态]"
+      ]
+    },
+    {
+      "file": "female/abdominals/forearm-plank/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:静态]"
+      ]
+    },
+    {
+      "file": "female/abdominals/jumping-mountain-climber/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:爆发力]",
+        "新键门禁违规[body_position:爆发力]"
+      ]
+    },
+    {
+      "file": "female/abdominals/laying-leg-raises/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:缓慢]"
+      ]
+    },
+    {
+      "file": "female/abdominals/plank/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:静态支撑]"
+      ]
+    },
+    {
+      "file": "female/abdominals/serratus-activation-active-plank/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:支撑]"
+      ]
+    },
+    {
+      "file": "female/abdominals/trx-forearm-plank/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:静态支撑]"
+      ]
+    },
+    {
+      "file": "female/abdominals/trx-forearm-plank/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:静态支撑]"
+      ]
+    },
+    {
+      "file": "female/abdominals/trx-hand-plank/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:静态]"
+      ]
+    },
+    {
+      "file": "female/abdominals/weighted-hand-plank/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:静态]"
+      ]
+    },
+    {
+      "file": "female/biceps/corpe-pose/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:慢慢回到坐姿]"
+      ]
+    },
+    {
+      "file": "female/biceps/ez-bar-reverse-preacher-curl/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:缓慢]"
+      ]
+    },
+    {
+      "file": "female/biceps/kettlebell-single-arm-row-on-bench/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[tempo:平稳]"
+      ]
+    },
+    {
+      "file": "female/biceps/trx-hammer-curl/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:身体向后倾斜]"
+      ]
+    },
+    {
+      "file": "female/calves/cable-bar-calve-raise/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:缓慢]"
+      ]
+    },
+    {
+      "file": "female/calves/calf-raise-1c-bilateral-eccentric-from-box/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:停顿]"
+      ]
+    },
+    {
+      "file": "female/calves/calf-raise-1c-bilateral-eccentric-from-box/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:缓慢]"
+      ]
+    },
+    {
+      "file": "female/calves/calf-raise-3a-soleus-bias-bilateral/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:短暂停留]"
+      ]
+    },
+    {
+      "file": "female/calves/calf-raises/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:停留]"
+      ]
+    },
+    {
+      "file": "female/calves/cardio-shuttle-sprint/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:快速冲刺]",
+        "新键门禁违规[body_position:迅速转身]"
+      ]
+    },
+    {
+      "file": "female/calves/cardio-single-leg-forward-hop/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:轻快]"
+      ]
+    },
+    {
+      "file": "female/calves/gastrocnemius-stretch-unilateral-on-wall/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:静态]",
+        "新键门禁违规[tempo:拉伸]"
+      ]
+    },
+    {
+      "file": "female/calves/kettlebell-seated-calf-raise-double/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:停留]"
+      ]
+    },
+    {
+      "file": "female/calves/landmine-calf-raise/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:缓慢]"
+      ]
+    },
+    {
+      "file": "female/calves/machine-horizontal-leg-press-calf-jump/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:缓慢]"
+      ]
+    },
+    {
+      "file": "female/calves/machine-horizontal-leg-press-calf-raise/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:停顿]"
+      ]
+    },
+    {
+      "file": "female/chest/barbell-hooklying-bench-press/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:缓慢]"
+      ]
+    },
+    {
+      "file": "female/chest/bosu-ball-walkover-pushup/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:支撑]"
+      ]
+    },
+    {
+      "file": "female/chest/cardio-skater-to-single-leg-burpee/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:爆发力]"
+      ]
+    },
+    {
+      "file": "female/chest/cardio-skater-to-single-leg-burpee/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:紧凑]"
+      ]
+    },
+    {
+      "file": "female/chest/dumbbell-decline-squeeze-press/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:并]"
+      ]
+    },
+    {
+      "file": "female/chest/mountain/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:静态]"
+      ]
+    },
+    {
+      "file": "female/chest/serratus-activation-active-plank/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:身体呈直线]",
+        "新键门禁违规[body_position:静态]"
+      ]
+    },
+    {
+      "file": "female/forearms/forearms-stretch-variation-two/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:缓慢]"
+      ]
+    },
+    {
+      "file": "female/forearms/kettlebell-alternating-row/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[tempo:平稳]"
+      ]
+    },
+    {
+      "file": "female/forearms/kettlebell-single-arm-farmers-walk/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:向前行走]"
+      ]
+    },
+    {
+      "file": "female/forearms/table-top-pose-variation-2/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:静态]"
+      ]
+    },
+    {
+      "file": "female/forearms/vajrasana-variation-1/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:静态]"
+      ]
+    },
+    {
+      "file": "female/front-shoulders/barbell-z-press/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:缓慢]"
+      ]
+    },
+    {
+      "file": "female/front-shoulders/dumbbell-decline-neutral-bench-press/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:缓慢]"
+      ]
+    },
+    {
+      "file": "female/front-shoulders/kettlebell-incline-bench-press/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:并]"
+      ]
+    },
+    {
+      "file": "female/front-shoulders/landmine-overhead-press/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:停顿]"
+      ]
+    },
+    {
+      "file": "female/front-shoulders/landmine-overhead-press/augment_side_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:停顿]"
+      ]
+    },
+    {
+      "file": "female/front-shoulders/landmine-single-arm-overhead-press/augment_front_cn.json",
+      "issues": [
+        "新键门禁违规[body_position:停顿]"
+      ]
+    }
+  ],
+  "new_slot_values": {
+    "body_position": {
+      "直立": 21,
+      "直立站立": 2,
+      "站立": 2526,
+      "仰卧": 193,
+      "跪姿": 73,
+      "跪": 33,
+      "平躺": 81,
+      "躺": 37,
+      "悬挂": 15,
+      "平板支撑": 101,
+      "坐": 383,
+      "跪地": 17,
+      "跪姿俯卧": 1,
+      "俯卧": 62,
+      "四点支撑": 18,
+      "俯卧撑": 28,
+      "半跪": 9,
+      "深蹲": 27,
+      "站姿": 71,
+      "弓步": 76,
+      "站": 63,
+      "坐在地板上": 11,
+      "坐姿": 37,
+      "躺下": 1,
+      "膝盖着地": 4,
+      "地平躺": 1,
+      "双膝跪地": 10,
+      "仰卧位": 4,
+      "俯身": 61,
+      "身体前倾": 12,
+      "单膝跪地": 26,
+      "坐在平凳上": 1,
+      "坐在凳子上": 2,
+      "坐在": 44,
+      "坐在牧师椅上": 1,
+      "站在": 49,
+      "后仰": 3,
+      "盘腿坐姿": 1,
+      "半蹲": 6,
+      "双膝着地": 3,
+      "坐在长凳上": 3,
+      "侧卧": 19,
+      "高位平板支撑": 5,
+      "坐在垫子上": 2,
+      "身体悬挂": 3,
+      "悬垂": 5,
+      "向下俯身": 1,
+      "直立站稳": 2,
+      "髋部前倾": 3,
+      "单腿站立": 1,
+      "站在训练平台上": 1,
+      "跪立": 3,
+      "坐在器械上": 1,
+      "下蹲": 17,
+      "站直": 6,
+      "身体略微前倾": 2,
+      "臀部向后坐向脚跟": 4,
+      "身体呈跪姿": 1,
+      "四足跪姿": 20,
+      "分腿站姿": 4,
+      "站在地面上": 1,
+      "桥式": 1,
+      "四点跪姿": 3,
+      "趴": 9,
+      "交错站姿": 4,
+      "站在踏板上": 1,
+      "左侧坐姿": 1,
+      "跪坐": 2,
+      "四足支撑": 4,
+      "坐下": 5,
+      "呈跪姿": 1,
+      "稳固站立": 1,
+      "双脚弯曲并悬空": 1,
+      "直立站好": 1,
+      "俯卧在地面上": 1,
+      "身体俯卧在地面上": 1,
+      "半跪姿": 3,
+      "坐在瑜伽垫上": 1,
+      "侧平板支撑": 5,
+      "坐在地上": 5,
+      "侧平板": 3,
+      "侧身站立": 1,
+      "直立站在": 1,
+      "跪姿弓步": 6,
+      "弓步下蹲": 1,
+      "左膝着地": 1,
+      "盘腿坐": 1,
+      "膝盖弯曲并着地": 2,
+      "四肢着地": 4,
+      "桌面式": 2,
+      "双手双膝着地": 3,
+      "低弓步": 5,
+      "坐在上斜凳上": 1,
+      "低深蹲": 2,
+      "身体悬空": 2,
+      "悬空": 1,
+      "仰卧状态": 1,
+      "向前俯身": 1,
+      "跪在长凳上": 1,
+      "而坐": 1,
+      "盘腿而坐": 1,
+      "身体后倾": 1,
+      "站起": 1,
+      "跪在地面上": 1,
+      "蹲起": 1,
+      "身体仰卧": 1,
+      "侧向支撑": 1,
+      "坐在地面上": 2,
+      "侧支撑": 1,
+      "直立站": 1,
+      "斜平板支撑": 1,
+      "挺直身体": 1,
+      "身体向前屈髋": 1,
+      "盘腿坐着": 2,
+      "倒置": 1
+    },
+    "tempo": {
+      "缓慢": 374,
+      "节奏平稳": 26,
+      "迅速": 4,
+      "轻柔": 2,
+      "节奏": 32,
+      "爆发": 43,
+      "静态": 10,
+      "快速": 22,
+      "节奏均匀": 10,
+      "节奏感": 9,
+      "动作节奏平稳": 7,
+      "节奏紧凑": 2,
+      "短暂停顿": 1,
+      "停顿": 10,
+      "控制": 5,
+      "节奏舒缓": 1,
+      "节奏性": 2,
+      "轻快": 1,
+      "爆发力": 5,
+      "爆发式": 4,
+      "动态": 1,
+      "爆发性地": 3,
+      "有节奏的": 1,
+      "慢慢": 1,
+      "爆发性": 1,
+      "片刻": 1,
+      "动作节奏轻快": 2,
+      "节奏的平稳": 1,
+      "动作节奏": 1,
+      "均匀": 1,
+      "静止": 1,
+      "控制节奏": 2,
+      "脉冲": 1,
+      "几秒钟": 1,
+      "有控制": 1,
+      "节奏连贯": 1,
+      "整体动作节奏平稳": 1
+    }
+  }
+}

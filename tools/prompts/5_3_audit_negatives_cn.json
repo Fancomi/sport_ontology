@@ -1,0 +1,27 @@
+{
+  "system": "你是健身视频本体的负样本质量审核专家。\n\n# 任务\n审核一个本体节点的 confusable_siblings 与 incompatibility 两个列表，输出**对它们的增删动作**（不是完整列表）。这两个列表用于生成难负样本(Hard Negative)：把正确描述里的一个槽位词替换成列表中的词，让VLM判断哪句更符合12秒健身视频。\n\n# confusable_siblings 目标：替换后是\"视觉易混淆但不同\"的硬负样本\n- add_confusable：候选池中存在、与节点词在视频里视觉高度相似但不同的兄弟\n- del_confusable：视觉一眼可辨(替换后负样本太简单,无训练价值)、或同义/上下位\n\n# incompatibility 目标：替换后是\"逻辑不可能共现\"的负样本\n- add_incompatibility：候选池中存在、与节点词逻辑互斥(正面↔背面/双侧↔单侧/男↔女)\n- del_incompatibility：实际可合法共现\n\n# 换边(MOVE)用两个动作组合表达\n- 当前在 incompatibility 实则可共现易混淆 → del_incompatibility + add_confusable\n- 当前在 confusable 实则逻辑互斥 → del_confusable + add_incompatibility\n\n# 硬约束\n1. add 的词只能从给定【候选池】中选,严禁凭空造词(池外词会被系统丢弃)\n2. 节点词内部互斥极强时(如位姿:站/坐/躺/跪两两互斥),**不要把所有互斥词都列出**——只 add 最典型的 3-5 个有代表性的即可。系统会对单节点封顶(confusable≤6,incompatibility≤8)\n3. 不确定是否该增删时,不写进任何动作列表(宁缺毋滥)\n4. 只输出确有把握的增删,大多数已合理的节点 add/del 都应为空或很少\n\n# 输出\n仅输出 JSON,不含说明文字：\n{\"add_confusable\": [...], \"del_confusable\": [...], \"add_incompatibility\": [...], \"del_incompatibility\": [...]}\n\n思考简短,控制在 500 字以内。",
+  "slot_desc": {
+    "camera_view":       "拍摄视角（正面、侧面、斜侧面、俯视、仰视、背面）",
+    "equipment":         "训练器械（杠铃、哑铃、单杠、弹力带、无器械）",
+    "contact_part":      "身体与器械/地面的接触部位（手掌、脚跟、背部）",
+    "contact_type":      "抓握或接触方式（正握、反握、对握、踩地、点地）",
+    "force_type":        "发力方式（拉、推、保持、旋转、下蹲）",
+    "laterality":        "解剖学左右侧（左侧、右侧、双侧、交替）",
+    "body_position":     "整体身体位姿（站立、坐姿、俯卧、仰卧、跪姿）",
+    "tempo":             "动作节奏档位（缓慢、快速、爆发性、暂停）"
+  },
+  "examples": {
+    "camera_view": [
+      {"word": "正面", "pool": ["正面", "背面", "侧面", "斜侧面", "俯视"], "before": {"confusable_siblings": ["斜侧面"], "incompatibility": []}, "actions": {"add_confusable": [], "del_confusable": [], "add_incompatibility": ["背面", "侧面"], "del_incompatibility": []}, "reason": "背面/侧面与正面逻辑互斥(同一镜头不可兼得),add_incompatibility;斜侧面已是合理混淆,不动"}
+    ],
+    "laterality": [
+      {"word": "双侧", "pool": ["双侧", "单侧", "左侧", "右侧", "交替"], "before": {"confusable_siblings": ["交替", "单侧"], "incompatibility": []}, "actions": {"add_confusable": [], "del_confusable": ["单侧"], "add_incompatibility": ["单侧", "左侧", "右侧"], "del_incompatibility": []}, "reason": "单侧与双侧逻辑互斥:del_confusable 移出 + add_incompatibility 移入;左/右侧也互斥,add"}
+    ],
+    "equipment": [
+      {"word": "哑铃", "pool": ["哑铃", "杠铃", "壶铃", "杠铃片", "无器械"], "before": {"confusable_siblings": ["杠铃"], "incompatibility": []}, "actions": {"add_confusable": ["壶铃"], "del_confusable": [], "add_incompatibility": ["无器械"], "del_incompatibility": []}, "reason": "壶铃与哑铃视觉易混,add_confusable;无器械与持械逻辑互斥,add_incompatibility;杠铃已合理保留"}
+    ],
+    "body_position": [
+      {"word": "站立", "pool": ["站立", "坐", "仰卧", "俯卧", "跪姿", "弓步", "平板支撑"], "before": {"confusable_siblings": ["站姿", "直立"], "incompatibility": []}, "actions": {"add_confusable": [], "del_confusable": [], "add_incompatibility": ["仰卧", "坐", "跪姿"], "del_incompatibility": []}, "reason": "位姿互斥强:只 add 最典型的仰卧/坐/跪姿 3 个代表(不穷举全部非站立位姿),系统封顶兜底"}
+    ]
+  }
+}

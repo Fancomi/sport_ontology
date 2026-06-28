@@ -52,6 +52,46 @@ def test_new_slot_value_ok_body_position_blacklist():
     assert ru.new_slot_value_ok("body_position", "保持") is False
 
 
+def test_body_position_structural_anchor_rejects_tempo_force_noise():
+    # 结构锚点：纯节奏/力学/轨迹词无位姿词根 → 拒（即便短、不在旧黑名单）
+    for w in ["平稳", "缓慢", "快速", "爆发", "爆发力", "轻快", "紧凑",
+              "停顿", "静态", "稳定", "迅速"]:
+        assert ru.new_slot_value_ok("body_position", w) is False, w
+    # 轨迹/动作过程词（无位姿落点）
+    for w in ["抬升", "下放", "倾斜", "冲刺", "踩", "面对", "起始", "并", "姿"]:
+        assert ru.new_slot_value_ok("body_position", w) is False, w
+
+
+def test_body_position_structural_anchor_keeps_legit_postures():
+    # 含位姿词根的真位姿词 → 放行（含泛化新词）
+    for w in ["站立", "坐", "仰卧", "俯卧", "跪姿", "弓步", "深蹲", "平板支撑",
+              "侧卧", "半跪", "四足跪姿", "悬垂", "盘腿坐", "分腿站姿",
+              "身体前倾", "趴", "躺", "倒置", "侧向支撑", "侧支撑", "挺直身体",
+              "桥式", "屈膝"]:
+        assert ru.new_slot_value_ok("body_position", w) is True, w
+
+
+def test_body_position_anchor_rejects_bare_support_fragment():
+    # 裸接触/残片词无位姿主体 → 拒
+    for w in ["支撑", "静态支撑", "着地", "姿", "并"]:
+        assert ru.new_slot_value_ok("body_position", w) is False, w
+
+
+def test_body_position_anchor_rejects_pollute_even_with_posture_root():
+    # 含位姿字但同时含污染词 → 拒（如"稳定站立"含站但是力学评价复合）
+    for w in ["稳定站立", "平稳落地", "贴紧地面", "快速移动", "迅速转身"]:
+        assert ru.new_slot_value_ok("body_position", w) is False, w
+
+
+def test_tempo_anchor_rejects_posture_force_intrusion():
+    # tempo 不应含位姿/发力词
+    for w in ["站立", "蹬伸", "收缩", "下蹲"]:
+        assert ru.new_slot_value_ok("tempo", w) is False, w
+    # 合法节奏词放行
+    for w in ["缓慢", "快速", "爆发", "停顿", "静态", "匀速", "节奏"]:
+        assert ru.new_slot_value_ok("tempo", w) is True, w
+
+
 def test_new_slot_value_ok_length_cap():
     assert ru.new_slot_value_ok("body_position", "低弓步") is True
     assert ru.new_slot_value_ok("body_position", "双脚与肩同宽站立姿势") is False  # ≥8
