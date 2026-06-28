@@ -28,18 +28,22 @@ DOWNLOAD_POOL = PROXY_POOL + HTTP_ONLY_PROXIES
 # === 路径 ===
 # config.py 位于 videos/lib/ 下，BASE 指向其上层的 videos/ 目录
 BASE = Path(__file__).resolve().parent.parent
-RESULTS_DIR = BASE / "results"
-DOWNLOADS_DIR = BASE / "downloads"
-LOGS_DIR = BASE / "logs"
-DATASETS_DIR = BASE / "datasets"
-KEYWORDS_FILE = BASE / "keywords.txt"
-CHANNELS_SEED = BASE / "channels_seed.txt"
+DATA_ROOT = BASE / "data"                       # videos/ 侧所有数据/进度的父目录
+SEEDS_DIR = DATA_ROOT / "seeds"                 # 手写/外部种子 (入库)
+DELIVERABLES_DIR = DATA_ROOT / "deliverables"   # 权威成果 (入库, 跨轮复用)
+STATE_DIR = DATA_ROOT / "pipeline_state"        # 过程账 (gitignore, 可重生)
+RESULTS_DIR = STATE_DIR                          # 1_* 爬虫中间产物 (jsonl) 归 pipeline_state
+DOWNLOADS_DIR = DATA_ROOT / "downloads"
+LOGS_DIR = DATA_ROOT / "logs"
+DATASETS_DIR = SEEDS_DIR / "datasets"
+KEYWORDS_FILE = SEEDS_DIR / "keywords.txt"
+CHANNELS_SEED = SEEDS_DIR / "channels_seed.txt"
 COOKIES_ORIGIN = Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer/cookies_Cocoonconcoction070_origin.txt")
 
-# 数据目录 (阶段间共享)
+# 数据目录 (阶段间共享, 工程外大盘)
 DATA_DIR = Path("/root/paddlejob/workspace/env_run/penghaotian/datas/videos")
 
-# 一阶段中间产物
+# 一阶段中间产物 (爬虫 jsonl, 归 pipeline_state)
 SEARCH_RESULTS = RESULTS_DIR / "search_results.jsonl"
 CHANNEL_VIDEOS = RESULTS_DIR / "channel_videos.jsonl"
 DIVERSE_VIDEOS = RESULTS_DIR / "diverse_videos.jsonl"
@@ -48,16 +52,16 @@ ALL_IDS = RESULTS_DIR / "all_video_ids.jsonl"
 ENRICHED = RESULTS_DIR / "enriched_videos.jsonl"
 CLEAN = RESULTS_DIR / "clean_videos.jsonl"
 
-# 全局黑名单 (跨阶段共享，追加写)
+# 全局黑名单 (跨阶段共享, 追加写, 大盘)
 BLACKLIST = DATA_DIR / "blacklist.txt"
 
-# 一阶段最终输出
+# 一阶段最终输出 (大盘)
 META_FILE = DATA_DIR / "meta.jsonl"
 THUMBS_DIR = DATA_DIR / "thumbs"
 FILTERED = DATA_DIR / "filtered.jsonl"
 REJECTED = DATA_DIR / "rejected.jsonl"
 
-# 进度文件
+# 进度文件 (爬虫侧归 pipeline_state; 大盘侧保持 DATA_DIR)
 SEARCH_PROGRESS = RESULTS_DIR / "search_progress.txt"
 CRAWL_PROGRESS = RESULTS_DIR / "crawl_progress.txt"
 DIVERSE_PROGRESS = RESULTS_DIR / "diverse_progress.txt"
@@ -197,7 +201,7 @@ def is_blacklisted(video_id: str) -> bool:
 
 # === 工具函数 ===
 def init_dirs():
-    for d in (RESULTS_DIR, DOWNLOADS_DIR, LOGS_DIR, DATASETS_DIR):
+    for d in (SEEDS_DIR, DELIVERABLES_DIR, STATE_DIR, DOWNLOADS_DIR, LOGS_DIR, DATASETS_DIR):
         d.mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
