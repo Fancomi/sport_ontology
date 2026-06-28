@@ -44,8 +44,9 @@ SSH_OPTS = (
     "-c aes128-gcm@openssh.com"
 )
 
-PROGRESS_FILE = Path(__file__).parent / "scene_split_progress.txt"
-REPLACE_PROGRESS = Path(__file__).parent / "replace_progress.txt"
+DATA = Path(__file__).parent / "data"
+PROGRESS_FILE = DATA / "pipeline_state" / "3_scene_split_progress.txt"
+REPLACE_PROGRESS = DATA / "pipeline_state" / "3_replace_progress.txt"
 SCENE_THRESHOLD = 0.3
 MIN_SEGMENT_SEC = 0.5
 
@@ -317,7 +318,7 @@ def _push_chunk(args: tuple[str, str]) -> int:
     return r.returncode
 
 
-SPLIT_QUEUE = Path(__file__).parent / "split_queue.txt"
+SPLIT_QUEUE = DATA / "pipeline_state" / "3_split_queue.txt"
 
 
 def push_batch(shm_out: str, workers_push: int = 4) -> tuple[int, float]:
@@ -444,7 +445,7 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
                 # 删除未确认 (瞬时 ssh/rm 失败): 不写 blacklist/log, 留待重试
                 return f"{stem}: PURGE-FAIL 超长{duration:.0f}s 删除未确认, 未记录待重试"
             config.append_blacklist(stem)
-            purged_log = Path(__file__).parent / "purged_too_long.txt"
+            purged_log = DATA / "pipeline_state" / "3_purged_too_long.txt"
             with open(purged_log, "a") as f:
                 f.write(stem + "\n")
             return f"{stem}: PURGED 超长{duration:.0f}s 删原片+{k}切片"
@@ -493,8 +494,8 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
 def run_replace(args):
     """按原片名重切+替换远端 (不跑全量 pipeline)。"""
     here = Path(__file__).parent
-    nmap = n_original_map(str(here / "split_queue.txt"))
-    smap = survivors_map(str(here / "canonical_segments.list"))
+    nmap = n_original_map(str(here / "data" / "pipeline_state" / "3_split_queue.txt"))
+    smap = survivors_map(str(here / "data" / "deliverables" / "3_canonical_segments.list"))
     done = config.read_lines(REPLACE_PROGRESS)
 
     stems = []
