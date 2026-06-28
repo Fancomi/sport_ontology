@@ -35,17 +35,17 @@ REMOTE_DIR = "/root/back_2/penghaotian/datas/yt-dlp-downloads/videos_split"
 SSH_OPTS   = ("-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
               "-o Compression=no -o ConnectTimeout=10 -c aes128-gcm@openssh.com")
 SHM_BASE       = "/dev/shm/audit_splits"
-PROGRESS       = Path(__file__).parent / "audit_splits_progress.txt"
-SPLIT_QUEUE    = Path(__file__).parent / "split_queue.txt"
-SPLIT_PROGRESS = Path(__file__).parent / "scene_split_progress.txt"
-
-# --list / --finalize 模式名单 (锚定 videos/, 不依赖外部工程路径)
 HERE           = Path(__file__).parent
-AUDIT_PROGRESS = HERE / "audit_progress.txt"   # 已审切片 (含删+留), 续跑跳过
-AUDIT_DELETED  = HERE / "audit_deleted.txt"    # 被真删切片
-AUDIT_KEPT     = HERE / "audit_kept.txt"       # 保留切片
-CANONICAL      = HERE / "canonical_segments.list"   # 唯一权威名单 = 远端 ∩ kept
-REMOTE_LIST    = HERE / "remote_split_list.txt"      # scene-split 输入镜像 (finalize 对齐为 canonical)
+DATA           = HERE / "data"
+STATE          = DATA / "pipeline_state"
+DELIV          = DATA / "deliverables"
+SPLIT_QUEUE    = STATE / "3_split_queue.txt"
+SPLIT_PROGRESS = STATE / "3_scene_split_progress.txt"
+PROGRESS       = STATE / "3_audit_splits_progress.txt"  # 旧 queue 模式进度 (保留兼容)
+AUDIT_PROGRESS = STATE / "3_audit_progress.txt"   # 已审切片 (含删+留), 续跑跳过
+AUDIT_DELETED  = DELIV / "3_audit_deleted.txt"    # 被真删切片 (审计凭证)
+AUDIT_KEPT     = DELIV / "3_audit_kept.txt"       # 保留切片 (审计凭证)
+CANONICAL      = DELIV / "3_canonical_segments.list"   # 唯一权威名单 = 远端 ∩ kept
 
 
 # ═══════════════════════════ 远端 ═══════════════════════════
@@ -414,9 +414,8 @@ def finalize():
     orphan = remote - kept - deleted         # 远端有但从未审 (漏网, 应为 0)
     revived = remote & deleted               # 删了又复活 (应为 0)
 
-    # 原子写: canonical 与 remote_split_list 各一次写盘, 无中间半截态 (长 IO 友好)
+    # 原子写: 唯一权威名单一次写盘, 无中间半截态 (长 IO 友好)
     _atomic_write(CANONICAL, canonical)
-    _atomic_write(REMOTE_LIST, canonical)    # scene-split 输入镜像 = 权威名单
 
     print(f"\n═══ Finalize 对齐报告 ═══")
     print(f"远端真实存在:      {len(remote):>9}")
@@ -427,9 +426,8 @@ def finalize():
     print(f"漏网 (远端-kept-deleted):   {len(orphan):>9}  {'(需 --list 补审)' if orphan else '✓'}")
     print(f"复活 (远端∩deleted):        {len(revived):>9}  {'(异常!)' if revived else '✓'}")
     print(f"\n写出: {CANONICAL}")
-    print(f"对齐: {REMOTE_LIST} (= canonical)")
     if orphan:
-        op = HERE / "_finalize_orphan.list"
+        op = STATE / "4_finalize_orphan.list"
         _atomic_write(op, sorted(orphan))
         print(f"漏网清单 -> {op} (可 --list 补审后再 --finalize)")
 
@@ -449,8 +447,7 @@ def main():
                    help="吃一份切片清单 (远端 ls -1U 产出), 绕开 split_queue 队列模式; "
                         "续跑跳过 audit_progress.txt 已审的")
     p.add_argument("--finalize",  action="store_true",
-                   help="收敛: 远端枚举 ∩ audit_kept -> canonical_segments.list, "
-                        "并对齐 remote_split_list.txt (不审核, 单独动作)")
+                   help="收敛: 远端枚举 ∩ audit_kept -> canonical_segments.list (不审核, 单独动作)")
     args = p.parse_args()
 
     # 本地端点探测/HTTP 调用绝不走代理 (httpx 走代理会连不上 127.0.0.1 -> "no model")
