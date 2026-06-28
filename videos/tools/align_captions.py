@@ -22,11 +22,20 @@ ORPHAN_MOVED = DATA / "pipeline_state" / "4_captions_orphan_moved.list"
 CAP_DIR = Path("/root/paddlejob/workspace/env_run/penghaotian/datas/videos/captions")
 
 
+def _strip_mp4(name: str) -> str:
+    """canonical 名单条目带 .mp4 后缀, caption JSON 的 stem 不带 —— 统一去后缀比对。"""
+    return name[:-4] if name.endswith(".mp4") else name
+
+
 def plan_alignment(canonical: set, disk_stems: set) -> dict:
-    """纯函数: 给定 canonical 与磁盘 stem 集, 算出对齐计划。"""
-    aligned = canonical & disk_stems
-    orphans = disk_stems - canonical
-    gap     = canonical - disk_stems
+    """纯函数: 给定 canonical 与磁盘 stem 集, 算出对齐计划。
+    canonical 可能带 .mp4 后缀 (切片名单), disk_stems 不带 (JSON 文件名去 .json);
+    两侧都规范化去 .mp4 后按 stem 比对。返回的集合统一为无 .mp4 的 stem。"""
+    canon = {_strip_mp4(s) for s in canonical}
+    disk  = {_strip_mp4(s) for s in disk_stems}
+    aligned = canon & disk          # 两边都有 -> 保留, 即最终 caption 集
+    orphans = disk - canon          # 磁盘有但不在权威 -> 移走
+    gap     = canon - disk          # 权威有但磁盘无 -> 待 caption
     return {"aligned": aligned, "orphans": orphans, "gap": gap}
 
 
@@ -79,11 +88,13 @@ def main():
 
     if not CANONICAL.exists():
         sys.exit(f"缺权威名单: {CANONICAL}")
-    canonical = _read_set(CANONICAL)
+    canonical = _read_set(CANONICAL)               # 带 .mp4
     print(f"扫描磁盘 caption JSON ({CAP_DIR}) ...", flush=True)
-    disk = scan_disk_stems(str(CAP_DIR))
+    disk = scan_disk_stems(str(CAP_DIR))           # 不带 .mp4
     old_prog = _read_set(PROGRESS)
-    plan = plan_alignment(canonical, disk)
+    plan = plan_alignment(canonical, disk)          # 返回规范化(无 .mp4)的 stem 集
+    canon_norm = {_strip_mp4(s) for s in canonical}
+    disk_norm  = {_strip_mp4(s) for s in disk}
 
     print(f"\n═══ caption 对账报告 ═══")
     print(f"权威 canonical:        {len(canonical):>9}")
@@ -92,8 +103,8 @@ def main():
     print(f"── 对齐后保留 (交集):  {len(plan['aligned']):>9} ──")
     print(f"孤儿 (磁盘∖权威, 待移): {len(plan['orphans']):>9}")
     print(f"缺口 (权威∖磁盘, 待审): {len(plan['gap']):>9}")
-    assert plan["aligned"] | plan["gap"] == canonical, "校验失败: aligned+gap != canonical"
-    assert plan["aligned"] == disk - plan["orphans"], "校验失败: aligned != disk-orphans"
+    assert plan["aligned"] | plan["gap"] == canon_norm, "校验失败: aligned+gap != canonical"
+    assert plan["aligned"] == disk_norm - plan["orphans"], "校验失败: aligned != disk-orphans"
     print("校验: aligned+gap==canonical OK, aligned==disk-orphans OK")
 
     if not args.apply:
@@ -102,9 +113,10 @@ def main():
 
     print(f"\n移动 {len(plan['orphans'])} 孤儿 -> {CAP_DIR}/_orphan/ ...", flush=True)
     moved = move_orphans(str(CAP_DIR), plan["orphans"])
-    _write_sorted(ORPHAN_MOVED, plan["orphans"])
-    _write_sorted(PROGRESS, plan["aligned"])
-    _write_sorted(TO_CAPTION, plan["gap"])
+    # 标记/缺口/孤儿清单统一写回带 .mp4 的切片名 (与 4_caption.py 读 canonical 比对的形式一致)
+    _write_sorted(ORPHAN_MOVED, {s + ".mp4" for s in plan["orphans"]})
+    _write_sorted(PROGRESS, {s + ".mp4" for s in plan["aligned"]})
+    _write_sorted(TO_CAPTION, {s + ".mp4" for s in plan["gap"]})
     print(f"已移孤儿: {moved}")
     print(f"重建标记: {PROGRESS} = {len(plan['aligned'])}")
     print(f"缺口待办: {TO_CAPTION} = {len(plan['gap'])}")

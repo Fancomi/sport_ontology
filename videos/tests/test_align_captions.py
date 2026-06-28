@@ -15,6 +15,16 @@ def test_plan_alignment_basic():
     assert plan["aligned"] == {"a_0", "b_1"}, plan["aligned"]  # 交集 = 对齐后保留
 
 
+def test_plan_alignment_strips_mp4():
+    # 真实场景: canonical 带 .mp4, 磁盘 JSON stem 不带 -> 规范化后应对齐
+    canonical = {"a_0.mp4", "b_1.mp4", "c_2.mp4"}   # 切片名单 (带 .mp4)
+    disk = {"a_0", "b_1", "d_3"}                     # JSON 文件名去 .json (不带 .mp4)
+    plan = ac.plan_alignment(canonical, disk)
+    assert plan["aligned"] == {"a_0", "b_1"}, plan["aligned"]  # a,b 命中 (后缀已规范化)
+    assert plan["orphans"] == {"d_3"}, plan["orphans"]         # d 磁盘有∖权威无
+    assert plan["gap"] == {"c_2"}, plan["gap"]                 # c 权威有∖磁盘无 (无 .mp4)
+
+
 def test_plan_alignment_identity_check():
     # aligned + gap == canonical ; aligned == disk - orphans
     canonical = {"x_0", "y_1", "z_2", "w_3"}
