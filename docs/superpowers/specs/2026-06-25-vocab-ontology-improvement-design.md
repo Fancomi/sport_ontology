@@ -23,17 +23,25 @@
 - 关系质量审查（新增 5_3）是**定向修正**：在已有 confusable/incompatibility 上增删校正，不重建整个节点属性。
 - 范围外：不动 EN 本体（CN 收敛后另议）；不重建 exercise 等大键的关系（1781 节点，本轮只确保新键 + 清死值 + 负样本合理性审查，不全量 re-enrich）。
 
-## 五步流程
+## 流程（确定性收尾版）
 
 ```
 1. 3_collect_slots --lang cn          # 如实重建 vocab（机械，覆盖写）
 2. 5_enrich_with_llm --lang cn        # 清死值(默认开) + 建 body_position/tempo 新键节点
-3. 5_3_audit_negatives --lang cn      # 【新增】负样本合理性定向审查（confusable难度校准 + incompatibility完备/分类）
-4. 5_1_clean_ontology --lang cn       # 结构违规清理（同义/上下位/视觉不可辨 误入 confusable；非真互斥 误入 incompatibility）
+3. 5_3_audit_negatives --lang cn      # 【新增】负样本合理性定向审查（confusable难度校准 + incompatibility完备/分类，LLM 增量）
+4. 5_1_clean_ontology --lang cn       # 结构违规清理（同义/上下位/视觉不可辨 误入 confusable；非真互斥 误入 incompatibility，LLM）
 5. 5_2_infer_relations --lang cn      # 对称传播（纯集合运算收敛）
+6. 5_4_cap_relations --lang cn        # 【新增】传播后按池频次封顶（修复 5_2 把 5_3 封顶冲垮，确定性）
+7. 5_3b_denoise_relations --lang cn   # 【新增】确定性去噪：跨槽噪声/传递同义/上位词误入（LLM 漏删的兜底，确定性）
+8. 5_5_verify_ontology --lang cn      # 【新增】验收闸：vocab 13键/死值0/新键100%/封顶守住（确定性，CI 断言）
 ```
 
-步序理由：先有干净 vocab（1）→ 本体节点齐全且无死值（2）→ 在完整节点上做负样本合理性审查（3，需要新键已存在）→ 再做结构性删减（4，5_3 可能新增的关系也要过结构闸）→ 最后对称传播补全（5，把审查/清理后的关系对称化）。
+步序理由：先有干净 vocab（1）→ 本体节点齐全且无死值（2）→ 在完整节点上做负样本合理性审查（3，需要新键已存在）→ 结构性删减（4，5_3 可能新增的关系也要过结构闸）→ 对称传播补全（5）→ 封顶（6）→ **确定性去噪兜底（7，扫清 LLM 步漏掉的三类噪声）** → 验收（8）。
+
+**为什么需要 5_4**：5_2 沿同义链展开并集补全对称关系（设计上不设上限），会把 5_3 的单节点封顶冲垮（实测 body_position incompatibility 膨胀到 206，equipment 258）。负样本采样本就随机取几个，几百项纯冗余且无"难"度意义。5_4 是纯确定性收尾：复用 5_3 的去噪池频次，对每节点按频次降序截断到 ≤6/≤8。不调 LLM、只截断、不动其他字段。
+
+**为什么需要 5_3b**：30 条负样本抽样 LLM 复核暴露 5_3+5_1（两个 LLM 步）后仍有三类残留噪声（首轮达标率 62~75%）：(A) 跨槽噪声——confusable/incompatibility 项不在本槽 vocab（reslot/传播带入的跨槽碎片，如 contact_type/正握 混入"水平对齐/平放"）；(B) 传递同义——节点传递同义词混入 confusable（站立↔直立↔挺立），替换后语义等价；(C) 上位词误入 confusable（哑铃→器械），粒度错误而非视觉混淆兄弟。LLM 判据有波动会漏删，5_3b 用确定性规则（同义簇并查集闭包 + 本槽 vocab 成员判定 + hypernym 删除）一次性扫净。只删不增、不动其他字段。补 5_3b 后同批复核达标率升至 89%。
+
 
 ## 新增 5_3：负样本合理性审查
 
@@ -111,20 +119,21 @@
 | ontology | 死值（在 onto 不在 vocab）| 0（5_enrich 清理后）|
 | ontology | 新键 body_position/tempo 节点覆盖 | 100%（vocab 中每个值都有节点）|
 | ontology | confusable ADD 造词率（ADD 项不在去噪同槽池且不在原列表）| 0%（确定性护栏挡净）|
-| ontology | 单节点列表规模 | confusable ≤6、incompatibility ≤8（封顶必守）|
+| ontology | 单节点列表规模 | confusable ≤6、incompatibility ≤8（封顶必守，5_5 断言）|
 | ontology | 5_1 结构违规残留（同义/上下位混入 confusable；非真互斥混入 incompatibility）| 抽样 ≤2% |
-| ontology | 负样本合理性 | 抽样 30 条替换负样本，人工/LLM 复核"高难度混淆 or 真互斥"达标率 ≥85% |
-| ontology | 5_2 收敛 | 正常收敛（delta→0，非达上限）|
+| ontology | 负样本合理性 | 抽样 30 条替换负样本，LLM 单条全文复核"高难度混淆 or 真互斥"达标率 ≥85%（**实测补 5_3b 后 89%**）|
+| ontology | 5_2 收敛 | 正常收敛（delta→0，非达上限，**实测 7 轮收敛**）|
 
-负样本合理性 85% 阈值理由：负样本采样本就允许一定噪声（对比学习对少量易负样本鲁棒），但低于 85% 说明 confusable/incompatibility 关系质量不足以支撑 hard negative 训练；达不到则回看 5_3 prompt 判据再迭代。
+负样本合理性 85% 阈值理由：负样本采样本就允许一定噪声（对比学习对少量易负样本鲁棒），但低于 85% 说明 confusable/incompatibility 关系质量不足以支撑 hard negative 训练；达不到则回看 5_3 prompt 判据 / 补确定性去噪步再迭代。
+
+**复核方法学坑（实测踩到）**：批量判定（一次喂多条+截断原文）会让判官把"截断后看不到的槽位"误判为"槽位不存在/噪声"，假阴性拉低达标率（同一本体批量判 62%、单条全文判 89%）。复核必须**单条送判 + 给完整原句 + 明示"原值一定在原句中"**，否则测的是判官幻觉不是本体质量。
 
 ## 执行顺序与迭代
 
-1. TDD 写 5_3 纯函数 + prompt → 单测绿。
-2. 小样本（单槽位如 equipment 或 body_position）跑 1→2→3 → 抽查负样本合理性 → 调 5_3 prompt 判据 → 循环至该槽位达标。
-3. 全量 1→2→3→4→5。
-4. 验收：跑全部阈值检查；负样本合理性抽样 30 条复核。
-5. 达标 → 提交。
+1. TDD 写 5_3 / 5_3b 纯函数 + prompt → 单测绿。
+2. 全量 1→2→3→4→5→6→7→8（见上方流程）。
+3. 验收：5_5 跑确定性阈值检查；负样本合理性抽样 30 条**单条全文** LLM 复核。
+4. 达标（≥85%）→ 提交。未达标 → 看 bad 明细归因（LLM 漏删 vs 采样机制 vs 复核方法），对应补 5_3b 规则 / 调 5_3 prompt。
 
 ## 范围外（YAGNI）
 
