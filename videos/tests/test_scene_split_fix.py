@@ -7,7 +7,7 @@ import os, sys, subprocess, tempfile, shutil, importlib.util
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODULE_PATH = os.path.join(HERE, "..", "3_1_scene_split.py")
-FFBN_PATH = "/root/paddlejob/workspace/env_run/penghaotian/llm_infer/llm_train/tools/fetch_frames_by_name.py"
+FFBN_PATH = "/root/paddlejob/workspace/env_run/penghaotian/llm_infer/llm_train/muscle_wiki/lib/fetch_frames_by_name.py"
 
 
 def load(path, name):
@@ -152,12 +152,18 @@ def test_fetch_gallery_no_duration_label():
     ff = load(FFBN_PATH, "ffbn")
     d = tempfile.mkdtemp()
     try:
+        # 把模块的 OUT_DIR 指到临时目录, 造一个切片目录含 2 帧 (无 mp4)
+        ff.OUT_DIR = d
+        clip = os.path.join(d, "clipX")
+        os.makedirs(clip)
+        open(os.path.join(clip, "000.jpg"), "wb").write(b"\xff\xd8\xff\xd9")
+        open(os.path.join(clip, "001.jpg"), "wb").write(b"\xff\xd8\xff\xd9")
         out_html = os.path.join(d, "index.html")
-        ff.write_html([("clipX", [], 414.0)], out_html)   # dur=414 不应出现
+        ff.write_html(out_html)           # 1-arg, 扫描 OUT_DIR
         body = open(out_html, encoding="utf-8").read()
-        assert "clipX" in body, "clip 名应在"
-        assert "414" not in body, "不应再渲染时长 (scene-detect 前原长, 误导)"
-        assert "帧" in body, "应只显示帧数"
+        assert "clipX" in body, "clip 名应在 gallery"
+        assert "414" not in body, "不应出现任何时长数字 (该列已删)"
+        assert "帧" in body, "应显示帧数 (如 '2 帧')"
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -191,6 +197,196 @@ def test_replace_purge_decision_uses_480():
     df = load(p, "duration_filter")
     assert df.should_purge(4483.0) is True, "75min 必删"
     assert df.should_purge(300.0) is False, "5min 不删"
+
+
+def test_is_terminal_status():
+    m = load_mod()
+    assert m._is_terminal_status("abc: OK 覆盖 3/3 段") is True
+    assert m._is_terminal_status("00z: PURGED 超长492s 删原片+28切片") is True
+    assert m._is_terminal_status("-0p: ABORT -0p: 段数不等 重切=6 原始=5; ...") is True
+    assert m._is_terminal_status("--6: SKIP no_cut 无切点无需修复") is True
+    assert m._is_terminal_status("xy: SKIP 无幸存段 (清单)") is True
+    assert m._is_terminal_status("pq: SKIP 无可推段 (produced=0)") is True
+    assert m._is_terminal_status("rs: SKIP 原片拉取失败/不存在 (重试 10 次仍失败)") is False
+    assert m._is_terminal_status("cd: PUSH-FAIL(rc=255) 覆盖 9/10 段") is False
+    assert m._is_terminal_status("ef: PURGE-FAIL 超长523s 删除未确认, 未记录待重试") is False
+    assert m._is_terminal_status("gh: ENCODE-FAIL 全部 1 段编码失败, 未推") is False
+    assert m._is_terminal_status("ij: ERROR Command '...' timed out") is False
+    assert m._is_terminal_status("kl: PURGED(dry-run) 将删原片+2切片 (超长4486s)") is False
+    assert m._is_terminal_status("mn: DRY-RUN 将覆盖 10/12 段 [...]") is False
+
+
+def test_stem_of():
+    m = load_mod()
+    assert m._stem_of("-L1yIZqIZws: PURGED 超长4486s 删原片+2切片") == "-L1yIZqIZws"
+    assert m._stem_of("Bq-D1sSJgKI: OK 覆盖 10/12 段") == "Bq-D1sSJgKI"
+    assert m._stem_of("_4rdls-fHc8: SKIP no_cut 无切点无需修复") == "_4rdls-fHc8"
+
+
+def test_run_replace_skips_done_and_records():
+    import tempfile, types
+    m = load_mod()
+    d = tempfile.mkdtemp()
+    try:
+        prog = os.path.join(d, "replace_progress.txt")
+        open(prog, "w").write("DONEvid\n")   # DONEvid 已完成
+        m.REPLACE_PROGRESS = __import__("pathlib").Path(prog)
+        calls = []
+        def fake_replace_one(stem, survivors, n_original, dry_run):
+            calls.append(stem)
+            return f"{stem}: OK 覆盖 1/1 段"
+        m.replace_one = fake_replace_one
+        m.n_original_map = lambda p: {"DONEvid": 1, "NEWvid": 1}
+        m.survivors_map = lambda p: {"DONEvid": [0], "NEWvid": [0]}
+        args = types.SimpleNamespace(names=[], file=[], all=True, limit=0,
+                                     workers_replace=1, dry_run=False)
+        m.run_replace(args)
+        assert calls == ["NEWvid"], f"应只处理未完成的 NEWvid, got {calls}"
+        done_after = set(open(prog).read().split())
+        assert "NEWvid" in done_after and "DONEvid" in done_after, done_after
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_backfill_done_set():
+    import tempfile, importlib.util
+    bp = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                      "..", "tools", "backfill_replace_progress.py")
+    spec = importlib.util.spec_from_file_location("backfill", bp)
+    bf = importlib.util.module_from_spec(spec); spec.loader.exec_module(bf)
+    d = tempfile.mkdtemp()
+    try:
+        log = os.path.join(d, "r.log")
+        out = os.path.join(d, "prog.txt")
+        open(log, "w").write(
+            "═══ Replace: 3 原片 ═══\n"
+            "aaa: OK 覆盖 2/2 段\n"
+            "bbb: SKIP no_cut 无切点无需修复\n"
+            "ccc: PUSH-FAIL(rc=255) 覆盖 1/2 段\n"
+            "ddd: SKIP 原片拉取失败/不存在 (重试 10 次仍失败)\n"
+            "eee: PURGED 超长500s 删原片+3切片\n"
+            "fff: ABORT fff: 段数不等 ...\n"
+            "aaa: OK 覆盖 2/2 段\n"
+            "═══ 汇总: {...} ═══\n")
+        n = bf.backfill(log, out)
+        got = sorted(open(out).read().split())
+        assert got == ["aaa", "bbb", "eee", "fff"], f"got {got}"
+        assert n == 4
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_blacklisted_status_is_terminal():
+    m = load_mod()
+    # 源已删(在黑名单) -> 终态, 记进度跳过, 不再重试
+    assert m._is_terminal_status("xyz: SKIP 源已删(黑名单) 不可重切") is True
+
+
+def test_replace_one_skips_blacklisted_before_pull():
+    import types
+    m = load_mod()
+    # 桩: 黑名单命中 -> 不应调用 _pull_original
+    pulled = []
+    m.config.is_blacklisted = lambda stem: stem == "DEADvid"
+    def fake_pull(stem, dst, retries=10):
+        pulled.append(stem); return False
+    m._pull_original = fake_pull
+    out = m.replace_one("DEADvid", [0, 1], 2, dry_run=False)
+    assert "源已删" in out and m._is_terminal_status(out), f"应终态跳过, got {out}"
+    assert pulled == [], f"黑名单 stem 不应尝试拉取, but pulled={pulled}"
+
+
+def test_is_too_short():
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib", "duration_filter.py")
+    df = load(p, "duration_filter")
+    assert df.MIN_DURATION_SEC == 1.0
+    d = tempfile.mkdtemp()
+    try:
+        def mk(path, dur):
+            subprocess.run(["ffmpeg", "-nostdin", "-f", "lavfi",
+                            "-i", f"color=c=blue:s=160x120:d={dur}:r=10",
+                            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-y", path],
+                           capture_output=True, timeout=60)
+        short = os.path.join(d, "short.mp4"); mk(short, 0.5)
+        long_ = os.path.join(d, "long.mp4");  mk(long_, 3)
+        assert df.is_too_short(short) is True, "0.5s 应判太短"
+        assert df.is_too_short(long_) is False, "3s 不算太短"
+        bad = os.path.join(d, "bad.mp4"); open(bad, "w").write("x")
+        assert df.is_too_short(bad) is False, "读不出 -> 不误删"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_is_too_short_boundary_via_actual_patch():
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib", "duration_filter.py")
+    df = load(p, "duration_filter")
+    df.actual_duration = lambda path: 1.0
+    assert df.is_too_short("x") is False, "正好 1.0s 不删 (严格 <)"
+    df.actual_duration = lambda path: 0.999
+    assert df.is_too_short("x") is True
+    df.actual_duration = lambda path: None
+    assert df.is_too_short("x") is False
+
+
+def test_audit_one_skips_short_before_frame():
+    import importlib.util
+    p = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                      "..", "3_2_audit_splits.py"))
+    spec = importlib.util.spec_from_file_location("audit_splits", p)
+    a = importlib.util.module_from_spec(spec); spec.loader.exec_module(a)
+    # 桩: 太短 -> True; 抽帧函数若被调到则失败
+    a.duration_filter.is_too_long = lambda path: False
+    a.duration_filter.is_too_short = lambda path: True
+    called = []
+    a.representative_frame_from_video = lambda *args, **kw: (called.append(1), (None, 0, 0))[1]
+    ok = a.audit_one("/tmp/whatever.mp4", eps=[], pick_ep=lambda: 0, release_ep=lambda i: None)
+    assert ok is False, "短切片应判否"
+    assert called == [], "短切片不应抽帧/调 VLM (闸在抽帧前短路)"
+
+
+def test_cleanup_scan_and_sync():
+    import tempfile, json, importlib.util
+    bp = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                      "..", "tools", "cleanup_short_segments.py")
+    spec = importlib.util.spec_from_file_location("cleanup", bp)
+    cu = importlib.util.module_from_spec(spec); spec.loader.exec_module(cu)
+    d = tempfile.mkdtemp()
+    try:
+        cap = os.path.join(d, "captions"); os.makedirs(os.path.join(cap, "00"))
+        json.dump({"clip": "aaa_0", "duration": 0.5}, open(os.path.join(cap, "00", "aaa_0.json"), "w"))
+        json.dump({"clip": "bbb_1", "duration": 2.0}, open(os.path.join(cap, "00", "bbb_1.json"), "w"))
+        json.dump({"clip": "ccc_2", "duration": 0.9}, open(os.path.join(cap, "00", "ccc_2.json"), "w"))
+        short = cu.scan_short(cap)
+        assert short == {"aaa_0", "ccc_2"}, f"只挑 <1s, got {short}"
+
+        canon = os.path.join(d, "canon"); open(canon, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
+        kept = os.path.join(d, "kept");   open(kept, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
+        deled = os.path.join(d, "deled"); open(deled, "w").write("zzz_0.mp4\n")
+        capprog = os.path.join(d, "capprog"); open(capprog, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
+        squeue = os.path.join(d, "squeue"); open(squeue, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
+        aprog = os.path.join(d, "aprog");  open(aprog, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
+        paths = dict(canonical=canon, audit_kept=kept, audit_deleted=deled,
+                     caption_progress=capprog, split_queue=squeue, audit_progress=aprog,
+                     captions_root=cap)
+        stats = cu.sync_lists(short, paths, dry_run=False)
+        assert sorted(open(canon).read().split()) == ["bbb_1.mp4"], open(canon).read()
+        assert sorted(open(kept).read().split()) == ["bbb_1.mp4"]
+        assert sorted(open(deled).read().split()) == ["aaa_0.mp4", "ccc_2.mp4", "zzz_0.mp4"]
+        assert sorted(open(capprog).read().split()) == ["bbb_1.mp4"]
+        assert sorted(open(squeue).read().split()) == ["bbb_1.mp4"]
+        assert sorted(open(aprog).read().split()) == ["bbb_1.mp4"]
+        import glob as g
+        left = sorted(os.path.basename(x) for x in g.glob(os.path.join(cap, "*", "*.json")))
+        assert left == ["bbb_1.json"], left
+        assert stats["canonical"]["removed"] == 2 and stats["audit_deleted"]["added"] == 2
+
+        open(canon, "w").write("aaa_0.mp4\nbbb_1.mp4\n")
+        cu.sync_lists({"aaa_0"}, dict(canonical=canon, audit_kept=kept, audit_deleted=deled,
+                      caption_progress=capprog, split_queue=squeue, audit_progress=aprog,
+                      captions_root=cap), dry_run=True)
+        assert sorted(open(canon).read().split()) == ["aaa_0.mp4", "bbb_1.mp4"], "dry-run 不应改文件"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
 
 
 if __name__ == "__main__":

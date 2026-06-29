@@ -13,12 +13,14 @@ from threading import Lock
 
 from config import DATA_ROOT, LangPaths
 from llm_client import LLMClient, parse_ports, parse_json_response
+import reslot_utils as ru
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
 VIEWS         = [('front', 'augment_front_cn.json', 'augment_front_en.json'),
                  ('side',  'augment_side_cn.json',  'augment_side_en.json')]
 TRANSLATE_KEY = '_translated'
 QC_KEY        = '_validated'
+FIELD         = 'category_3_slotted_description'   # 槽位描述字段名（与 CN 脚本一致）
 _META_KEYS    = ('exercise', 'equipment', 'muscle', 'category', 'Force', 'Grips', 'Mechanic')
 _CONTENT_KEYS = ('category_3_slotted_description', 'category_1_visual_description',
                  'category_2_sports_guidance')
@@ -37,8 +39,15 @@ If a more natural/accurate English expression exists for the context, prefer it 
    - category_3_slotted_description: Keep [slot_key:slot_value] bracket format exactly.
      • Slot KEYS (the part before the colon, e.g. camera_view, gender, equipment, contact_part,
        contact_type, posture_alignment, trajectory, exercise, force_part, force_type, laterality,
-       body_position, tempo, limb_state)
+       body_position, tempo)
        are ALREADY in English — copy them verbatim, do NOT translate or alter them in any way.
+     • CRITICAL — do NOT confuse look-alike keys. These pairs are DISTINCT and must each be
+       copied exactly as in the source, never swapped:
+         - force_part (a muscle/body part exerting force) vs force_type (a way of exerting force)
+         - contact_part (a body part in contact) vs contact_type (how contact is made)
+         - body_position (overall posture) vs posture_alignment (alignment detail)
+       If the source has [force_type:...], the output MUST also be [force_type:...], NOT [force_part:...].
+       The SET and COUNT of slot keys must be byte-identical to the source.
      • Slot VALUES (the part after the colon) must be translated from Chinese to English.
      • Translate the natural-language text surrounding the brackets normally.
      • Fluency check: when slot tags are mentally removed, the remaining sentence must read
@@ -182,20 +191,28 @@ def _qc_once(aug_cn: dict, translated: dict, client: LLMClient,
 
 def run_qc_loop(aug_cn: dict, translated: dict,
                 client: LLMClient) -> tuple[dict, bool]:
-    """QC 自校正循环，最多 12 轮。返回 (最终 translated, 是否通过)。"""
+    """QC 自校正循环，最多 12 轮。返回 (最终 translated, 是否通过)。
+
+    通过条件：LLM 判 pass 【且】EN/CN 槽位键 multiset 确定性一致（C5 不靠 LLM 软判断）。
+    键集不齐时把差异作为 reason 喂回下一轮，逼模型补齐/去除，直到对齐或轮次耗尽。
+    """
+    cn_keys = ru.slot_key_counts(aug_cn.get(FIELD, ''))
     history: list = []
     for n in range(1, 13):
         ok, corrected, reason = _qc_once(aug_cn, translated, client, history)
+        if ok and ru.slot_key_counts(translated.get(FIELD, '')) != cn_keys:
+            # LLM 报 pass 但键集不齐 → 确定性 gate 否决，把差异作为问题喂回下一轮
+            ok, corrected, reason = False, None, (
+                f'槽位键集与源不一致，必须完全对齐 源={cn_keys} '
+                f'译={ru.slot_key_counts(translated.get(FIELD, ""))}')
         if ok:
             return translated, True
         print(f'    QC({n}): ✗ {reason[:120]}')
         if not corrected:
-            # LLM 声称有问题但给不出修正 → 自相矛盾，保留译文但不写 _validated
             print(f'    QC({n}): 无修正内容，保留译文')
             return translated, False
-        merged = {**translated, **corrected}
-        history.append({'round': n, 'reason': reason, 'corrected_full': merged})
-        translated = merged
+        history.append({'round': n, 'reason': reason})
+        translated = {**translated, **corrected}
     return translated, False
 
 
@@ -264,24 +281,66 @@ def process_one(meta_cn_path: Path, client: LLMClient | None,
                 print(f'  {cn_name}: 已有译文，直接 QC...')
 
         # ── QC ────────────────────────────────────────────────────────────
+        passed = False
         if do_qc:
             dummy = translated or {k: _CONTENT_DEFS.get(k, '(placeholder)') for k in _CONTENT_KEYS}
             if dry_run:
                 _print_prompt(f"QC  {cn_name}", _QC_SYSTEM, _qc_payload(aug_cn, dummy, []))
             else:
                 translated, passed = run_qc_loop(aug_cn, translated, client)
-                print(f'  {cn_name} QC: {"✓ 通过" if passed else "→ 未通过，继续"}')
+                print(f'  {cn_name} QC: {"✓ 通过" if passed else "→ 未通过，跳过(不写盘)"}')
 
         if dry_run:
             continue
 
+        # 开启 QC 时，仅 QC 通过(含确定性槽位键集对齐)才写盘；未通过保留 EN 定版不覆盖。
+        if do_qc and not passed:
+            skip += 1
+            continue
+
         out = {**translated, TRANSLATE_KEY: True}
-        if do_qc and passed:
+        if passed:
             out[QC_KEY] = True
         en_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), 'utf-8')
         ok += 1
 
     return ok, skip
+
+
+def count_empty_en() -> int:
+    """统计所有 augment_*_en.json 中无 category_3_slotted_description 的（待补译）。"""
+    n = 0
+    for _, _, en_name in VIEWS:
+        for p in DATA_ROOT.rglob(en_name):
+            try:
+                if not json.loads(p.read_text('utf-8')).get(FIELD):
+                    n += 1
+            except Exception:
+                pass
+    return n
+
+
+def run_until_converged(run_once, count_empty, max_rounds: int = 8,
+                        patience: int = 2) -> list:
+    """多轮补译至收敛：反复 run_once，统计 count_empty()；空缺归零或连续 patience
+    轮无下降即停。返回每轮记录 [{round, empty, filled}]。run_once/count_empty 注入便于测试。
+    count_empty 每轮调用一次（起点 1 次 + 每轮后 1 次）。"""
+    prev = count_empty()
+    if prev == 0:
+        return []
+    rounds, stale = [], 0
+    for r in range(1, max_rounds + 1):
+        run_once()
+        cur = count_empty()
+        filled = prev - cur
+        rounds.append({'round': r, 'empty': cur, 'filled': filled})
+        prev = cur
+        if cur == 0:
+            break
+        stale = stale + 1 if filled <= 0 else 0
+        if stale >= patience:
+            break
+    return rounds
 
 
 # ── 入口 ──────────────────────────────────────────────────────────────────────
@@ -304,6 +363,10 @@ def main() -> None:
                         help='清除所有 _validated 标记，使 --check 可对已译文件重跑 QC')
     parser.add_argument('--reverse',           action='store_true',
                         help='从末尾向前处理，避免与正向机器重叠')
+    parser.add_argument('--loop',              action='store_true',
+                        help='多轮补译至收敛（空缺归零或连续 2 轮无下降即停，最多 8 轮）')
+    parser.add_argument('--max-rounds',        type=int, default=8, dest='max_rounds',
+                        help='--loop 最大轮数（默认 8）')
     args = parser.parse_args()
 
     # ── --reset-qc：独立操作，清除标记后退出 ─────────────────────────────────
@@ -315,22 +378,6 @@ def main() -> None:
         )
         print(f'✓ 已清除 {n} 个文件的 {QC_KEY} 标记，可重新运行 --check')
         return
-
-    all_meta = sorted(DATA_ROOT.rglob('metadata_cn.json'))
-
-    def _needs_work(p: Path) -> bool:
-        return any(_check_en(p.parent / en, args.check)[1] != 'skip'
-                   for _, cn, en in VIEWS if (p.parent / cn).exists())
-
-    pending = [p for p in all_meta if _needs_work(p)]
-    if args.reverse:
-        pending = list(reversed(pending))
-    if args.limit:
-        pending = pending[:args.limit]
-
-    print(f'共 {len(all_meta)} 个动作，待处理 {len(pending)} 个，已完成 {len(all_meta)-len(pending)} 个')
-    if not pending:
-        print('全部已完成'); return
 
     try:
         client = None if args.dry_run else (
@@ -344,26 +391,58 @@ def main() -> None:
     except Exception as e:
         print(f'连接失败: {e}', file=sys.stderr); sys.exit(1)
 
-    total_ok = total_skip = 0
     print_lock = Lock()
-    workers = min(args.workers, len(pending))
 
-    def _worker(idx_path: tuple[int, Path]) -> tuple[int, int]:
-        i, meta_path = idx_path
-        t0 = time.time()
-        ok, skip = process_one(meta_path, client, do_qc=args.check, dry_run=args.dry_run)
-        if not args.dry_run:
-            with print_lock:
-                print(f'[{i}/{len(pending)}] {meta_path.parent.relative_to(DATA_ROOT)}'
-                      f'  ⏱ {time.time()-t0:.1f}s')
-        return ok, skip
+    def _needs_work(p: Path) -> bool:
+        return any(_check_en(p.parent / en, args.check)[1] != 'skip'
+                   for _, cn, en in VIEWS if (p.parent / cn).exists())
 
-    if workers == 1:
-        for item in enumerate(pending, 1):
-            ok, skip = _worker(item)
-            total_ok += ok; total_skip += skip
+    def _run_pass() -> tuple[int, int]:
+        """跑一遍待处理动作（重新扫描 pending，因上一轮可能已填补部分）。返回 (写出, 跳过)。"""
+        all_meta = sorted(DATA_ROOT.rglob('metadata_cn.json'))
+        pend = [p for p in all_meta if _needs_work(p)]
+        if args.reverse:
+            pend = list(reversed(pend))
+        if args.limit:
+            pend = pend[:args.limit]
+        if not pend:
+            print('全部已完成'); return 0, 0
+        print(f'本轮待处理 {len(pend)} 个')
+        ok_n = sk_n = 0
+        workers = min(args.workers, len(pend))
+
+        def _worker(idx_path):
+            i, meta_path = idx_path
+            t0 = time.time()
+            o, s = process_one(meta_path, client, do_qc=args.check, dry_run=args.dry_run)
+            if not args.dry_run:
+                with print_lock:
+                    print(f'[{i}/{len(pend)}] {meta_path.parent.relative_to(DATA_ROOT)}'
+                          f'  ⏱ {time.time()-t0:.1f}s')
+            return o, s
+
+        if workers == 1:
+            for item in enumerate(pend, 1):
+                o, s = _worker(item); ok_n += o; sk_n += s
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futs = {pool.submit(_worker, item): item[1] for item in enumerate(pend, 1)}
+                for fut in as_completed(futs):
+                    try:
+                        o, s = fut.result(); ok_n += o; sk_n += s
+                    except Exception as e:
+                        with print_lock:
+                            print(f'  ✗ {futs[fut]}: {e}')
+        return ok_n, sk_n
+
+    if args.loop and not args.dry_run:
+        rounds = run_until_converged(_run_pass, count_empty_en, max_rounds=args.max_rounds)
+        for r in rounds:
+            print(f"  [轮{r['round']}] 空缺={r['empty']} 补回={r['filled']}")
+        print(f"\n✓ 多轮收敛完成: {len(rounds)} 轮, 最终空缺 {count_empty_en()}")
     else:
-        print(f'并发 workers={workers}')
+        ok, skip = _run_pass()
+        print(f'\n✓ 完成: 新增 {ok} 个，跳过 {skip} 个')
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(_worker, item): item[1]
                        for item in enumerate(pending, 1)}

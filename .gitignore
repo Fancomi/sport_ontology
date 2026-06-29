@@ -21,9 +21,11 @@ books/datas/
 books/data/
 books/logs
 tools/9_1_progress.json
-videos/downloads
-videos/logs
-videos/results
+
+# videos 流水线运行态 (可重生; 权威成果在 data/deliverables/ 仍跟踪)
+videos/data/pipeline_state/
+videos/data/logs/
+videos/data/downloads/
 
 # Distribution / packaging
 .Python
@@ -230,3 +232,6 @@ __marimo__/
 # 但不放开 __pycache__/*.pyc（仍由上面的通用规则忽略）。
 !videos/lib/
 !videos/lib/*.py
+
+# vlm_audit 实验产物 (gallery / result json, 可重生)
+videos/vlm_audit/_experiments/

@@ -44,7 +44,9 @@ SSH_OPTS = (
     "-c aes128-gcm@openssh.com"
 )
 
-PROGRESS_FILE = Path(__file__).parent / "scene_split_progress.txt"
+DATA = Path(__file__).parent / "data"
+PROGRESS_FILE = DATA / "pipeline_state" / "3_scene_split_progress.txt"
+REPLACE_PROGRESS = DATA / "pipeline_state" / "3_replace_progress.txt"
 SCENE_THRESHOLD = 0.3
 MIN_SEGMENT_SEC = 0.5
 
@@ -233,6 +235,38 @@ def split_batch(files: list[str], shm_src: str, shm_out: str,
 
 # ═══════════════════════════ Push ═══════════════════════════
 
+# replace_one 返回一行状态 "<stem>: <STATUS> ...". 续跑时据此判定:
+# terminal = 这次已得到确定结果 (成功/明确不需处理/确定性中止), 记进度, 下次跳过;
+# recoverable = 瞬时/可恢复失败 (拉取失败/推送失败/编码失败/超时/dry-run), 不记, 下次重试。
+_TERMINAL_MARKERS = (
+    "OK",                       # 成功覆盖
+    "PURGED 超长",              # 真删确认 (非 dry-run / 非 PURGE-FAIL)
+    "ABORT",                    # 对齐闸确定性中止 (段数不等), 重试结果不变
+    "SKIP no_cut",              # 整片无切点, 确定无需修复
+    "SKIP 无幸存段",            # 清单无幸存段, 确定跳过
+    "SKIP 无可推段",            # 对齐后 0 段可推, 确定性结果, 跳过 (≠ 拉取失败)
+    "SKIP 源已删",              # 原片在黑名单(上游审核/时长剔除), 永不可重切, 终态跳过
+)
+
+
+def _is_terminal_status(line: str) -> bool:
+    """该状态行是否为终态 (应记进度、续跑跳过)。
+    非终态: 拉取失败 SKIP / PUSH-FAIL / PURGE-FAIL / ENCODE-FAIL / ERROR /
+    任何 dry-run 行 (PURGED(dry-run) / DRY-RUN), 均留待重试。"""
+    if "(dry-run)" in line or ": DRY-RUN" in line:
+        return False
+    try:
+        body = line.split(":", 1)[1].strip()
+    except IndexError:
+        return False
+    return any(body.startswith(m) for m in _TERMINAL_MARKERS)
+
+
+def _stem_of(line: str) -> str:
+    """从状态行 '<stem>: <STATUS> ...' 取回 stem (stem 自身可能含 '-'/'_'/前导 '-')。"""
+    return line.split(":", 1)[0].strip()
+
+
 def n_original_map(split_queue_path: str) -> dict:
     """从 split_queue.txt (审核前全部产出段名) 建 stem -> 原始段数。"""
     cnt = {}
@@ -245,7 +279,7 @@ def n_original_map(split_queue_path: str) -> dict:
 
 
 def survivors_map(remote_list_path: str) -> dict:
-    """从 remote_split_list.txt (审核后幸存段名) 建 stem -> 幸存索引(升序)。"""
+    """从 canonical_segments.list (审核后幸存段名=远端∩kept) 建 stem -> 幸存索引(升序)。"""
     d = {}
     with open(remote_list_path, encoding="utf-8") as f:
         for ln in f:
@@ -284,7 +318,7 @@ def _push_chunk(args: tuple[str, str]) -> int:
     return r.returncode
 
 
-SPLIT_QUEUE = Path(__file__).parent / "split_queue.txt"
+SPLIT_QUEUE = DATA / "pipeline_state" / "3_split_queue.txt"
 
 
 def push_batch(shm_out: str, workers_push: int = 4) -> tuple[int, float]:
@@ -343,7 +377,7 @@ def push_named(shm_out: str, names: list) -> int:
 def _purge_remote(stem: str, seg_names: list) -> tuple[bool, int]:
     """整源删除超长视频: 远端原片 + 指定切片 (按本地名单精确删, 不让远端做 ls/glob)。
     返回 (rm 命令是否成功, 删除的切片数)。
-    seg_names 来自本地 remote_split_list (幸存段名), 即远端现存的全部切片;
+    seg_names 来自本地 canonical_segments.list (幸存段名), 即远端现存的全部切片;
     用绝对路径逐名删除 (开头为 '/' 不会被当 rm 选项, 故无需 cd/'./' 技巧),
     成功判定走 rm 退出码 (set -e), 不再远端复核 ls —— 远端硬盘扛不住 ls。"""
     paths = [f"{REMOTE_SRC}/{stem}.mp4"] + [f"{REMOTE_DST}/{n}" for n in seg_names]
@@ -383,6 +417,9 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
     import cv2
     if not survivors:
         return f"{stem}: SKIP 无幸存段 (清单)"
+    # 源已被上游删除(黑名单: 审核拒绝/时长剔除) -> 永不可重切, 终态跳过, 不浪费拉取重试
+    if config.is_blacklisted(stem):
+        return f"{stem}: SKIP 源已删(黑名单) 不可重切"
     shm = f"/dev/shm/replace_{stem.replace('/', '_')}"
     shm_src, shm_out = os.path.join(shm, "src"), os.path.join(shm, "out")
     shutil.rmtree(shm, ignore_errors=True)
@@ -408,7 +445,7 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
                 # 删除未确认 (瞬时 ssh/rm 失败): 不写 blacklist/log, 留待重试
                 return f"{stem}: PURGE-FAIL 超长{duration:.0f}s 删除未确认, 未记录待重试"
             config.append_blacklist(stem)
-            purged_log = Path(__file__).parent / "purged_too_long.txt"
+            purged_log = DATA / "pipeline_state" / "3_purged_too_long.txt"
             with open(purged_log, "a") as f:
                 f.write(stem + "\n")
             return f"{stem}: PURGED 超长{duration:.0f}s 删原片+{k}切片"
@@ -457,8 +494,9 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
 def run_replace(args):
     """按原片名重切+替换远端 (不跑全量 pipeline)。"""
     here = Path(__file__).parent
-    nmap = n_original_map(str(here / "split_queue.txt"))
-    smap = survivors_map(str(here / "remote_split_list.txt"))
+    nmap = n_original_map(str(here / "data" / "pipeline_state" / "3_split_queue.txt"))
+    smap = survivors_map(str(here / "data" / "deliverables" / "3_canonical_segments.list"))
+    done = config.read_lines(REPLACE_PROGRESS)
 
     stems = []
     for n in args.names:
@@ -475,6 +513,9 @@ def run_replace(args):
     for s in stems:
         if s not in seen:
             seen.add(s); uniq.append(s)
+    n_before = len(uniq)
+    uniq = [s for s in uniq if s not in done]
+    print(f"已完成 {len(done)} 跳过 {n_before - len(uniq)}, 待处理 {len(uniq)}", flush=True)
     if args.limit:
         uniq = uniq[:args.limit]
     if not uniq:
@@ -485,12 +526,35 @@ def run_replace(args):
     tasks = [(s, smap.get(s, []), nmap.get(s, 0), args.dry_run) for s in uniq]
     stats = {"OK": 0, "SKIP": 0, "ABORT": 0, "PURGED": 0, "PURGE-FAIL": 0,
              "ENCODE-FAIL": 0, "ERROR": 0, "PUSH-FAIL": 0, "DRY-RUN": 0}
-    with Pool(args.workers_replace) as pool:
-        for line in pool.imap_unordered(_replace_star, tasks):
-            print(line, flush=True)
-            for k in stats:
-                if f": {k}" in line:
-                    stats[k] += 1; break
+    buf = []
+    BATCH = 50
+
+    def flush_progress():
+        if not buf:
+            return
+        with open(REPLACE_PROGRESS, "a") as f:
+            f.write("".join(s + "\n" for s in buf))
+            f.flush(); os.fsync(f.fileno())
+        buf.clear()
+
+    def handle(line):
+        print(line, flush=True)
+        for k in stats:
+            if f": {k}" in line:
+                stats[k] += 1; break
+        if not args.dry_run and _is_terminal_status(line):
+            buf.append(_stem_of(line))
+            if len(buf) >= BATCH:
+                flush_progress()
+
+    if args.workers_replace <= 1:
+        for t in tasks:
+            handle(_replace_star(t))
+    else:
+        with Pool(args.workers_replace) as pool:
+            for line in pool.imap_unordered(_replace_star, tasks):
+                handle(line)
+    flush_progress()
     print(f"═══ 汇总: {stats} ═══", flush=True)
 
 
@@ -645,7 +709,7 @@ def main():
     parser.add_argument("-f", "--file", action="append", default=[],
                         help="--replace: 原片名清单文件 (可多次)")
     parser.add_argument("--all", action="store_true",
-                        help="--replace: 取 remote_split_list.txt 全部有幸存段的原片")
+                        help="--replace: 取 canonical_segments.list 全部有幸存段的原片")
     parser.add_argument("--limit", type=int, default=0,
                         help="--replace: 只处理前 N 个原片 (0=不限)")
     parser.add_argument("--workers-replace", type=int, default=16,

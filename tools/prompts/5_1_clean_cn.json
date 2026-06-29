@@ -11,7 +11,9 @@
     "exercise":          "健身动作专有名词（硬拉、深蹲、弯举、引体向上）",
     "force_part":        "视觉可见的发力/收缩肌肉部位（肱二头肌、背阔肌、臀大肌）",
     "force_type":        "发力方式（拉、推、保持、旋转、下蹲）",
-    "laterality":        "解剖学左右侧（左侧、右侧、双侧、交替）"
+    "laterality":        "解剖学左右侧（左侧、右侧、双侧、交替）",
+    "body_position":     "整体身体位姿（站立、坐姿、俯卧、仰卧、跪姿）",
+    "tempo":             "动作节奏档位（缓慢、快速、爆发性、暂停）"
   },
   "examples": {
     "equipment": [
@@ -45,6 +47,12 @@
     ],
     "laterality": [
       {"word": "双侧", "before": {"confusable_siblings": ["交替", "对称"], "incompatibility": ["单侧", "左侧", "右侧"]}, "after": {"confusable_siblings": ["交替"], "incompatibility": ["单侧", "左侧", "右侧"]}, "reason": "R1: '对称'与'双侧'含义高度重叠（均描述两侧均等参与），删除"}
+    ],
+    "body_position": [
+      {"word": "站立", "before": {"confusable_siblings": ["直立", "站姿", "坐姿"], "incompatibility": ["仰卧", "俯卧"]}, "after": {"confusable_siblings": ["坐姿"], "incompatibility": ["仰卧", "俯卧"]}, "reason": "R1: '直立'/'站姿'='站立'（同义），删除；'坐姿'视觉可辨保留"}
+    ],
+    "tempo": [
+      {"word": "缓慢", "before": {"confusable_siblings": ["慢速", "匀速", "快速"], "incompatibility": ["快速", "爆发性"]}, "after": {"confusable_siblings": ["匀速"], "incompatibility": ["快速", "爆发性"]}, "reason": "R1: '慢速'='缓慢'（同义），删除；'快速'是互斥项不应在 confusable，删除"}
     ]
   }
 }

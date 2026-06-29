@@ -8,6 +8,7 @@ import threading
 import cv2
 
 MAX_DURATION_SEC = 480.0   # 删除依据 (不可逆); 沿用 2_1_download / 2_4_cleanup 既有口径
+MIN_DURATION_SEC = 1.0     # <1s 切片太短 (帧不足), 审核阶段直接删
 
 _CV2_LOCK = threading.Lock()   # cv2.VideoCapture 非线程安全, 多线程调用需串行
 
@@ -44,3 +45,9 @@ def should_purge(duration: float | None, limit: float = MAX_DURATION_SEC) -> boo
 def is_too_long(video_path, limit: float = MAX_DURATION_SEC) -> bool:
     """读时长并判定是否超长。读不出 -> False (不误删)。"""
     return should_purge(actual_duration(video_path), limit)
+
+
+def is_too_short(video_path, limit: float = MIN_DURATION_SEC) -> bool:
+    """读时长判定是否过短 (<limit)。读不出 -> False (不误删, 与 is_too_long 一致)。"""
+    d = actual_duration(video_path)
+    return d is not None and d < limit
