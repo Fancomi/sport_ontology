@@ -127,6 +127,8 @@ def audit_one(path: str, eps, pick_ep, release_ep) -> bool:
     """抽中位帧 → VLM 判断，返回是否通过。走共享 call_vlm_raw(raw httpx)。"""
     if duration_filter.is_too_long(path):
         return False   # 超长切片直接判否 -> 调用方 remote_delete
+    if duration_filter.is_too_short(path):
+        return False   # <1s 切片太短, 判否 -> 调用方 remote_delete
     frame, _idx, _n = representative_frame_from_video(path, fps=1.0, max_side=480)
     if frame is None:
         return False

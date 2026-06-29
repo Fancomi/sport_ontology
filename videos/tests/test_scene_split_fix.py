@@ -328,6 +328,22 @@ def test_is_too_short_boundary_via_actual_patch():
     assert df.is_too_short("x") is False
 
 
+def test_audit_one_skips_short_before_frame():
+    import importlib.util
+    p = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                      "..", "3_2_audit_splits.py"))
+    spec = importlib.util.spec_from_file_location("audit_splits", p)
+    a = importlib.util.module_from_spec(spec); spec.loader.exec_module(a)
+    # 桩: 太短 -> True; 抽帧函数若被调到则失败
+    a.duration_filter.is_too_long = lambda path: False
+    a.duration_filter.is_too_short = lambda path: True
+    called = []
+    a.representative_frame_from_video = lambda *args, **kw: (called.append(1), (None, 0, 0))[1]
+    ok = a.audit_one("/tmp/whatever.mp4", eps=[], pick_ep=lambda: 0, release_ep=lambda i: None)
+    assert ok is False, "短切片应判否"
+    assert called == [], "短切片不应抽帧/调 VLM (闸在抽帧前短路)"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
