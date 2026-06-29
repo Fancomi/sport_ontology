@@ -115,13 +115,16 @@ def sample_conf_distractors(lookup: dict, ontology: dict,
 def sample_hard_distractors(hard_entries: list[dict],
                               syn_rev: dict[str, str],
                               correct: str, max_n: int) -> list[dict]:
-    """hard 模式：从 hard_all 条目取干扰项，canonical 去重，最多 max_n 个。
+    """hard 模式：从 hard_all 条目随机取干扰项，canonical 去重，最多 max_n 个。
+    随机洗牌后再取——配合多轮（每轮熵种子），>max_n 的盲区会被逐轮覆盖到。
     返回 [{new_value, source}, ...]。hard 条目以外不补充任何选项。
     """
     correct_canon = syn_rev.get(correct, correct)
     used_canons   = {correct_canon}
     pool: list[dict] = []
-    for entry in hard_entries:
+    entries = list(hard_entries)
+    random.shuffle(entries)
+    for entry in entries:
         nv    = entry["new_value"]
         canon = syn_rev.get(nv, nv)
         if canon not in used_canons and len(pool) < max_n:
@@ -413,6 +416,8 @@ def main() -> None:
                         help="指定已有题目表复现，跳过在线采样")
     parser.add_argument("--no-resume",   action="store_true", dest="no_resume",
                         help="跳过 load_done 去重（loop_cloze.sh 多轮循环时使用）")
+    parser.add_argument("--no-flush",    action="store_true", dest="no_flush",
+                        help="跳过末尾 flush_hard_all（解耦评测/聚合：只追加 eval，由 9_extract 统一聚合）")
     parser.add_argument("--limit",       type=int, default=0, help="限制处理目录数（调试）")
     parser.add_argument("--min-choices", type=int, default=2, dest="min_choices")
     parser.add_argument("--dry-run",     action="store_true", dest="dry_run")
@@ -567,6 +572,8 @@ def main() -> None:
             records = [r for r in records
                        if f"{r['video']}|{r['view']}|{r['replaced_slot']}"
                           f"|{r['original_value']}|{r['new_value']}" not in done]
+            for r in records:           # 注入模型署名，供 9_extract 聚合 by_model
+                r["model"] = model_name
 
             # ── 打印 ──────────────────────────────────────────────────────────
             with print_lock:
@@ -606,7 +613,7 @@ def main() -> None:
             for fut in as_completed(futs): fut.result()
 
     # ── hard_all 写回 ─────────────────────────────────────────────────────────
-    if hard_records_all and not args.dry_run:
+    if hard_records_all and not args.dry_run and not args.no_flush:
         flush_hard_all(hard_records_all, model_name, args.lang, hard_src)
         print(f"\n[hard_all] 已更新 {len(hard_records_all)} 条  model={model_name}")
 

@@ -78,6 +78,12 @@ def resolve_inputs(raw: list[str]) -> list[Path]:
     return files
 
 
+def _merge_counter(dst: dict, src: dict) -> None:
+    """把 src 的计数并入 dst（按 key 求和），原地修改 dst。"""
+    for k, c in src.items():
+        dst[k] = dst.get(k, 0) + c
+
+
 def _apply_filters(hist: dict, min_error_rate: float,
                    min_errors: int, min_pred: int) -> tuple[dict, int]:
     if not any([min_error_rate, min_errors, min_pred]):
@@ -105,6 +111,8 @@ def run_from_eval(args) -> None:
     n_total = n_stale = 0
     error_counts: dict[tuple, int] = defaultdict(int)
     pred_counts:  dict[tuple, int] = defaultdict(int)
+    pred_bm:  dict[tuple, dict] = defaultdict(lambda: defaultdict(int))   # key -> {model: n}
+    error_bm: dict[tuple, dict] = defaultdict(lambda: defaultdict(int))
     meta:         dict[tuple, dict] = {}
 
     for path in input_files:
@@ -122,10 +130,15 @@ def run_from_eval(args) -> None:
             if args.clean and not key_valid(key, args.lang):
                 n_stale += 1
                 continue
+            model = r.get("model")
             pred_counts[key] += 1
+            if model:
+                pred_bm[key][model] += 1
             if not r["is_correct"]:
                 error_counts[key] += 1
                 meta.setdefault(key, r)
+                if model:
+                    error_bm[key][model] += 1
 
     n_wrong_events = sum(error_counts.values())
     n_unique_pairs = len(error_counts)
@@ -152,6 +165,10 @@ def run_from_eval(args) -> None:
         else:
             hist[key]["pred_count"]  = hist[key].get("pred_count",  0) + pred_counts[key]
             hist[key]["error_count"] = hist[key].get("error_count", 0) + error_counts.get(key, 0)
+        if pred_bm.get(key):
+            _merge_counter(hist[key].setdefault("pred_by_model", {}), pred_bm[key])
+        if error_bm.get(key):
+            _merge_counter(hist[key].setdefault("error_by_model", {}), error_bm[key])
 
     if args.clean:
         hist, n_hist_stale = clean_stale(hist, args.lang)
