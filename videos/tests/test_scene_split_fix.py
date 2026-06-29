@@ -344,6 +344,51 @@ def test_audit_one_skips_short_before_frame():
     assert called == [], "短切片不应抽帧/调 VLM (闸在抽帧前短路)"
 
 
+def test_cleanup_scan_and_sync():
+    import tempfile, json, importlib.util
+    bp = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                      "..", "tools", "cleanup_short_segments.py")
+    spec = importlib.util.spec_from_file_location("cleanup", bp)
+    cu = importlib.util.module_from_spec(spec); spec.loader.exec_module(cu)
+    d = tempfile.mkdtemp()
+    try:
+        cap = os.path.join(d, "captions"); os.makedirs(os.path.join(cap, "00"))
+        json.dump({"clip": "aaa_0", "duration": 0.5}, open(os.path.join(cap, "00", "aaa_0.json"), "w"))
+        json.dump({"clip": "bbb_1", "duration": 2.0}, open(os.path.join(cap, "00", "bbb_1.json"), "w"))
+        json.dump({"clip": "ccc_2", "duration": 0.9}, open(os.path.join(cap, "00", "ccc_2.json"), "w"))
+        short = cu.scan_short(cap)
+        assert short == {"aaa_0", "ccc_2"}, f"只挑 <1s, got {short}"
+
+        canon = os.path.join(d, "canon"); open(canon, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
+        kept = os.path.join(d, "kept");   open(kept, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
+        deled = os.path.join(d, "deled"); open(deled, "w").write("zzz_0.mp4\n")
+        capprog = os.path.join(d, "capprog"); open(capprog, "w").write("aaa_0\nbbb_1\nccc_2\n")
+        squeue = os.path.join(d, "squeue"); open(squeue, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
+        aprog = os.path.join(d, "aprog");  open(aprog, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
+        paths = dict(canonical=canon, audit_kept=kept, audit_deleted=deled,
+                     caption_progress=capprog, split_queue=squeue, audit_progress=aprog,
+                     captions_root=cap)
+        stats = cu.sync_lists(short, paths, dry_run=False)
+        assert sorted(open(canon).read().split()) == ["bbb_1.mp4"], open(canon).read()
+        assert sorted(open(kept).read().split()) == ["bbb_1.mp4"]
+        assert sorted(open(deled).read().split()) == ["aaa_0.mp4", "ccc_2.mp4", "zzz_0.mp4"]
+        assert sorted(open(capprog).read().split()) == ["bbb_1"]
+        assert sorted(open(squeue).read().split()) == ["bbb_1.mp4"]
+        assert sorted(open(aprog).read().split()) == ["bbb_1.mp4"]
+        import glob as g
+        left = sorted(os.path.basename(x) for x in g.glob(os.path.join(cap, "*", "*.json")))
+        assert left == ["bbb_1.json"], left
+        assert stats["canonical"]["removed"] == 2 and stats["audit_deleted"]["added"] == 2
+
+        open(canon, "w").write("aaa_0.mp4\nbbb_1.mp4\n")
+        cu.sync_lists({"aaa_0"}, dict(canonical=canon, audit_kept=kept, audit_deleted=deled,
+                      caption_progress=capprog, split_queue=squeue, audit_progress=aprog,
+                      captions_root=cap), dry_run=True)
+        assert sorted(open(canon).read().split()) == ["aaa_0.mp4", "bbb_1.mp4"], "dry-run 不应改文件"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
