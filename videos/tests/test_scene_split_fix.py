@@ -296,6 +296,38 @@ def test_replace_one_skips_blacklisted_before_pull():
     assert pulled == [], f"黑名单 stem 不应尝试拉取, but pulled={pulled}"
 
 
+def test_is_too_short():
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib", "duration_filter.py")
+    df = load(p, "duration_filter")
+    assert df.MIN_DURATION_SEC == 1.0
+    d = tempfile.mkdtemp()
+    try:
+        def mk(path, dur):
+            subprocess.run(["ffmpeg", "-nostdin", "-f", "lavfi",
+                            "-i", f"color=c=blue:s=160x120:d={dur}:r=10",
+                            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-y", path],
+                           capture_output=True, timeout=60)
+        short = os.path.join(d, "short.mp4"); mk(short, 0.5)
+        long_ = os.path.join(d, "long.mp4");  mk(long_, 3)
+        assert df.is_too_short(short) is True, "0.5s 应判太短"
+        assert df.is_too_short(long_) is False, "3s 不算太短"
+        bad = os.path.join(d, "bad.mp4"); open(bad, "w").write("x")
+        assert df.is_too_short(bad) is False, "读不出 -> 不误删"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_is_too_short_boundary_via_actual_patch():
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib", "duration_filter.py")
+    df = load(p, "duration_filter")
+    df.actual_duration = lambda path: 1.0
+    assert df.is_too_short("x") is False, "正好 1.0s 不删 (严格 <)"
+    df.actual_duration = lambda path: 0.999
+    assert df.is_too_short("x") is True
+    df.actual_duration = lambda path: None
+    assert df.is_too_short("x") is False
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
