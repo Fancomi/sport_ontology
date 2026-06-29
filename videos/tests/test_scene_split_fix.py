@@ -362,7 +362,7 @@ def test_cleanup_scan_and_sync():
         canon = os.path.join(d, "canon"); open(canon, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
         kept = os.path.join(d, "kept");   open(kept, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
         deled = os.path.join(d, "deled"); open(deled, "w").write("zzz_0.mp4\n")
-        capprog = os.path.join(d, "capprog"); open(capprog, "w").write("aaa_0\nbbb_1\nccc_2\n")
+        capprog = os.path.join(d, "capprog"); open(capprog, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
         squeue = os.path.join(d, "squeue"); open(squeue, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
         aprog = os.path.join(d, "aprog");  open(aprog, "w").write("aaa_0.mp4\nbbb_1.mp4\nccc_2.mp4\n")
         paths = dict(canonical=canon, audit_kept=kept, audit_deleted=deled,
@@ -372,7 +372,7 @@ def test_cleanup_scan_and_sync():
         assert sorted(open(canon).read().split()) == ["bbb_1.mp4"], open(canon).read()
         assert sorted(open(kept).read().split()) == ["bbb_1.mp4"]
         assert sorted(open(deled).read().split()) == ["aaa_0.mp4", "ccc_2.mp4", "zzz_0.mp4"]
-        assert sorted(open(capprog).read().split()) == ["bbb_1"]
+        assert sorted(open(capprog).read().split()) == ["bbb_1.mp4"]
         assert sorted(open(squeue).read().split()) == ["bbb_1.mp4"]
         assert sorted(open(aprog).read().split()) == ["bbb_1.mp4"]
         import glob as g

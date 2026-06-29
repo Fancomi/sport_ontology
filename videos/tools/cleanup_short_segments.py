@@ -7,7 +7,7 @@
   2. canonical          剔除 <clip>.mp4
   3. audit_kept         剔除 <clip>.mp4
   4. audit_deleted      追加 <clip>.mp4 (审计痕迹)
-  5. caption json 删 + caption_progress 剔除 <clip>(无.mp4)
+  5. caption json 删 + caption_progress 剔除 <clip>.mp4
   6. split_queue / audit_progress 剔除 <clip>.mp4
 
 安全: 改清单前备份 <file>.bak-<ts>, 原子写 (.tmp -> rename)。--dry-run 只扫+报, 不删不写。
@@ -86,7 +86,7 @@ def sync_lists(short: set, paths: dict, dry_run: bool) -> dict:
     stats["canonical"]        = _backup_atomic_filter(paths["canonical"], short, set(), True, dry_run)
     stats["audit_kept"]       = _backup_atomic_filter(paths["audit_kept"], short, set(), True, dry_run)
     stats["audit_deleted"]    = _backup_atomic_filter(paths["audit_deleted"], set(), short, True, dry_run)
-    stats["caption_progress"] = _backup_atomic_filter(paths["caption_progress"], short, set(), False, dry_run)
+    stats["caption_progress"] = _backup_atomic_filter(paths["caption_progress"], short, set(), True, dry_run)
     stats["split_queue"]      = _backup_atomic_filter(paths["split_queue"], short, set(), True, dry_run)
     stats["audit_progress"]   = _backup_atomic_filter(paths["audit_progress"], short, set(), True, dry_run)
     deleted_json = 0
