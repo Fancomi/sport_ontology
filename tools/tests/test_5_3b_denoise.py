@@ -127,3 +127,112 @@ def test_synonym_index_transitive_closure():
     for w in ('站立', '直立', '挺立', '直立位', '站姿', '站直'):
         assert w in cluster, f'{w} 应在站立同义簇'
     assert '弓步' not in cluster
+
+
+# ── D. 同槽互斥子类隔离 (en contact_type: grip vs ground) ────────────────────────
+# 根因（en 30 条复核 80%<85%）：contact_type 槽混入两个互斥子类——
+#   grip 子类（overhand/underhand/neutral/pronated grip 等抓握方式）
+#   ground 子类（planted/contact/touching/step 等与地面接触方式）
+# 一个动作里"手 overhand grip 抓杠铃 + 脚 planted 踩地"完全可共现，
+# 所以 grip↔ground 既不是视觉混淆兄弟(confusable)也不是逻辑互斥(incompatibility)，
+# 互换后产生无意义负样本。en 词形碎片化(436 值)放大了 5_3 的跨子类误判。
+# cn 仅 59 值、无碎片，故 cn 跨子类污染为 0（规则不应误伤）。
+# 规则：5_3b 对配置了子类划分的槽位，双向剔除 confusable+incompatibility 中的跨子类项；
+#       同子类内（overhand↔underhand）保留。
+
+def _ct_onto():
+    return {
+        'contact_type': {
+            'overhand grip': {'synonyms': ['pronated grip'],
+                              'confusable_siblings': ['neutral grip', 'underhand grip', 'contact', 'planted'],
+                              'incompatibility': ['neutral grip', 'planted', 'grounded', 'touching']},
+            'neutral grip': {'synonyms': ['parallel grip'],
+                             'confusable_siblings': ['overhand grip', 'planted on the ground'],
+                             'incompatibility': ['overhand grip', 'contact']},
+            'planted on the ground': {'synonyms': ['grounded', 'foot planted'],
+                                      'confusable_siblings': ['overhand grip', 'contact', 'touching'],
+                                      'incompatibility': ['overhand grip', 'neutral grip', 'suspended']},
+            'contact': {'synonyms': [],
+                        'confusable_siblings': ['overhand grip', 'planted'],
+                        'incompatibility': ['overhand grip']},
+            'suspended': {'synonyms': [],
+                          'confusable_siblings': [],
+                          'incompatibility': ['planted on the ground']},
+        },
+    }
+
+
+def _ct_vocab():
+    return {
+        'contact_type': {
+            'overhand grip': 1267, 'neutral grip': 491, 'underhand grip': 54, 'pronated grip': 337,
+            'planted on the ground': 567, 'planted': 166, 'grounded': 151, 'contact': 467,
+            'touching': 170, 'suspended': 5, 'parallel grip': 10, 'foot planted': 20,
+        },
+    }
+
+
+def test_grip_to_ground_removed_from_confusable():
+    """grip 节点 confusable 中的 ground 子类项被剔除（overhand grip→contact/planted 无效）。"""
+    o, v = _ct_onto(), _ct_vocab()
+    syn = mod.build_synonym_index(o['contact_type'])
+    res = mod.denoise_node('contact_type', 'overhand grip', o['contact_type']['overhand grip'],
+                           v['contact_type'], syn_index=syn, subclass_fn=mod.contact_type_subclass)
+    assert 'contact' not in res['confusable_siblings']    # ground 子类
+    assert 'planted' not in res['confusable_siblings']    # ground 子类
+    assert 'neutral grip' in res['confusable_siblings']   # 同为 grip 子类，保留
+    assert 'underhand grip' in res['confusable_siblings'] # 同为 grip 子类，保留
+
+
+def test_grip_to_ground_removed_from_incompatibility():
+    """grip 节点 incompatibility 中的 ground 子类项被剔除（抓握与踩地可共现，非互斥）。"""
+    o, v = _ct_onto(), _ct_vocab()
+    syn = mod.build_synonym_index(o['contact_type'])
+    res = mod.denoise_node('contact_type', 'overhand grip', o['contact_type']['overhand grip'],
+                           v['contact_type'], syn_index=syn, subclass_fn=mod.contact_type_subclass)
+    for ground in ('planted', 'grounded', 'touching'):
+        assert ground not in res['incompatibility'], f'{ground} 应被剔除'
+    assert 'neutral grip' in res['incompatibility']       # 同手两种握法互斥，保留
+
+
+def test_ground_to_grip_removed_both_lists():
+    """ground 节点的 grip 子类项在两列表都被剔除。"""
+    o, v = _ct_onto(), _ct_vocab()
+    syn = mod.build_synonym_index(o['contact_type'])
+    res = mod.denoise_node('contact_type', 'planted on the ground', o['contact_type']['planted on the ground'],
+                           v['contact_type'], syn_index=syn, subclass_fn=mod.contact_type_subclass)
+    assert 'overhand grip' not in res['confusable_siblings']
+    assert 'overhand grip' not in res['incompatibility']
+    assert 'neutral grip' not in res['incompatibility']
+    assert 'suspended' in res['incompatibility']          # ground 内部互斥(踩地↔悬空)，保留
+
+
+def test_subclass_isolation_off_by_default():
+    """不传 subclass_fn 时行为与旧版完全一致（向后兼容，cn 不受影响）。"""
+    o, v = _ct_onto(), _ct_vocab()
+    syn = mod.build_synonym_index(o['contact_type'])
+    res = mod.denoise_node('contact_type', 'overhand grip', o['contact_type']['overhand grip'],
+                           v['contact_type'], syn_index=syn)   # 无 subclass_fn
+    # 未启用隔离 → ground 项仍在（仅受 A/B/C 三类约束）
+    assert 'contact' in res['confusable_siblings']
+    assert 'planted' in res['confusable_siblings']
+
+
+def test_contact_type_subclass_classifier():
+    """contact_type_subclass：grip 词→'grip'，ground 词→'ground'，其他→None。"""
+    f = mod.contact_type_subclass
+    for w in ('overhand grip', 'underhand grip', 'neutral grip', 'pronated grip', 'pinch grip', 'mixed grip'):
+        assert f(w) == 'grip', f'{w} 应判 grip'
+    for w in ('planted on the ground', 'contact', 'touching', 'step on the ground', 'grounded', 'toe touch'):
+        assert f(w) == 'ground', f'{w} 应判 ground'
+
+
+def test_subclass_isolation_scoped_to_contact_type_only():
+    """规则 D 只对 contact_type 启用——_SUBCLASS_FNS 仅映射 contact_type。
+    其他槽（body_position/equipment…）不传 subclass_fn，故 grip/ground 分类器不会作用于它们，
+    即使某些 body_position 词（如 standing）在 contact_type 语境会被判 ground 也无副作用。"""
+    assert set(mod._SUBCLASS_FNS) == {'contact_type'}
+    assert mod._SUBCLASS_FNS['contact_type'] is mod.contact_type_subclass
+    # 模糊词（grip/ground 词族都不命中或都命中）→ None，保守不剔除
+    assert mod.contact_type_subclass('controlled') is None   # 既非握法也非接地
+    assert mod.contact_type_subclass('position') is None

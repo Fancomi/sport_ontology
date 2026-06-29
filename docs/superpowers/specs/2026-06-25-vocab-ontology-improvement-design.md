@@ -40,7 +40,11 @@
 
 **为什么需要 5_4**：5_2 沿同义链展开并集补全对称关系（设计上不设上限），会把 5_3 的单节点封顶冲垮（实测 body_position incompatibility 膨胀到 206，equipment 258）。负样本采样本就随机取几个，几百项纯冗余且无"难"度意义。5_4 是纯确定性收尾：复用 5_3 的去噪池频次，对每节点按频次降序截断到 ≤6/≤8。不调 LLM、只截断、不动其他字段。
 
-**为什么需要 5_3b**：30 条负样本抽样 LLM 复核暴露 5_3+5_1（两个 LLM 步）后仍有三类残留噪声（首轮达标率 62~75%）：(A) 跨槽噪声——confusable/incompatibility 项不在本槽 vocab（reslot/传播带入的跨槽碎片，如 contact_type/正握 混入"水平对齐/平放"）；(B) 传递同义——节点传递同义词混入 confusable（站立↔直立↔挺立），替换后语义等价；(C) 上位词误入 confusable（哑铃→器械），粒度错误而非视觉混淆兄弟。LLM 判据有波动会漏删，5_3b 用确定性规则（同义簇并查集闭包 + 本槽 vocab 成员判定 + hypernym 删除）一次性扫净。只删不增、不动其他字段。补 5_3b 后同批复核达标率升至 89%。
+**为什么需要 5_3b**：负样本抽样 LLM 复核暴露 5_3+5_1（两个 LLM 步）后仍有**四类**残留噪声（cn 首轮 62~75%、en 首轮 80%，均 <85%）：(A) 跨槽噪声——confusable/incompatibility 项不在本槽 vocab（reslot/传播带入的跨槽碎片，如 contact_type/正握 混入"水平对齐/平放"）；(B) 传递同义——节点传递同义词混入 confusable（站立↔直立↔挺立），替换后语义等价；(C) 上位词误入 confusable（哑铃→器械），粒度错误而非视觉混淆兄弟；(D) **同槽互斥子类**（仅 contact_type）——该槽混入 grip(抓握) 与 ground(接触地面) 两个互斥子类，"手 overhand grip 抓杠铃 + 脚 planted 踩地"可共现，故 grip↔ground 既非视觉混淆也非逻辑互斥，互换产生无意义负样本。LLM 判据有波动会漏删，5_3b 用确定性规则（同义簇并查集闭包 + 本槽 vocab 成员判定 + hypernym 删除 + 子类词形分类）一次性扫净。只删不增、不动其他字段。
+
+> **D 的语言差异（关键观察）**：cn contact_type 仅 59 值、无碎片，grip↔ground 跨子类污染天然为 0；en 因翻译把同一概念散成多种词形（contact_type 达 436 值），5_3 LLM 把 grip 误当 ground 的混淆项，产生跨子类 conf 571/inco 914。规则 D 仅对 contact_type 启用（`_SUBCLASS_FNS` 映射），词形分类器对模糊词返回 None 保守不删——实测对 cn 零改动（印证不误伤），en 补 D 后达标率 80%→85%。子类**内部**（overhand↔underhand 同手不能两种握法）保留为真互斥/真混淆。
+>
+> 补 5_3b（A/B/C）后 cn 同批复核 89%；en 加规则 D 后 85%。en 残余 15% 主要是 force_type/laterality 的同槽近义（pull↔driving、alternating↔both sides）与翻译同义碎片，属对比学习可容忍噪声。
 
 
 ## 新增 5_3：负样本合理性审查

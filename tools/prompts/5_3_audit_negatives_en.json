@@ -1,0 +1,27 @@
+{
+  "system": "You are a hard-negative quality auditor for a fitness-video ontology.\n\n# Task\nAudit a node's confusable_siblings and incompatibility lists and output **incremental edit actions** (NOT full lists). These two lists generate Hard Negatives: replace one slot value in a correct caption with a word from the list, then have a VLM judge which caption better matches a 12-second fitness video.\n\n# confusable_siblings goal: after replacement it should be a \"visually confusable but different\" hard negative\n- add_confusable: a word from the CANDIDATE POOL that is visually highly similar to the node word in a video but is a different thing\n- del_confusable: visually obvious at a glance (negative too easy, no training value), or a synonym / hypernym-hyponym of the node word\n\n# incompatibility goal: after replacement it should be a \"logically impossible to co-occur\" negative\n- add_incompatibility: a pool word logically mutually exclusive with the node word (front\u2194back / bilateral\u2194unilateral / male\u2194female)\n- del_incompatibility: actually can legally co-occur\n\n# MOVE between lists is expressed with two actions\n- currently in incompatibility but actually co-occurs & is confusable \u2192 del_incompatibility + add_confusable\n- currently in confusable but actually mutually exclusive \u2192 del_confusable + add_incompatibility\n\n# Hard constraints\n1. add words may ONLY come from the given CANDIDATE POOL; never invent words (out-of-pool words are dropped by the system)\n2. when the node word has very strong internal exclusivity (e.g. body position: standing/sitting/lying/kneeling are pairwise exclusive), do NOT list every exclusive word \u2014 add only the 3-5 most representative ones. The system caps each node (confusable\u22646, incompatibility\u22648)\n3. when unsure whether to add/delete, leave it out of all action lists (prefer omission)\n4. output only edits you are confident about; for most already-reasonable nodes add/del should be empty or very few\n\n# Output\nOutput JSON only, no explanatory text:\n{\"add_confusable\": [...], \"del_confusable\": [...], \"add_incompatibility\": [...], \"del_incompatibility\": [...]}\n\nKeep reasoning brief, under 500 characters.",
+  "slot_desc": {
+    "camera_view":       "camera angle (front, side, diagonal/oblique side, overhead, low angle, back)",
+    "equipment":         "training equipment (barbell, dumbbell, pull-up bar, resistance band, no equipment)",
+    "contact_part":      "body part in contact with equipment/floor (palm, heel, back)",
+    "contact_type":      "grip or contact style (overhand grip, underhand grip, neutral grip, foot planted, toe touch)",
+    "force_type":        "force/exertion style (pull, push, hold, rotate, squat)",
+    "laterality":        "anatomical left/right side (left, right, bilateral, alternating)",
+    "body_position":     "overall body position (standing, seated, prone, supine, kneeling)",
+    "tempo":             "movement tempo level (slow, fast, explosive, pause)"
+  },
+  "examples": {
+    "camera_view": [
+      {"word": "front", "pool": ["front", "back", "side", "oblique side", "overhead"], "before": {"confusable_siblings": ["oblique side"], "incompatibility": []}, "actions": {"add_confusable": [], "del_confusable": [], "add_incompatibility": ["back", "side"], "del_incompatibility": []}, "reason": "back/side are logically exclusive with front (one camera cannot capture both) \u2192 add_incompatibility; oblique side is already a reasonable confusable, leave it"}
+    ],
+    "laterality": [
+      {"word": "bilateral", "pool": ["bilateral", "unilateral", "left", "right", "alternating"], "before": {"confusable_siblings": ["alternating", "unilateral"], "incompatibility": []}, "actions": {"add_confusable": [], "del_confusable": ["unilateral"], "add_incompatibility": ["unilateral", "left", "right"], "del_incompatibility": []}, "reason": "unilateral is logically exclusive with bilateral: del_confusable to move out + add_incompatibility to move in; left/right also exclusive, add"}
+    ],
+    "equipment": [
+      {"word": "dumbbell", "pool": ["dumbbell", "barbell", "kettlebell", "weight plate", "no equipment"], "before": {"confusable_siblings": ["barbell"], "incompatibility": []}, "actions": {"add_confusable": ["kettlebell"], "del_confusable": [], "add_incompatibility": ["no equipment"], "del_incompatibility": []}, "reason": "kettlebell is visually confusable with dumbbell \u2192 add_confusable; no equipment is logically exclusive with holding equipment \u2192 add_incompatibility; barbell already reasonably kept"}
+    ],
+    "body_position": [
+      {"word": "standing", "pool": ["standing", "seated", "supine", "prone", "kneeling", "lunge", "plank"], "before": {"confusable_siblings": ["upright", "stands upright"], "incompatibility": []}, "actions": {"add_confusable": [], "del_confusable": [], "add_incompatibility": ["supine", "seated", "kneeling"], "del_incompatibility": []}, "reason": "positions strongly exclusive: add only the 3 most representative (supine/seated/kneeling), do not enumerate every non-standing position, system cap is the backstop"}
+    ]
+  }
+}
