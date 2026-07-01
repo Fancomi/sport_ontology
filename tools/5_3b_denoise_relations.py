@@ -83,7 +83,7 @@ def build_synonym_index(nodes: dict) -> dict:
 
 def denoise_node(slot: str, word: str, node: dict, slot_vocab: dict,
                  syn_index: dict | None = None,
-                 subclass_fn=None) -> dict:
+                 subclass_fn=None, exercise_vocab: set | None = None) -> dict:
     """对单节点的 confusable_siblings / incompatibility 施加确定性删除。
 
     slot_vocab:  本槽 vocab {word: count}，决定跨槽噪声（不在其中 → 删，规则 A）。
@@ -91,6 +91,9 @@ def denoise_node(slot: str, word: str, node: dict, slot_vocab: dict,
     subclass_fn: 可选 word→子类标签 的函数（如 contact_type_subclass）。给定时启用规则 D——
                  节点词与某关系项分属不同子类（且两者都有明确子类）→ 跨子类，双向剔除。
                  None 时不启用（向后兼容，cn 等无需子类隔离的语言/槽位行为不变）。
+    exercise_vocab: exercise 槽 vocab 词集；给定时启用规则 E——非 exercise 槽的关系项若命中
+                 exercise vocab（如 body_position 的干扰项"俯卧撑"），判为动作名污染，双列删。
+                 动作名命中即删，不因它也在本槽 vocab 而放行（本槽误收的动作名同样是坏干扰项）。
     返回仅含两个清洁列表的 dict；其他字段由调用方写回时保留。
     """
     vocab_words = set(slot_vocab)
@@ -98,6 +101,7 @@ def denoise_node(slot: str, word: str, node: dict, slot_vocab: dict,
     banned_syn  = (syn_cluster | {word} | set(node.get("synonyms", []))) - {None}
     hypernyms   = set(node.get("hypernym", []))
     self_sub    = subclass_fn(word) if subclass_fn else None
+    ex_blacklist = exercise_vocab or set()   # 规则 E：动作名命中即删（不保护本槽）
 
     def _clean(lst, drop_hypernym):
         out, seen = [], set()
@@ -114,6 +118,8 @@ def denoise_node(slot: str, word: str, node: dict, slot_vocab: dict,
                 v_sub = subclass_fn(v)
                 if v_sub is not None and v_sub != self_sub:
                     continue                  # 跨子类（grip↔ground）→ 双向剔除
+            if v in ex_blacklist:             # E exercise 动作名污染（跨槽黑名单）
+                continue
             out.append(v); seen.add(v)
         return out
 
@@ -142,16 +148,18 @@ def main() -> None:
     vocab     = json.loads(vocab_path.read_text("utf-8"))
 
     tot_dc = tot_di = 0
+    exercise_vocab = set(vocab.get("exercise", {}))   # 规则 E 黑名单：动作名不得当他槽干扰项
     for slot in args.slots:
         if slot not in ontology:
             print(f"[跳过] {slot}: 不在 ontology"); continue
         slot_vocab  = vocab.get(slot, {})
         syn_index   = build_synonym_index(ontology[slot])
         subclass_fn = _SUBCLASS_FNS.get(slot)     # 仅 contact_type 启用规则 D
+        ex_vocab    = exercise_vocab if slot != "exercise" else None
         dc = di = 0
         for word, node in ontology[slot].items():
             bc = len(node.get("confusable_siblings", [])); bi = len(node.get("incompatibility", []))
-            res = denoise_node(slot, word, node, slot_vocab, syn_index, subclass_fn)
+            res = denoise_node(slot, word, node, slot_vocab, syn_index, subclass_fn, ex_vocab)
             node["confusable_siblings"] = res["confusable_siblings"]
             node["incompatibility"]     = res["incompatibility"]
             dc += bc - len(res["confusable_siblings"]); di += bi - len(res["incompatibility"])

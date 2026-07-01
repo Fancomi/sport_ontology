@@ -28,6 +28,51 @@ def strip_slots(text: str) -> str:
 
 # ── Ontology 构建 ──────────────────────────────────────────────────────────────
 
+
+def build_distractor_guard(ontology: dict, vocab: dict) -> "callable":
+    """构建挖掘端干扰项防护闸（全槽位统一，与 5_3b 去噪同判据的运行时兜底）。
+
+    返回 guard(slot, correct, cand) -> bool：cand 作为 correct 的干扰项是否合格。
+    四闸（任一命中即不合格）：
+      同义：cand 与 correct 在本槽同义闭包同簇 → 语义等价，非负样本
+      上位：cand 是 correct 的 hypernym → 粒度错误
+      同槽：cand 不在本槽 vocab → 跨槽噪声
+      动作：cand 命中 exercise vocab 且非本槽合法值 → 动作名污染（黑名单）
+    """
+    ex_vocab = set(vocab.get("exercise", {}))
+    per_slot: dict[str, dict] = {}
+    for slot, nodes in ontology.items():
+        vocab_words = set(vocab.get(slot, {}))
+        syn_cluster: dict[str, set] = {}      # word → 同义簇（含自身+synonyms）
+        for name, info in nodes.items():
+            grp = {name} | set(info.get("synonyms") or [])
+            for w in grp:
+                syn_cluster.setdefault(w, set()).update(grp)
+        per_slot[slot] = {
+            "vocab": vocab_words,
+            "syn": syn_cluster,
+            "hyper": {n: set(info.get("hypernym") or []) for n, info in nodes.items()},
+            "ex_black": ex_vocab if slot != "exercise" else set(),
+        }
+
+    def guard(slot: str, correct: str, cand: str) -> bool:
+        p = per_slot.get(slot)
+        if not p:
+            return True
+        if cand not in p["vocab"]:                       # 同槽闸
+            return False
+        if cand in p["syn"].get(correct, set()):          # 同义闸
+            return False
+        if cand in p["hyper"].get(correct, set()):        # 上位闸
+            return False
+        if cand in p["ex_black"]:                          # 动作黑名单闸
+            return False
+        return True
+
+    return guard
+
+
+
 def build_lookup(ontology: dict) -> dict:
     """slot → name → {confusable_siblings, incompatibility}。antonyms 合并入 incompatibility。"""
     lookup = {}

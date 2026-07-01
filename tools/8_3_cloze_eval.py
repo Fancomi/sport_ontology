@@ -40,7 +40,7 @@ from typing import Optional
 from config import DATA_ROOT, LangPaths, augment_name
 from hard_utils import load_hard_all, save_hard_all
 from llm_client import build_vlm_endpoints, call_vlm_raw, frames_to_img_bytes, parse_ports, VLMEndpoint
-from ontology_utils import SLOT_RE, build_lookup
+from ontology_utils import SLOT_RE, build_lookup, build_distractor_guard
 from video_frames import ensure_frames, FPS_DEFAULT
 
 VIEWS         = ("front", "side")
@@ -88,9 +88,11 @@ def build_syn_rev(ontology: dict, slot: str) -> dict[str, str]:
 # ── 干扰项采样 ────────────────────────────────────────────────────────────────
 
 def sample_conf_distractors(lookup: dict, ontology: dict,
-                             slot: str, correct: str, max_n: int) -> list[str]:
+                             slot: str, correct: str, max_n: int,
+                             guard=None) -> list[str]:
     """confusable 模式：从 ontology 抽干扰项，canonical 去重。
     优先级：confusable_siblings → incompatibility → 随机同 slot 节点。
+    guard(slot, correct, cand)->bool 非空时，不合格候选被过滤（同义/上位/跨槽/动作黑名单）。
     """
     syn_rev       = build_syn_rev(ontology, slot)
     correct_canon = syn_rev.get(correct, correct)
@@ -98,6 +100,8 @@ def sample_conf_distractors(lookup: dict, ontology: dict,
     pool: list[str] = []
 
     def try_add(val: str) -> None:
+        if guard and not guard(slot, correct, val):
+            return
         canon = syn_rev.get(val, val)
         if canon not in used_canons and len(pool) < max_n:
             used_canons.add(canon)
@@ -178,10 +182,13 @@ _STRIP_SLOT_RE = re.compile(r"\[\w+:([^\]]+)\]")
 
 
 def build_cloze_conf(text: str, lookup: dict, ontology: dict,
-                     min_choices: int = 2) -> Optional[ClozeQuestion]:
+                     min_choices: int = 2,
+                     keep_prob: dict[str, float] | None = None,
+                     guard=None) -> Optional[ClozeQuestion]:
     """confusable 模式：所有 slot 从 ontology 抽干扰项出题。
     同一 [slot:value] 多次出现 → 共用同一个空格编号。
     干扰项不足的 slot → 跳过（不出题）。
+    keep_prob 非空时按逆频概率决定是否对该 slot 出题（高频抽稀，低频全保留）。
     """
     slots_info: list[SlotQuestion] = []
     cloze_text = text
@@ -194,7 +201,10 @@ def build_cloze_conf(text: str, lookup: dict, ontology: dict,
             cloze_text = cloze_text.replace(f"[{slot}:{value}]", f"({seen_sv[sv]})", 1)
             continue
 
-        distractors = sample_conf_distractors(lookup, ontology, slot, value, N_CHOICES_MAX - 1)
+        if keep_prob and random.random() > keep_prob.get(slot, 1.0):
+            continue   # 逆频均衡：高频 slot 按概率跳过出题（标签最后统一 strip）
+
+        distractors = sample_conf_distractors(lookup, ontology, slot, value, N_CHOICES_MAX - 1, guard)
         if len(distractors) + 1 < min_choices:
             continue   # 干扰不足，不出题（标签留在 cloze_text，最后统一 strip）
 
@@ -419,6 +429,12 @@ def main() -> None:
     parser.add_argument("--no-flush",    action="store_true", dest="no_flush",
                         help="跳过末尾 flush_hard_all（解耦评测/聚合：只追加 eval，由 9_extract 统一聚合）")
     parser.add_argument("--limit",       type=int, default=0, help="限制处理目录数（调试）")
+    parser.add_argument("--no-balance",  action="store_false", dest="balance", default=True,
+                        help="关闭 confusable 出题的逆频均衡（默认开启：高频 slot 按概率抽稀，低频全保留）")
+    parser.add_argument("--no-distractor-guard", action="store_false", dest="guard", default=True,
+                        help="关闭 confusable 干扰项防护闸（默认开启：过滤同义/上位/跨槽/动作黑名单）")
+    parser.add_argument("--balance-cap", type=float, default=8.0, dest="balance_cap",
+                        help="逆频权重上限，防止极端高频 slot 被抽得过稀（默认 8）")
     parser.add_argument("--min-choices", type=int, default=2, dest="min_choices")
     parser.add_argument("--dry-run",     action="store_true", dest="dry_run")
     parser.add_argument("--seed",        type=int,   default=42)
@@ -431,6 +447,11 @@ def main() -> None:
     lp       = LangPaths(args.lang)
     ontology = json.loads(lp.slot_ontology.read_text("utf-8"))
     lookup   = build_lookup(ontology)
+    distractor_guard = None
+    if args.guard and args.mode in ("confusable", "all"):
+        vocab = json.loads(lp.slot_vocab.read_text("utf-8"))
+        distractor_guard = build_distractor_guard(ontology, vocab)
+        print("[guard] 干扰项防护闸已启用（同义/上位/跨槽/动作黑名单）")
 
     # ── 路径 ──────────────────────────────────────────────────────────────────
     out_path      = Path(args.out)      if args.out      else (lp.eval_results_cloze      if args.mode in ("confusable", "all") else None)
@@ -472,6 +493,25 @@ def main() -> None:
         dirs = sorted({f.parent for f in aug_files})[:args.limit]
         aug_files = [f for f in aug_files if f.parent in dirs]
     print(f"待评测文件: {len(aug_files)}")
+
+    # ── 逆频均衡权重（confusable）：预扫各 slot 出现频次，高频抽稀、低频全保留 ──
+    slot_keep_prob: dict[str, float] = {}
+    if args.balance and args.mode in ("confusable", "all"):
+        freq: dict[str, int] = defaultdict(int)
+        for f in aug_files:
+            try:
+                desc = json.loads(f.read_text("utf-8")).get("category_3_slotted_description", "")
+            except Exception:
+                continue
+            for slot, _ in SLOT_RE.findall(desc):
+                freq[slot] += 1
+        if freq:
+            med = sorted(freq.values())[len(freq) // 2]      # 中位频率为基准
+            slot_keep_prob = {s: min(1.0, max(med / n, 1.0 / args.balance_cap))
+                              for s, n in freq.items()}
+            print("[balance] 逆频出题概率（<1 表示抽稀）:")
+            for s in sorted(freq, key=freq.get, reverse=True):
+                print(f"    {s:18} freq={freq[s]:5}  p={slot_keep_prob[s]:.3f}")
 
     # ── resume（--no-resume 时跳过，多轮循环场景）─────────────────────────────
     if args.no_resume:
@@ -529,7 +569,7 @@ def main() -> None:
                 q = preloaded_table[vv]
                 q.video, q.view = rel, view
             elif mode_key == "confusable":
-                q = build_cloze_conf(orig_s, lookup, ontology, args.min_choices)
+                q = build_cloze_conf(orig_s, lookup, ontology, args.min_choices, slot_keep_prob, distractor_guard)
             else:
                 shm = hard_by_vv.get(vv)
                 if not shm:
