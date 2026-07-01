@@ -19,13 +19,13 @@ from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 sys.path.insert(0, str(Path(__file__).parent))
-from llm_client import LLMClient, parse_ports
+from llm_client import LLMClient, parse_ports, build_vlm_endpoints, call_vlm_raw, frames_to_img_bytes
 
 from lib import config
-from lib.vlm_prompts import SYSTEM, PROMPT, PROMPT_TEXT_ONLY
+from lib.vlm_prompts import SYSTEM, PROMPT, PROMPT_TEXT_ONLY, judge_frame, USE_V2
 
-# SYSTEM / PROMPT / PROMPT_TEXT_ONLY 统一维护在 lib/vlm_prompts.py，
-# 供本文件与 2_2_audit_videos / 3_2_audit_splits 共用。
+# 图像分支经 lib.vlm_prompts.judge_frame 统一裁决 (V2 结构化 gate / 二元, 按 domain);
+# text-only reaudit 分支无图, 仍走 LLMClient.chat 单发二元。
 
 _lock = threading.Lock()
 
@@ -91,8 +91,9 @@ def encode_thumb(vid):
     return base64.b64encode(path.read_bytes()).decode()
 
 
-def judge_one(item, client, text_only=False):
-    """调用 VLM/LLM 判断单条。text_only=True 时不需要缩略图"""
+def judge_one(item, client, eps, pick_ep, release_ep, text_only=False):
+    """判断单条。text_only=True 走 LLMClient 文本单发二元 (无图, reaudit 用);
+    否则走 judge_frame (V2 结构化 gate / 二元, 按 domain) 判缩略图。"""
     vid = item["video_id"]
 
     if text_only:
@@ -101,24 +102,25 @@ def judge_one(item, client, text_only=False):
             {"role": "user", "content": PROMPT_TEXT_ONLY.format(
                 title=item.get("title", ""), channel=item.get("channel", ""))},
         ]
-    else:
-        img_b64 = encode_thumb(vid)
-        if not img_b64:
-            return vid, False, "no_thumb"
-        messages = [
-            {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": [
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
-                {"type": "text", "text": PROMPT.format(
-                    title=item.get("title", ""), channel=item.get("channel", ""))},
-            ]},
-        ]
+        try:
+            resp = client.chat(messages, max_tokens=8, temperature=0)
+            return vid, bool(resp and "是" in resp[:5]), resp
+        except Exception as e:
+            return vid, False, f"error:{e}"
+
+    img_b64 = encode_thumb(vid)
+    if not img_b64:
+        return vid, False, "no_thumb"
+    img_b = frames_to_img_bytes([img_b64])
+    i = pick_ep()
     try:
-        resp = client.chat(messages, max_tokens=8, temperature=0)
-        passed = resp and "是" in resp[:5]
-        return vid, passed, resp
+        passed = judge_frame(eps[i], img_b, thumb=True,
+                             title=item.get("title", ""), channel=item.get("channel", ""))
+        return vid, passed, "pass" if passed else "reject"
     except Exception as e:
         return vid, False, f"error:{e}"
+    finally:
+        release_ep(i)
 
 
 def main():
@@ -135,9 +137,28 @@ def main():
     args = parser.parse_args()
 
     ports = parse_ports(args.port)
+    # 文本单发 (reaudit) 用 LLMClient; 图像判定 (judge_frame) 用 raw httpx 端点池
     client = LLMClient(backend="local", host=args.host, port=ports,
                        max_tokens=8, temperature=0, think=args.think)
-    print(f"VLM: {args.host}:{args.port} workers={args.workers}")
+    eps = build_vlm_endpoints(args.host, ports, think=args.think,
+                              max_conn=args.workers + 16)
+    if not eps:
+        sys.exit("无可用 VLM 端点")
+    # least-inflight 端点路由 (线程安全)
+    _inflight = [0] * len(eps)
+    _ep_lock = threading.Lock()
+
+    def pick_ep():
+        with _ep_lock:
+            i = _inflight.index(min(_inflight)); _inflight[i] += 1
+        return i
+
+    def release_ep(i):
+        with _ep_lock:
+            _inflight[i] = max(0, _inflight[i] - 1)
+
+    print(f"VLM: {args.host}:{args.port} workers={args.workers} "
+          f"判定:{'V2 结构化 gate' if USE_V2 else '二元 是/否'}")
 
     # 加载数据
     blacklist = config.load_blacklist()
@@ -206,7 +227,7 @@ def main():
             if submitted >= len(pending):
                 return
             item = pending[submitted]
-            fut = pool.submit(judge_one, item, client, text_only)
+            fut = pool.submit(judge_one, item, client, eps, pick_ep, release_ep, text_only)
             fut.item = item
             in_flight.add(fut)
             submitted += 1

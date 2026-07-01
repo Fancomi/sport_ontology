@@ -8,6 +8,7 @@
 """
 import os
 from dataclasses import dataclass, field
+from typing import Callable, Optional
 
 
 @dataclass(frozen=True)
@@ -34,9 +35,15 @@ class Domain:
     vlm_prompt_text_only: str = ""
     caption_system: str = ""
     caption_prompt: str = ""
-    # --- 切片审核 V2 (3 阶段: 纯客观描述+结构化属性 gate; 空则 3_2 回退二元 vlm_prompt) ---
+    # --- 结构化审核 V2 (1/2/3 阶段统一: 纯客观描述+属性 gate; 空则回退二元 vlm_prompt) ---
+    # audit_v2_prompt 内含 JSON 花括号, 各脚本用 call_vlm_raw 原样发送 (勿 .format)。
+    # audit_gate: attrs(dict) -> bool, 严格门控 (2/3 阶段真实视频帧); 缺字段视为 False (保守拒)。
+    # audit_gate_thumb: 1 阶段缩略图的宽松门控 (缩略图常带海报/花字, 严判 scene_type 会误杀);
+    #   为 None 时缩略图沿用 audit_gate (健身单一口径)。
     audit_v2_system: str = ""
     audit_v2_prompt: str = ""
+    audit_gate: Optional[Callable[[dict], bool]] = None
+    audit_gate_thumb: Optional[Callable[[dict], bool]] = None
 
 
 # ═══════════════════════ 健身 (原样搬运, 行为零变化) ═══════════════════════
@@ -169,6 +176,19 @@ _FITNESS_AUDIT_V2_PROMPT = """请完整描述这张图片的可见内容，并�
 只回答 JSON:
 {"has_person":true,"person_is_subject":true,"is_exercising":true,"scene_type":"real_person","caption":"...","reject_reason":""}"""
 
+
+def _fitness_gate(a: dict) -> bool:
+    """健身 V2 严格门控 (2/3 阶段真实视频帧; 与现网 3_2 全量任务逐字节等价, 勿改口径)。"""
+    return (bool(a.get("has_person")) and bool(a.get("is_exercising"))
+            and a.get("scene_type") == "real_person")
+
+
+def _fitness_gate_thumb(a: dict) -> bool:
+    """健身缩略图宽松门控 (1 阶段): 缩略图常带海报/封面/花字, 严判 scene_type 会误杀。
+    只卡「真人 + 在运动」, 是否纯实拍真人镜头交给 2/3 阶段真实帧。"""
+    return bool(a.get("has_person")) and bool(a.get("is_exercising"))
+
+
 FITNESS = Domain(
     name="fitness",
     local_data_dir="/root/paddlejob/workspace/env_run/penghaotian/datas/videos",
@@ -194,6 +214,8 @@ FITNESS = Domain(
     caption_prompt=_FITNESS_CAPTION_PROMPT,
     audit_v2_system=_FITNESS_AUDIT_V2_SYSTEM,
     audit_v2_prompt=_FITNESS_AUDIT_V2_PROMPT,
+    audit_gate=_fitness_gate,
+    audit_gate_thumb=_fitness_gate_thumb,
 )
 
 # 羽毛球领域包 (定义见 domains_badminton, 拆分文件避免本模块过长)

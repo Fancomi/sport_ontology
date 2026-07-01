@@ -29,7 +29,7 @@ from representative_frame import representative_frame_from_video
 from lib import config
 from lib import duration_filter
 from llm_client import build_vlm_endpoints, call_vlm_raw, frames_to_img_bytes, parse_ports
-from lib.vlm_prompts import SYSTEM, PROMPT
+from lib.vlm_prompts import judge_frame
 
 _lock = threading.Lock()
 
@@ -49,19 +49,19 @@ def extract_median_frame(video_path: Path, max_side: int = 480) -> str | None:
 
 
 def judge_video(video_path: Path, item: dict, eps, pick_ep, release_ep) -> tuple[bool, str]:
-    """抽中位帧 + VLM 判断，返回 (passed, reason)。走共享 call_vlm_raw(raw httpx)。"""
+    """抽中位帧 + VLM 判断，返回 (passed, reason)。走共享 judge_frame
+    (V2 结构化 gate; domain 未配 V2 则回退二元'是/否')。"""
     if duration_filter.is_too_long(video_path):
         return False, "too_long"
     img_b64 = extract_median_frame(video_path)
     if not img_b64:
         return False, "extract_failed"
     img_b = frames_to_img_bytes([img_b64])
-    prompt = PROMPT.format(title=item.get("title", ""), channel=item.get("channel", ""))
     i = pick_ep()
     try:
-        resp = call_vlm_raw(eps[i], img_b, prompt, system=SYSTEM, max_tokens=8)
-        passed = bool(resp and "是" in resp[:5])
-        return passed, resp or "empty"
+        passed = judge_frame(eps[i], img_b,
+                             title=item.get("title", ""), channel=item.get("channel", ""))
+        return passed, "pass" if passed else "reject"
     except Exception as e:
         return False, f"error:{e}"
     finally:

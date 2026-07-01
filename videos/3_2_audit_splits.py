@@ -27,10 +27,8 @@ import cv2
 from llm_client import build_vlm_endpoints, call_vlm_raw, frames_to_img_bytes, parse_ports
 from representative_frame import representative_frame_from_video
 from lib import config
-from lib.vlm_prompts import SYSTEM, PROMPT
+from lib.vlm_prompts import judge_frame, USE_V2
 from lib import duration_filter
-# V2 结构化审核纯函数 (prompt 由 domain 配置提供; 见 audit_one)
-from audit_stages import parse_attrs, gate_decision
 
 # ═══════════════════════════ 配置 ═══════════════════════════
 
@@ -49,10 +47,8 @@ AUDIT_DELETED  = DELIV / "3_audit_deleted.txt"    # 被真删切片 (审计凭�
 AUDIT_KEPT     = DELIV / "3_audit_kept.txt"       # 保留切片 (审计凭证)
 CANONICAL      = DELIV / "3_canonical_segments.list"   # 唯一权威名单 = 远端 ∩ kept
 
-# 切片审核策略: domain 配了 audit_v2_prompt 则走 V2 结构化 gate, 否则回退旧二元
-AUDIT_V2_SYSTEM = config.DOMAIN.audit_v2_system
-AUDIT_V2_PROMPT = config.DOMAIN.audit_v2_prompt
-USE_V2 = bool(AUDIT_V2_PROMPT)
+# 审核策略 (V2 结构化 gate / 二元) 由 lib.vlm_prompts.judge_frame 按 domain 统一裁决;
+# USE_V2 仅供启动日志展示 (见 run/print)。
 
 
 # ═══════════════════════════ 远端 ═══════════════════════════
@@ -130,25 +126,9 @@ def pull_batch(files: list[str], shm: str, workers=16) -> list[str]:
     return [f for f in os.listdir(shm) if f.endswith('.mp4')]
 
 
-def _judge_v2(img_b, ep) -> bool:
-    """V2 结构化审核: 客观描述+属性 JSON -> gate_decision。异常保守保留(True)。
-    prompt/system 来自 domain 配置。失败重试 5 次(退避)。"""
-    for k in range(5):
-        try:
-            raw = call_vlm_raw(ep, img_b, AUDIT_V2_PROMPT, system=AUDIT_V2_SYSTEM, max_tokens=512)
-            attrs = parse_attrs(raw)
-            if attrs is not None:
-                return gate_decision(attrs, "V2")
-        except Exception:
-            pass
-        if k < 4:
-            time.sleep(1.5 ** k)
-    return True  # 连续失败/解析不出 -> 保守保留 (与旧逻辑一致)
-
-
 def audit_one(path: str, eps, pick_ep, release_ep) -> bool:
-    """抽中位帧 → VLM 判断，返回是否通过。走共享 call_vlm_raw(raw httpx)。
-    domain 配了 V2 则走结构化 gate, 否则旧二元'是/否'。"""
+    """抽中位帧 → VLM 判断，返回是否通过。走共享 judge_frame (V2 结构化 gate,
+    domain 未配 V2 则回退二元'是/否')。"""
     if duration_filter.is_too_long(path):
         return False   # 超长切片直接判否 -> 调用方 remote_delete
     if duration_filter.is_too_short(path):
@@ -160,11 +140,7 @@ def audit_one(path: str, eps, pick_ep, release_ep) -> bool:
     img_b = frames_to_img_bytes([base64.b64encode(buf).decode()])
     i = pick_ep()
     try:
-        if USE_V2:
-            return _judge_v2(img_b, eps[i])
-        resp = call_vlm_raw(eps[i], img_b, PROMPT.format(title="", channel=""),
-                            system=SYSTEM, max_tokens=8)
-        return bool(resp and "是" in resp[:5])
+        return judge_frame(eps[i], img_b)
     except Exception:
         return True  # VLM 异常保守保留
     finally:
