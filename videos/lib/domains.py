@@ -34,6 +34,9 @@ class Domain:
     vlm_prompt_text_only: str = ""
     caption_system: str = ""
     caption_prompt: str = ""
+    # --- 切片审核 V2 (3 阶段: 纯客观描述+结构化属性 gate; 空则 3_2 回退二元 vlm_prompt) ---
+    audit_v2_system: str = ""
+    audit_v2_prompt: str = ""
 
 
 # ═══════════════════════ 健身 (原样搬运, 行为零变化) ═══════════════════════
@@ -139,12 +142,32 @@ _FITNESS_VLM_PROMPT_TEXT_ONLY = """\
 只回答一个字: 是 或 否"""
 
 _FITNESS_CAPTION_SYSTEM = "你是健身训练视频标注专家，擅长用精炼中文描述训练画面。"
-
 _FITNESS_CAPTION_PROMPT = """\
 以下是同一健身/体能训练片段中连续若干秒、每秒1帧、按时间先后排列的画面。
 综合这几帧描述这段训练动作，需包含(若可见):
 动作名称、使用器械、主要发力/接触部位、身体姿态、拍摄视角、动作趋势。
 40字以内，只输出一句中文描述。"""
+
+# 切片审核 V2 (纯客观描述+结构化属性; 三批实测召回30/31最高、误杀最低。3_2 用 gate_decision 门控)
+_FITNESS_AUDIT_V2_SYSTEM = "你是图像内容分析助手，只客观描述与判断你所看到的画面，不做任何超出画面的推测。"
+
+_FITNESS_AUDIT_V2_PROMPT = """请完整描述这张图片的可见内容，并如实抽取属性。
+
+要求:
+- caption 用中文直接描述可见人物、姿态、物体、场景、画面性质 (如「这是一张文字幻灯片」「这是风景照」);
+- 只描述你真正看到的，不要猜测画面外信息;
+- 如果画面里没有人，如实填 has_person=false。
+
+属性字段:
+- has_person: 画面里是否有真实人物 (真人, 非卡通/示意图);
+- person_is_subject: 人物是否为画面主体 (而非背景里很小的人);
+- is_exercising: 人物是否在进行身体运动/锻炼/训练动作 (拉伸/跑跳/举重/球类/舞蹈等任意身体活动都算);
+- scene_type: real_person / text_slide / animation / landscape / other;
+- caption: 客观描述画面可见内容;
+- reject_reason: 若判定不通过, 简述原因; 通过则空字符串。
+
+只回答 JSON:
+{"has_person":true,"person_is_subject":true,"is_exercising":true,"scene_type":"real_person","caption":"...","reject_reason":""}"""
 
 FITNESS = Domain(
     name="fitness",
@@ -169,6 +192,8 @@ FITNESS = Domain(
     vlm_prompt_text_only=_FITNESS_VLM_PROMPT_TEXT_ONLY,
     caption_system=_FITNESS_CAPTION_SYSTEM,
     caption_prompt=_FITNESS_CAPTION_PROMPT,
+    audit_v2_system=_FITNESS_AUDIT_V2_SYSTEM,
+    audit_v2_prompt=_FITNESS_AUDIT_V2_PROMPT,
 )
 
 # 羽毛球领域包 (定义见 domains_badminton, 拆分文件避免本模块过长)
