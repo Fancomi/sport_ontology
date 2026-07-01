@@ -1,12 +1,15 @@
-# videos/data/ 数据字典
+# videos/data/fitness/ 数据字典
 
-`videos/` 流水线（YouTube 采集 → 切割 → 审核 → caption）的全部数据/进度/名单文件。
-`videos/` 目录本身只放编号脚本与共享 `lib/`；所有数据收进本 `data/`，按角色分四个子目录、
-文件名带阶段号前缀（`1_`采集 / `2_`下载审核 / `3_`切割审核 / `4_`caption），一眼可辨归属与依赖。
+`videos/` 流水线（YouTube 采集 → 切割 → 审核 → caption）**健身领域**的全部数据/进度/名单文件。
+`videos/` 目录本身只放编号脚本与共享 `lib/`；数据按领域收进 `data/<domain>/`（健身=`fitness`，
+羽毛球=`badminton`），再按角色分四个子目录、文件名带阶段号前缀
+（`1_`采集 / `2_`下载审核 / `3_`切割审核 / `4_`caption），一眼可辨归属与依赖。
+领域由 `DOMAIN` 环境变量选择（缺省 `fitness`），差异集中在 `lib/domains.py`。
 
-> ⚠️ 注意两套数据根：本 `data/` 是 **git 跟踪的工作区**（小文本：名单/进度）。
+> ⚠️ 注意两套数据根：本 `data/fitness/` 是 **git 跟踪的工作区**（小文本：名单/进度）。
 > 真正的大数据（视频 mp4、抽帧、`meta.jsonl`、`filtered.jsonl`、`blacklist.txt`、
-> `captions/<shard>/*.json`）在工程外大盘 `…/penghaotian/datas/videos/`，**不在本目录**。
+> `captions/<shard>/*.json`）在工程外大盘 `…/penghaotian/datas/videos/`（羽毛球在
+> `…/datas/badminton_videos/`），**不在本目录**。
 
 ## 命名约定
 

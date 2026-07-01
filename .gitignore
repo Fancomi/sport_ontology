@@ -22,10 +22,10 @@ books/data/
 books/logs
 tools/9_1_progress.json
 
-# videos 流水线运行态 (可重生; 权威成果在 data/deliverables/ 仍跟踪)
-videos/data/pipeline_state/
-videos/data/logs/
-videos/data/downloads/
+# videos 流水线运行态 (可重生; 权威成果在 data/<domain>/deliverables/ 仍跟踪)
+videos/data/*/pipeline_state/
+videos/data/*/logs/
+videos/data/*/downloads/
 
 # Distribution / packaging
 .Python

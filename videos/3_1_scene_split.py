@@ -32,9 +32,9 @@ from lib import duration_filter
 
 # ═══════════════════════════ 配置 ═══════════════════════════
 
-REMOTE = "ral@10.109.83.30"
-REMOTE_SRC = "/root/back_2/penghaotian/datas/yt-dlp-downloads/videos"
-REMOTE_DST = "/root/back_2/penghaotian/datas/yt-dlp-downloads/videos_split"
+REMOTE = config.DOMAIN.remote_host
+REMOTE_SRC = config.DOMAIN.remote_videos
+REMOTE_DST = config.DOMAIN.remote_videos + "_split"
 
 SSH_OPTS = (
     "-o StrictHostKeyChecking=no "
@@ -44,9 +44,9 @@ SSH_OPTS = (
     "-c aes128-gcm@openssh.com"
 )
 
-DATA = Path(__file__).parent / "data"
-PROGRESS_FILE = DATA / "pipeline_state" / "3_scene_split_progress.txt"
-REPLACE_PROGRESS = DATA / "pipeline_state" / "3_replace_progress.txt"
+DATA = config.DATA_ROOT   # 按领域分隔的 data/<domain>/
+PROGRESS_FILE = config.STATE_DIR / "3_scene_split_progress.txt"
+REPLACE_PROGRESS = config.STATE_DIR / "3_replace_progress.txt"
 SCENE_THRESHOLD = 0.3
 MIN_SEGMENT_SEC = 0.5
 
@@ -493,9 +493,8 @@ def replace_one(stem: str, survivors: list, n_original: int, dry_run: bool) -> s
 
 def run_replace(args):
     """按原片名重切+替换远端 (不跑全量 pipeline)。"""
-    here = Path(__file__).parent
-    nmap = n_original_map(str(here / "data" / "pipeline_state" / "3_split_queue.txt"))
-    smap = survivors_map(str(here / "data" / "deliverables" / "3_canonical_segments.list"))
+    nmap = n_original_map(str(config.STATE_DIR / "3_split_queue.txt"))
+    smap = survivors_map(str(config.DELIVERABLES_DIR / "3_canonical_segments.list"))
     done = config.read_lines(REPLACE_PROGRESS)
 
     stems = []

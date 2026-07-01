@@ -1,4 +1,4 @@
-"""VLM 缩略图筛选 — 精确区分健身训练 vs 其他运动内容
+"""VLM 缩略图筛选 — 按当前 DOMAIN 的判定标准区分目标内容 vs 其他内容
 
 用法:
   source ../vllm_deploy/detect_ports.sh

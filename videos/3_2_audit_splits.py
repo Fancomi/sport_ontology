@@ -25,20 +25,19 @@ sys.path.insert(0, str(Path(__file__).parent))
 import cv2
 from llm_client import build_vlm_endpoints, call_vlm_raw, frames_to_img_bytes, parse_ports
 from representative_frame import representative_frame_from_video
+from lib import config
 from lib.vlm_prompts import SYSTEM, PROMPT
 from lib import duration_filter
 
 # ═══════════════════════════ 配置 ═══════════════════════════
 
-REMOTE     = "ral@10.109.83.30"
-REMOTE_DIR = "/root/back_2/penghaotian/datas/yt-dlp-downloads/videos_split"
+REMOTE     = config.DOMAIN.remote_host
+REMOTE_DIR = config.DOMAIN.remote_videos + "_split"
 SSH_OPTS   = ("-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
               "-o Compression=no -o ConnectTimeout=10 -c aes128-gcm@openssh.com")
 SHM_BASE       = "/dev/shm/audit_splits"
-HERE           = Path(__file__).parent
-DATA           = HERE / "data"
-STATE          = DATA / "pipeline_state"
-DELIV          = DATA / "deliverables"
+STATE          = config.STATE_DIR
+DELIV          = config.DELIVERABLES_DIR
 SPLIT_QUEUE    = STATE / "3_split_queue.txt"
 SPLIT_PROGRESS = STATE / "3_scene_split_progress.txt"
 PROGRESS       = STATE / "3_audit_splits_progress.txt"  # 旧 queue 模式进度 (保留兼容)

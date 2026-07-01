@@ -1,0 +1,118 @@
+# === 羽毛球比赛关键词库 (面向「固定机位真人比赛」召回) ===
+# 格式: 每行一个搜索词; 采集侧会叠加 search_suffixes/diverse_modifiers 扩展。
+# 目标: 业余/专业, 比赛/训练对打; 讲解/教学类由 title_blacklist + VLM 过滤。
+
+# === 通用比赛词 (中英) ===
+badminton match
+badminton full match
+badminton final
+badminton game
+badminton rally
+badminton point
+badminton court
+badminton live
+羽毛球比赛
+羽毛球对打
+羽毛球单打
+羽毛球双打
+羽毛球决赛
+羽毛球全场
+羽毛球现场
+
+# === 专业赛事 / BWF 体系 ===
+BWF World Tour
+BWF World Championships
+BWF Super 1000
+BWF Super 750
+BWF Super 500
+BWF Super 300
+All England Open badminton
+Indonesia Open badminton
+Malaysia Open badminton
+China Open badminton
+Denmark Open badminton
+Japan Open badminton
+Singapore Open badminton
+India Open badminton
+Thailand Open badminton
+Korea Open badminton
+French Open badminton
+Hong Kong Open badminton
+Sudirman Cup
+Thomas Cup
+Uber Cup
+Asian Games badminton
+Olympic badminton
+World Championships badminton final
+Super Series badminton
+
+# === 单双打分项 ===
+badminton men's singles
+badminton women's singles
+badminton men's doubles
+badminton women's doubles
+badminton mixed doubles
+男单 羽毛球
+女单 羽毛球
+男双 羽毛球
+女双 羽毛球
+混双 羽毛球
+
+# === 明星选手 (专业固定机位比赛主力来源) ===
+Lin Dan match
+Lee Chong Wei match
+Kento Momota match
+Viktor Axelsen match
+Chen Long match
+Anthony Ginting match
+Jonatan Christie match
+Loh Kean Yew match
+Kunlavut Vitidsarn match
+Lakshya Sen match
+Shi Yuqi match
+Li Shifeng match
+Tai Tzu Ying match
+Chen Yufei match
+Akane Yamaguchi match
+An Se Young match
+Carolina Marin match
+Ratchanok Intanon match
+P.V. Sindhu match
+He Bingjiao match
+Marcus Gideon Kevin Sanjaya
+Hendra Setiawan Mohammad Ahsan
+林丹 比赛
+李宗伟 比赛
+谌龙 比赛
+桃田贤斗 比赛
+安洗莹 比赛
+戴资颖 比赛
+陈雨菲 比赛
+
+# === 业余 / 民间 / 训练对打 ===
+amateur badminton match
+club badminton match
+local badminton tournament
+badminton league match
+recreational badminton game
+badminton practice match
+badminton sparring
+badminton doubles game amateur
+羽毛球 业余比赛
+羽毛球 民间高手
+羽毛球 野球
+羽毛球 约球 对打
+羽毛球 俱乐部比赛
+羽毛球 训练赛
+羽毛球 多球训练 对打
+
+# === 多语言 (扩大召回) ===
+バドミントン 試合
+バドミントン 決勝
+배드민턴 경기
+배드민턴 결승
+bulu tangkis pertandingan
+badminton pertandingan penuh
+cầu lông trận đấu
+partido de bádminton
+badminton match completo

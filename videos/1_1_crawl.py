@@ -35,27 +35,10 @@ SP_PARAMS = [
     "",                    # 默认
 ]
 
-# === 搜索修饰词 ===
-SEARCH_SUFFIXES = [
-    "", "tutorial", "form", "short", "quick", "at home",
-    "beginner", "no equipment", "demo", "challenge",
-    "workout", "exercise", "routine", "training",
-]
-
-DIVERSE_MODIFIERS = [
-    "short", "tutorial", "for beginners", "at home", "no equipment",
-    "advanced", "routine", "challenge", "tips", "proper form",
-    "quick", "easy", "intense", "simple", "best",
-    "full body", "at gym", "home", "outdoor",
-]
-
-PLAYLIST_QUERIES = [
-    "workout playlist", "fitness routine playlist", "yoga playlist",
-    "HIIT workout series", "beginner workout playlist", "calisthenics compilation",
-    "strength training playlist", "fat burning playlist",
-    "健身合集", "运动教程合集", "筋トレ プレイリスト", "홈트 플레이리스트",
-    "rutina ejercicios playlist", "treino completo playlist",
-]
+# === 搜索修饰词 (领域相关, 取自 config.DOMAIN) ===
+SEARCH_SUFFIXES = config.DOMAIN.search_suffixes
+DIVERSE_MODIFIERS = config.DOMAIN.diverse_modifiers
+PLAYLIST_QUERIES = config.DOMAIN.playlist_queries
 
 # Kinetics 数据集 URL
 KINETICS_URLS = {
@@ -347,24 +330,15 @@ def _download_file(url, path):
     config.download_with_proxy(url, path, desc=path.stem)
 
 
-# Kinetics 健身相关标签白名单 (手动筛选)
-KINETICS_FITNESS_LABELS = {
-    "bench pressing", "deadlifting", "squat", "lunge", "pull ups", "push up",
-    "situp", "yoga", "stretching arm", "stretching leg", "snatch weight lifting",
-    "clean and jerk", "punching bag", "exercising arm", "exercising with an exercise ball",
-    "rope pushdown", "battle rope training", "kettlebell", "jumping jacks",
-    "burpees", "mountain climber (exercise)", "planking", "wall pushups",
-    "front raises", "side kick", "high kick", "roundhouse kick",
-    "punching person (boxing)", "headbutting", "wrestling", "tai chi",
-    "krumping", "swinging on something", "climbing a rope", "climbing ladder",
-    "pull ups", "chin ups", "muscle up", "handstand pushup", "plank",
-    "tricep dips", "box jumps", "jumping jacks", "skipping rope",
-    "using mechanical tools",
-}
+# Kinetics 相关标签白名单 (领域相关, 取自 config.DOMAIN; 空集 = 跳过该源)
+KINETICS_FITNESS_LABELS = config.DOMAIN.kinetics_labels
 
 
 def run_datasets():
-    """下载 Kinetics CSV，仅保留健身相关标签"""
+    """下载 Kinetics CSV，仅保留领域相关标签 (标签白名单为空则跳过)"""
+    if not KINETICS_FITNESS_LABELS:
+        logger.info("数据集: 当前领域无 Kinetics 标签白名单, 跳过")
+        return
     config.init_dirs()
     blacklist = config.load_blacklist()
     all_ids = set()
@@ -393,7 +367,7 @@ def run_datasets():
                   "source": "kinetics"} for vid, label in all_ids if vid not in existing]
     if new_items:
         config.append_jsonl(config.DATASET_IDS, new_items)
-    logger.info(f"数据集: 健身标签匹配 {len(all_ids)} | 新增 {len(new_items)}")
+    logger.info(f"数据集: 标签白名单匹配 {len(all_ids)} | 新增 {len(new_items)}")
 
 
 # ==================== 入口 ====================

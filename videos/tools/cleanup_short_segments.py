@@ -28,15 +28,17 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 VIDEOS = HERE.parent
-DATA = VIDEOS / "data"
-STATE = DATA / "pipeline_state"
-DELIV = DATA / "deliverables"
+sys.path.insert(0, str(VIDEOS))
+from lib import config
 
-REMOTE = "ral@10.109.83.30"
-REMOTE_DIR = "/root/back_2/penghaotian/datas/yt-dlp-downloads/videos_split"
+STATE = config.STATE_DIR
+DELIV = config.DELIVERABLES_DIR
+
+REMOTE = config.DOMAIN.remote_host
+REMOTE_DIR = config.DOMAIN.remote_videos + "_split"
 SSH_OPTS = ("-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
             "-o Compression=no -o ConnectTimeout=10 -c aes128-gcm@openssh.com")
-CAPTIONS_ROOT = "/root/paddlejob/workspace/env_run/penghaotian/datas/videos/captions"
+CAPTIONS_ROOT = str(config.DATA_DIR / "captions")
 MIN_DURATION = 1.0
 
 

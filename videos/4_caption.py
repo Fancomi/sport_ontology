@@ -32,30 +32,26 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 sys.path.insert(0, str(Path(__file__).parent))
 import cv2
 from llm_client import parse_ports, build_vlm_endpoints, frames_to_img_bytes, call_vlm_raw
+from lib import config
 
 # ═══════════════════════════ 配置 ═══════════════════════════
-REMOTE     = "ral@10.109.83.30"
-REMOTE_DIR = "/root/back_2/penghaotian/datas/yt-dlp-downloads/videos_split"
+REMOTE     = config.DOMAIN.remote_host
+REMOTE_DIR = config.DOMAIN.remote_videos + "_split"
 SSH_OPTS   = ("-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
               "-o Compression=no -o ConnectTimeout=10 -c aes128-gcm@openssh.com")
 SHM_BASE   = "/dev/shm/caption_pipe"
 
-CAP_DIR     = Path("/root/paddlejob/workspace/env_run/penghaotian/datas/videos/captions")
-DATA        = Path(__file__).parent / "data"
-PROGRESS    = DATA / "pipeline_state" / "4_caption_progress.txt"
-CANONICAL   = DATA / "deliverables" / "3_canonical_segments.list"   # 唯一权威名单 = 远端∩kept
+CAP_DIR     = config.DATA_DIR / "captions"
+PROGRESS    = config.STATE_DIR / "4_caption_progress.txt"
+CANONICAL   = config.DELIVERABLES_DIR / "3_canonical_segments.list"   # 唯一权威名单 = 远端∩kept
 
 SAMPLE_FPS = 1      # 每秒抽 1 帧
 WINDOW_SEC = 3      # 每 3 秒一个 caption 窗口
 MAX_FRAMES = 120    # 单切片抽帧上限(防超长)
 MAX_SIDE   = 480
 
-CAPTION_SYSTEM = "你是健身训练视频标注专家，擅长用精炼中文描述训练画面。"
-CAPTION_PROMPT = """\
-以下是同一健身/体能训练片段中连续若干秒、每秒1帧、按时间先后排列的画面。
-综合这几帧描述这段训练动作，需包含(若可见):
-动作名称、使用器械、主要发力/接触部位、身体姿态、拍摄视角、动作趋势。
-40字以内，只输出一句中文描述。"""
+CAPTION_SYSTEM = config.DOMAIN.caption_system
+CAPTION_PROMPT = config.DOMAIN.caption_prompt
 
 # ═══════════════════════════ 远端/拉取 ═══════════════════════════
 
@@ -83,7 +79,7 @@ def pull_batch(files, shm, workers=24):
     return [f for f in os.listdir(shm) if f.endswith(".mp4")]
 
 
-MISSING_LOG = Path(__file__).parent / "data" / "pipeline_state" / "4_caption_missing.txt"
+MISSING_LOG = config.STATE_DIR / "4_caption_missing.txt"
 
 
 # ═══════════════════════════ 抽帧 ═══════════════════════════

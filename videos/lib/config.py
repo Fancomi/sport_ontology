@@ -1,4 +1,12 @@
-"""配置与公共工具"""
+"""配置与公共工具
+
+领域差异集中在 lib/domains.py: 启动时按 DOMAIN 环境变量 (缺省 fitness) 载入
+一个 Domain, 把其中的路径/关键词/时长/prompt 注入本模块的模块级常量。各阶段
+脚本经 `from lib import config` 消费这些常量, 调用方式与领域无关、无需改动。
+
+数据目录按领域分隔到 data/<domain>/ 子树 (seeds/deliverables/pipeline_state),
+本地大盘 DATA_DIR 亦按领域取自 Domain, 从而缓存/进度/成果彻底隔离。
+"""
 import os
 import sys
 import json
@@ -7,6 +15,10 @@ import time
 import hashlib
 import threading
 from pathlib import Path
+
+from lib.domains import current as _current_domain
+
+DOMAIN = _current_domain()   # 本进程绑定的领域配置
 
 # === 代理池 (统一管理，一二阶段共用) ===
 PROXY_POOL = [
@@ -28,7 +40,7 @@ DOWNLOAD_POOL = PROXY_POOL + HTTP_ONLY_PROXIES
 # === 路径 ===
 # config.py 位于 videos/lib/ 下，BASE 指向其上层的 videos/ 目录
 BASE = Path(__file__).resolve().parent.parent
-DATA_ROOT = BASE / "data"                       # videos/ 侧所有数据/进度的父目录
+DATA_ROOT = BASE / "data" / DOMAIN.name         # 按领域分隔: data/<domain>/
 SEEDS_DIR = DATA_ROOT / "seeds"                 # 手写/外部种子 (入库)
 DELIVERABLES_DIR = DATA_ROOT / "deliverables"   # 权威成果 (入库, 跨轮复用)
 STATE_DIR = DATA_ROOT / "pipeline_state"        # 过程账 (gitignore, 可重生)
@@ -40,8 +52,8 @@ KEYWORDS_FILE = SEEDS_DIR / "keywords.txt"
 CHANNELS_SEED = SEEDS_DIR / "channels_seed.txt"
 COOKIES_ORIGIN = Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer/cookies_Cocoonconcoction070_origin.txt")
 
-# 数据目录 (阶段间共享, 工程外大盘)
-DATA_DIR = Path("/root/paddlejob/workspace/env_run/penghaotian/datas/videos")
+# 数据目录 (阶段间共享, 工程外大盘; 按领域隔离)
+DATA_DIR = Path(DOMAIN.local_data_dir)
 
 # 一阶段中间产物 (爬虫 jsonl, 归 pipeline_state)
 SEARCH_RESULTS = RESULTS_DIR / "search_results.jsonl"
@@ -77,19 +89,11 @@ ENRICH_WORKERS = 300
 MAX_PER_CHANNEL_CRAWL = 200
 MAX_PER_CHANNEL_DIVERSE = 15
 
-# === 过滤参数 ===
-MAX_DURATION = 600
-MIN_DURATION = 10
+# === 过滤参数 (领域相关, 取自 domains) ===
+MAX_DURATION = DOMAIN.clean_max_duration
+MIN_DURATION = DOMAIN.clean_min_duration
 MIN_VIEWS = 50
-TITLE_BLACKLIST = [
-    "asmr", "mukbang", "unboxing", "reaction", "prank", "vlog",
-    "gaming", "gameplay", "music video", "official mv", "trailer",
-    "podcast", "interview", "news", "politics", "cooking recipe",
-    "official video", "lyric video", "lyrics", "full album",
-    "live concert", "behind the scenes", "meme", "fails",
-    "football match", "soccer match", "basketball game", "tennis match",
-    "badminton match", "volleyball game", "cricket match",
-]
+TITLE_BLACKLIST = DOMAIN.title_blacklist
 
 # === yt-dlp 基础选项 ===
 class _YDLQuietLogger:

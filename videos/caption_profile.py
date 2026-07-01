@@ -15,12 +15,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
+sys.path.insert(0, str(Path(__file__).parent))
 import cv2, numpy as np
 from llm_client import LLMClient, build_vlm_endpoints, frames_to_img_bytes, parse_ports
+from lib import config
 
-CAPTION_SYSTEM = "你是健身训练视频标注专家，擅长用精炼中文描述训练画面。"
-PROMPT = ("以下是同一健身/体能训练片段中连续若干秒、每秒1帧、按时间先后排列的画面。"
-          "综合这几帧描述这段训练动作。40字以内，只输出一句中文描述。")
+CAPTION_SYSTEM = config.DOMAIN.caption_system
+PROMPT = config.DOMAIN.caption_prompt
 
 
 def gen_window(n_frames=3, w=480, h=270):

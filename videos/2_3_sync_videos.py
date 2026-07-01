@@ -24,9 +24,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from lib import config
 
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
-DEFAULT_REMOTE = "ral@10.109.83.30"
-DEFAULT_REMOTE_DIR = "/root/back_2/penghaotian/datas/yt-dlp-downloads/videos"
-DEFAULT_STATE_DIR = "/root/back_2/penghaotian/datas/yt-dlp-downloads/.video_rsync_state"
+DEFAULT_REMOTE = config.DOMAIN.remote_host
+DEFAULT_REMOTE_DIR = config.DOMAIN.remote_videos
+DEFAULT_STATE_DIR = config.DOMAIN.remote_videos + "_rsync_state"
 DEFAULT_CONTROL_PATH = "/tmp/video_rsync_%r@%h:%p"
 DEFAULT_LOCAL_PROGRESS = config.DATA_DIR / "rsync_sent_progress.txt"
 DEFAULT_AUDIT_PROGRESS = config.DATA_DIR / "video_audit_progress.txt"

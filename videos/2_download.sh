@@ -5,7 +5,7 @@
 #
 # 前置: bash install_deno.sh (首次)
 # 用法:
-#   bash 2_download.sh [总分片数] [本进程编号]
+#   DOMAIN=<fitness|badminton> bash 2_download.sh [总分片数] [本进程编号]
 #   bash 2_download.sh 3 0    # 三机各一进程
 #   bash 2_download.sh        # 单机
 #
@@ -17,7 +17,8 @@ RANK=${2:-0}
 source /root/paddlejob/workspace/env_run/penghaotian/envs/dino/bin/activate
 unset http_proxy https_proxy
 
-echo "══════ 阶段二: 视频下载 (shard ${RANK}/${TOTAL}) ══════"
+export DOMAIN=${DOMAIN:-fitness}
+echo "══════ 阶段二: 视频下载 (domain=$DOMAIN shard ${RANK}/${TOTAL}) ══════"
 
 # YouTube 2026 signature challenge 需要 Deno
 if ! command -v deno >/dev/null 2>&1; then
@@ -25,13 +26,14 @@ if ! command -v deno >/dev/null 2>&1; then
     bash install_deno.sh
 fi
 
-# 首次启动: 同步黑名单 + 从主节点拉取最新 filtered.jsonl (非主节点时)
+# 首次启动: 同步黑名单 + (多机模式下) 从首个 peer 拉取最新 filtered.jsonl
 python3 2_1_download.py --cleanup
+FILTERED_JSONL=$(python3 -c "from lib import config; print(config.FILTERED)")
+FIRST_PEER=$(python3 -c "from lib import config; p=config.DOMAIN.peer_urls; print(p[0] if p else '')")
 LOCAL_IP=$(hostname -I | awk '{print $1}')
-if [[ "$LOCAL_IP" != "10.52.101.140" ]]; then
-    curl -sf --connect-timeout 5 -o /root/paddlejob/workspace/env_run/penghaotian/datas/videos/filtered.jsonl \
-        http://10.52.101.140:8555/datas/videos/filtered.jsonl && \
-        echo "  filtered.jsonl 已同步: $(wc -l < /root/paddlejob/workspace/env_run/penghaotian/datas/videos/filtered.jsonl) 条"
+if [[ -n "$FIRST_PEER" && "$FIRST_PEER" != *"$LOCAL_IP"* ]]; then
+    curl -sf --connect-timeout 5 -o "$FILTERED_JSONL" "$FIRST_PEER/filtered.jsonl" && \
+        echo "  filtered.jsonl 已同步: $(wc -l < "$FILTERED_JSONL") 条"
 fi
 
 while true; do

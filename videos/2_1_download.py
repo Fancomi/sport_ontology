@@ -44,12 +44,8 @@ VIDEOS_DIR = DATA_DIR / "videos"
 DL_PROGRESS = DATA_DIR / "dl_progress.txt"
 DISK_LIMIT_GB = 500
 
-# === 机器 peers ===
-PEERS = [
-    "http://10.52.104.78:8555/datas/videos",
-    "http://10.52.101.140:8555/datas/videos",
-    "http://10.52.94.216:8555/datas/videos",
-]
+# === 机器 peers (领域相关, 取自 config.DOMAIN; 空 = 单机) ===
+PEERS = config.DOMAIN.peer_urls
 
 
 # ==================== 跨机同步 ====================

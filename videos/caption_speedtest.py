@@ -21,20 +21,18 @@ sys.path.insert(0, str(Path(__file__).parent))
 import cv2
 from llm_client import LLMClient, parse_ports
 from representative_frame import representative_frame_from_video
+from lib import config
 
-REMOTE     = "ral@10.109.83.30"
-REMOTE_DIR = "/root/back_2/penghaotian/datas/yt-dlp-downloads/videos_split"
+REMOTE     = config.DOMAIN.remote_host
+REMOTE_DIR = config.DOMAIN.remote_videos + "_split"
 SSH_OPTS   = ("-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
               "-o Compression=no -o ConnectTimeout=10 -c aes128-gcm@openssh.com")
 SHM         = "/dev/shm/caption_speedtest"
-SPLIT_QUEUE = Path(__file__).parent / "data" / "pipeline_state" / "3_split_queue.txt"
+SPLIT_QUEUE = config.STATE_DIR / "3_split_queue.txt"
 TOTAL_CLIPS = 2_881_839
 
-CAPTION_SYSTEM = "你是健身训练视频标注专家，擅长用精炼的中文描述训练画面。"
-CAPTION_PROMPT = """\
-仔细观察这帧健身/体能训练画面，用一句中文描述，需包含(若可见):
-训练动作名称、使用器械、主要发力/接触部位、身体姿态与拍摄视角。
-40字以内，只输出描述。"""
+CAPTION_SYSTEM = config.DOMAIN.caption_system
+CAPTION_PROMPT = config.DOMAIN.caption_prompt
 
 def sample_names(n: int) -> list[str]:
     lines = [l.strip() for l in SPLIT_QUEUE.read_text().splitlines() if l.strip()]

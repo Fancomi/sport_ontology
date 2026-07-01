@@ -13,13 +13,14 @@
 import os, sys, argparse, hashlib
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent          # videos/
-DATA = HERE / "data"
-CANONICAL = DATA / "deliverables" / "3_canonical_segments.list"
-PROGRESS  = DATA / "pipeline_state" / "4_caption_progress.txt"
-TO_CAPTION = DATA / "pipeline_state" / "4_to_caption.list"
-ORPHAN_MOVED = DATA / "pipeline_state" / "4_captions_orphan_moved.list"
-CAP_DIR = Path("/root/paddlejob/workspace/env_run/penghaotian/datas/videos/captions")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from lib import config
+
+CANONICAL = config.DELIVERABLES_DIR / "3_canonical_segments.list"
+PROGRESS  = config.STATE_DIR / "4_caption_progress.txt"
+TO_CAPTION = config.STATE_DIR / "4_to_caption.list"
+ORPHAN_MOVED = config.STATE_DIR / "4_captions_orphan_moved.list"
+CAP_DIR = config.DATA_DIR / "captions"
 
 
 def _strip_mp4(name: str) -> str:

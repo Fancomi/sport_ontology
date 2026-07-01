@@ -7,7 +7,9 @@ import threading
 
 import cv2
 
-MAX_DURATION_SEC = 480.0   # 删除依据 (不可逆); 沿用 2_1_download / 2_4_cleanup 既有口径
+from lib import config
+
+MAX_DURATION_SEC = config.DOMAIN.purge_max_duration  # 删除依据 (不可逆); 领域相关, 取自 domains
 MIN_DURATION_SEC = 1.0     # <1s 切片太短 (帧不足), 审核阶段直接删
 
 _CV2_LOCK = threading.Lock()   # cv2.VideoCapture 非线程安全, 多线程调用需串行

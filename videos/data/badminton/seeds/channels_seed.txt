@@ -1,0 +1,34 @@
+# 羽毛球比赛 YouTube 频道 (种子列表)
+# 格式: 每行一个频道名（与 YouTube 频道名一致）; 采集侧会爬取其视频列表。
+# 侧重「上传完整比赛录像/固定机位赛事」的官方与赛事频道。
+
+# === 官方 / 赛事组织 ===
+BWF TV
+Badminton World Federation
+BWF World Tour
+Badminton Europe
+Badminton Asia
+
+# === 赛事转播 / 完整录像搬运 ===
+Badminton Full Match
+Badminton Rackets
+Badminton Highlights
+Badminton Insight
+BadmintonPlanet
+Badminton Andy
+Court 1 Badminton
+
+# === 地区赛事 / 联赛 ===
+Badminton Indonesia
+PB Djarum
+Badminton Association of India
+China Badminton
+Korea Badminton
+Japan Badminton Association
+
+# === 业余 / 民间对打 ===
+Badminton Famly
+Amateur Badminton
+羽毛球比赛录像
+羽毛球全场录像
+业余羽毛球
