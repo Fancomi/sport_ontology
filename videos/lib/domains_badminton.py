@@ -17,6 +17,8 @@ _TITLE_BLACKLIST = [
     "analysis", "breakdown", "explained", "guide", "training drills",
     "footwork drill", "animation", "cartoon", "highlights reaction",
     "教学", "教程", "讲解", "分析", "技术分解", "动画",
+    # 新闻/资讯/口播 (抽检发现的漏网: "小教室"教学、新闻播报、解说资讯)
+    "小教室", "小课堂", "新闻", "資訊", "资讯", "说地", "說地",
 ]
 
 # 比赛导向的搜索后缀 (拼在关键词后)

@@ -109,10 +109,680 @@ badminton doubles game amateur
 # === 多语言 (扩大召回) ===
 バドミントン 試合
 バドミントン 決勝
+バドミントン 全試合
+バドミントン 準決勝
 배드민턴 경기
 배드민턴 결승
+배드민턴 전체 경기
+배드민턴 준결승
 bulu tangkis pertandingan
+bulu tangkis final
+bulu tangkis pertandingan penuh
 badminton pertandingan penuh
 cầu lông trận đấu
+cầu lông chung kết
 partido de bádminton
+bádminton partido completo
 badminton match completo
+badminton partita completa
+Badminton ganzes Spiel
+badminton match complet
+
+# === 选手对阵 (程序生成: 同项目顶尖选手两两组合, 'A vs B' 真实比赛强信号) ===
+Lin Dan vs Lee Chong Wei
+Lin Dan vs Chen Long
+Lin Dan vs Viktor Axelsen
+Lin Dan vs Kento Momota
+Lin Dan vs Anthony Ginting
+Lin Dan vs Jonatan Christie
+Lin Dan vs Loh Kean Yew
+Lin Dan vs Kunlavut Vitidsarn
+Lin Dan vs Lakshya Sen
+Lin Dan vs Shi Yuqi
+Lin Dan vs Li Shifeng
+Lin Dan vs Chou Tien Chen
+Lin Dan vs Anders Antonsen
+Lin Dan vs Lee Zii Jia
+Lin Dan vs Kidambi Srikanth
+Lee Chong Wei vs Chen Long
+Lee Chong Wei vs Viktor Axelsen
+Lee Chong Wei vs Kento Momota
+Lee Chong Wei vs Anthony Ginting
+Lee Chong Wei vs Jonatan Christie
+Lee Chong Wei vs Loh Kean Yew
+Lee Chong Wei vs Kunlavut Vitidsarn
+Lee Chong Wei vs Lakshya Sen
+Lee Chong Wei vs Shi Yuqi
+Lee Chong Wei vs Li Shifeng
+Lee Chong Wei vs Chou Tien Chen
+Lee Chong Wei vs Anders Antonsen
+Lee Chong Wei vs Lee Zii Jia
+Lee Chong Wei vs Kidambi Srikanth
+Chen Long vs Viktor Axelsen
+Chen Long vs Kento Momota
+Chen Long vs Anthony Ginting
+Chen Long vs Jonatan Christie
+Chen Long vs Loh Kean Yew
+Chen Long vs Kunlavut Vitidsarn
+Chen Long vs Lakshya Sen
+Chen Long vs Shi Yuqi
+Chen Long vs Li Shifeng
+Chen Long vs Chou Tien Chen
+Chen Long vs Anders Antonsen
+Chen Long vs Lee Zii Jia
+Chen Long vs Kidambi Srikanth
+Viktor Axelsen vs Kento Momota
+Viktor Axelsen vs Anthony Ginting
+Viktor Axelsen vs Jonatan Christie
+Viktor Axelsen vs Loh Kean Yew
+Viktor Axelsen vs Kunlavut Vitidsarn
+Viktor Axelsen vs Lakshya Sen
+Viktor Axelsen vs Shi Yuqi
+Viktor Axelsen vs Li Shifeng
+Viktor Axelsen vs Chou Tien Chen
+Viktor Axelsen vs Anders Antonsen
+Viktor Axelsen vs Lee Zii Jia
+Viktor Axelsen vs Kidambi Srikanth
+Kento Momota vs Anthony Ginting
+Kento Momota vs Jonatan Christie
+Kento Momota vs Loh Kean Yew
+Kento Momota vs Kunlavut Vitidsarn
+Kento Momota vs Lakshya Sen
+Kento Momota vs Shi Yuqi
+Kento Momota vs Li Shifeng
+Kento Momota vs Chou Tien Chen
+Kento Momota vs Anders Antonsen
+Kento Momota vs Lee Zii Jia
+Kento Momota vs Kidambi Srikanth
+Anthony Ginting vs Jonatan Christie
+Anthony Ginting vs Loh Kean Yew
+Anthony Ginting vs Kunlavut Vitidsarn
+Anthony Ginting vs Lakshya Sen
+Anthony Ginting vs Shi Yuqi
+Anthony Ginting vs Li Shifeng
+Anthony Ginting vs Chou Tien Chen
+Anthony Ginting vs Anders Antonsen
+Anthony Ginting vs Lee Zii Jia
+Anthony Ginting vs Kidambi Srikanth
+Jonatan Christie vs Loh Kean Yew
+Jonatan Christie vs Kunlavut Vitidsarn
+Jonatan Christie vs Lakshya Sen
+Jonatan Christie vs Shi Yuqi
+Jonatan Christie vs Li Shifeng
+Jonatan Christie vs Chou Tien Chen
+Jonatan Christie vs Anders Antonsen
+Jonatan Christie vs Lee Zii Jia
+Jonatan Christie vs Kidambi Srikanth
+Loh Kean Yew vs Kunlavut Vitidsarn
+Loh Kean Yew vs Lakshya Sen
+Loh Kean Yew vs Shi Yuqi
+Loh Kean Yew vs Li Shifeng
+Loh Kean Yew vs Chou Tien Chen
+Loh Kean Yew vs Anders Antonsen
+Loh Kean Yew vs Lee Zii Jia
+Loh Kean Yew vs Kidambi Srikanth
+Kunlavut Vitidsarn vs Lakshya Sen
+Kunlavut Vitidsarn vs Shi Yuqi
+Kunlavut Vitidsarn vs Li Shifeng
+Kunlavut Vitidsarn vs Chou Tien Chen
+Kunlavut Vitidsarn vs Anders Antonsen
+Kunlavut Vitidsarn vs Lee Zii Jia
+Kunlavut Vitidsarn vs Kidambi Srikanth
+Lakshya Sen vs Shi Yuqi
+Lakshya Sen vs Li Shifeng
+Lakshya Sen vs Chou Tien Chen
+Lakshya Sen vs Anders Antonsen
+Lakshya Sen vs Lee Zii Jia
+Lakshya Sen vs Kidambi Srikanth
+Shi Yuqi vs Li Shifeng
+Shi Yuqi vs Chou Tien Chen
+Shi Yuqi vs Anders Antonsen
+Shi Yuqi vs Lee Zii Jia
+Shi Yuqi vs Kidambi Srikanth
+Li Shifeng vs Chou Tien Chen
+Li Shifeng vs Anders Antonsen
+Li Shifeng vs Lee Zii Jia
+Li Shifeng vs Kidambi Srikanth
+Chou Tien Chen vs Anders Antonsen
+Chou Tien Chen vs Lee Zii Jia
+Chou Tien Chen vs Kidambi Srikanth
+Anders Antonsen vs Lee Zii Jia
+Anders Antonsen vs Kidambi Srikanth
+Lee Zii Jia vs Kidambi Srikanth
+Tai Tzu Ying vs Chen Yufei
+Tai Tzu Ying vs Akane Yamaguchi
+Tai Tzu Ying vs An Se Young
+Tai Tzu Ying vs Carolina Marin
+Tai Tzu Ying vs Ratchanok Intanon
+Tai Tzu Ying vs P.V. Sindhu
+Tai Tzu Ying vs He Bingjiao
+Tai Tzu Ying vs Nozomi Okuhara
+Tai Tzu Ying vs Wang Zhiyi
+Tai Tzu Ying vs Gregoria Mariska
+Chen Yufei vs Akane Yamaguchi
+Chen Yufei vs An Se Young
+Chen Yufei vs Carolina Marin
+Chen Yufei vs Ratchanok Intanon
+Chen Yufei vs P.V. Sindhu
+Chen Yufei vs He Bingjiao
+Chen Yufei vs Nozomi Okuhara
+Chen Yufei vs Wang Zhiyi
+Chen Yufei vs Gregoria Mariska
+Akane Yamaguchi vs An Se Young
+Akane Yamaguchi vs Carolina Marin
+Akane Yamaguchi vs Ratchanok Intanon
+Akane Yamaguchi vs P.V. Sindhu
+Akane Yamaguchi vs He Bingjiao
+Akane Yamaguchi vs Nozomi Okuhara
+Akane Yamaguchi vs Wang Zhiyi
+Akane Yamaguchi vs Gregoria Mariska
+An Se Young vs Carolina Marin
+An Se Young vs Ratchanok Intanon
+An Se Young vs P.V. Sindhu
+An Se Young vs He Bingjiao
+An Se Young vs Nozomi Okuhara
+An Se Young vs Wang Zhiyi
+An Se Young vs Gregoria Mariska
+Carolina Marin vs Ratchanok Intanon
+Carolina Marin vs P.V. Sindhu
+Carolina Marin vs He Bingjiao
+Carolina Marin vs Nozomi Okuhara
+Carolina Marin vs Wang Zhiyi
+Carolina Marin vs Gregoria Mariska
+Ratchanok Intanon vs P.V. Sindhu
+Ratchanok Intanon vs He Bingjiao
+Ratchanok Intanon vs Nozomi Okuhara
+Ratchanok Intanon vs Wang Zhiyi
+Ratchanok Intanon vs Gregoria Mariska
+P.V. Sindhu vs He Bingjiao
+P.V. Sindhu vs Nozomi Okuhara
+P.V. Sindhu vs Wang Zhiyi
+P.V. Sindhu vs Gregoria Mariska
+He Bingjiao vs Nozomi Okuhara
+He Bingjiao vs Wang Zhiyi
+He Bingjiao vs Gregoria Mariska
+Nozomi Okuhara vs Wang Zhiyi
+Nozomi Okuhara vs Gregoria Mariska
+Wang Zhiyi vs Gregoria Mariska
+林丹 vs 李宗伟
+林丹 vs 谌龙
+林丹 vs 桃田贤斗
+林丹 vs 安洗莹
+林丹 vs 戴资颖
+林丹 vs 陈雨菲
+林丹 vs 石宇奇
+林丹 vs 李诗沣
+林丹 vs 安东森
+林丹 vs 骆建佑
+李宗伟 vs 谌龙
+李宗伟 vs 桃田贤斗
+李宗伟 vs 安洗莹
+李宗伟 vs 戴资颖
+李宗伟 vs 陈雨菲
+李宗伟 vs 石宇奇
+李宗伟 vs 李诗沣
+李宗伟 vs 安东森
+李宗伟 vs 骆建佑
+谌龙 vs 桃田贤斗
+谌龙 vs 安洗莹
+谌龙 vs 戴资颖
+谌龙 vs 陈雨菲
+谌龙 vs 石宇奇
+谌龙 vs 李诗沣
+谌龙 vs 安东森
+谌龙 vs 骆建佑
+桃田贤斗 vs 安洗莹
+桃田贤斗 vs 戴资颖
+桃田贤斗 vs 陈雨菲
+桃田贤斗 vs 石宇奇
+桃田贤斗 vs 李诗沣
+桃田贤斗 vs 安东森
+桃田贤斗 vs 骆建佑
+安洗莹 vs 戴资颖
+安洗莹 vs 陈雨菲
+安洗莹 vs 石宇奇
+安洗莹 vs 李诗沣
+安洗莹 vs 安东森
+安洗莹 vs 骆建佑
+戴资颖 vs 陈雨菲
+戴资颖 vs 石宇奇
+戴资颖 vs 李诗沣
+戴资颖 vs 安东森
+戴资颖 vs 骆建佑
+陈雨菲 vs 石宇奇
+陈雨菲 vs 李诗沣
+陈雨菲 vs 安东森
+陈雨菲 vs 骆建佑
+石宇奇 vs 李诗沣
+石宇奇 vs 安东森
+石宇奇 vs 骆建佑
+李诗沣 vs 安东森
+李诗沣 vs 骆建佑
+安东森 vs 骆建佑
+
+# === 赛事×年份×轮次 (程序生成: 决赛+近4年半决/四分之一决赛, 完整录像信号) ===
+All England 2017 final
+All England 2018 final
+All England 2019 final
+All England 2020 final
+All England 2021 final
+All England 2022 final
+All England 2023 final
+All England 2024 final
+All England 2025 final
+All England 2022 semi final
+All England 2022 quarter final
+All England 2023 semi final
+All England 2023 quarter final
+All England 2024 semi final
+All England 2024 quarter final
+All England 2025 semi final
+All England 2025 quarter final
+Indonesia Open 2017 final
+Indonesia Open 2018 final
+Indonesia Open 2019 final
+Indonesia Open 2020 final
+Indonesia Open 2021 final
+Indonesia Open 2022 final
+Indonesia Open 2023 final
+Indonesia Open 2024 final
+Indonesia Open 2025 final
+Indonesia Open 2022 semi final
+Indonesia Open 2022 quarter final
+Indonesia Open 2023 semi final
+Indonesia Open 2023 quarter final
+Indonesia Open 2024 semi final
+Indonesia Open 2024 quarter final
+Indonesia Open 2025 semi final
+Indonesia Open 2025 quarter final
+Malaysia Open 2017 final
+Malaysia Open 2018 final
+Malaysia Open 2019 final
+Malaysia Open 2020 final
+Malaysia Open 2021 final
+Malaysia Open 2022 final
+Malaysia Open 2023 final
+Malaysia Open 2024 final
+Malaysia Open 2025 final
+Malaysia Open 2022 semi final
+Malaysia Open 2022 quarter final
+Malaysia Open 2023 semi final
+Malaysia Open 2023 quarter final
+Malaysia Open 2024 semi final
+Malaysia Open 2024 quarter final
+Malaysia Open 2025 semi final
+Malaysia Open 2025 quarter final
+China Open 2017 final
+China Open 2018 final
+China Open 2019 final
+China Open 2020 final
+China Open 2021 final
+China Open 2022 final
+China Open 2023 final
+China Open 2024 final
+China Open 2025 final
+China Open 2022 semi final
+China Open 2022 quarter final
+China Open 2023 semi final
+China Open 2023 quarter final
+China Open 2024 semi final
+China Open 2024 quarter final
+China Open 2025 semi final
+China Open 2025 quarter final
+Denmark Open 2017 final
+Denmark Open 2018 final
+Denmark Open 2019 final
+Denmark Open 2020 final
+Denmark Open 2021 final
+Denmark Open 2022 final
+Denmark Open 2023 final
+Denmark Open 2024 final
+Denmark Open 2025 final
+Denmark Open 2022 semi final
+Denmark Open 2022 quarter final
+Denmark Open 2023 semi final
+Denmark Open 2023 quarter final
+Denmark Open 2024 semi final
+Denmark Open 2024 quarter final
+Denmark Open 2025 semi final
+Denmark Open 2025 quarter final
+Japan Open 2017 final
+Japan Open 2018 final
+Japan Open 2019 final
+Japan Open 2020 final
+Japan Open 2021 final
+Japan Open 2022 final
+Japan Open 2023 final
+Japan Open 2024 final
+Japan Open 2025 final
+Japan Open 2022 semi final
+Japan Open 2022 quarter final
+Japan Open 2023 semi final
+Japan Open 2023 quarter final
+Japan Open 2024 semi final
+Japan Open 2024 quarter final
+Japan Open 2025 semi final
+Japan Open 2025 quarter final
+Singapore Open 2017 final
+Singapore Open 2018 final
+Singapore Open 2019 final
+Singapore Open 2020 final
+Singapore Open 2021 final
+Singapore Open 2022 final
+Singapore Open 2023 final
+Singapore Open 2024 final
+Singapore Open 2025 final
+Singapore Open 2022 semi final
+Singapore Open 2022 quarter final
+Singapore Open 2023 semi final
+Singapore Open 2023 quarter final
+Singapore Open 2024 semi final
+Singapore Open 2024 quarter final
+Singapore Open 2025 semi final
+Singapore Open 2025 quarter final
+India Open 2017 final
+India Open 2018 final
+India Open 2019 final
+India Open 2020 final
+India Open 2021 final
+India Open 2022 final
+India Open 2023 final
+India Open 2024 final
+India Open 2025 final
+India Open 2022 semi final
+India Open 2022 quarter final
+India Open 2023 semi final
+India Open 2023 quarter final
+India Open 2024 semi final
+India Open 2024 quarter final
+India Open 2025 semi final
+India Open 2025 quarter final
+Thailand Open 2017 final
+Thailand Open 2018 final
+Thailand Open 2019 final
+Thailand Open 2020 final
+Thailand Open 2021 final
+Thailand Open 2022 final
+Thailand Open 2023 final
+Thailand Open 2024 final
+Thailand Open 2025 final
+Thailand Open 2022 semi final
+Thailand Open 2022 quarter final
+Thailand Open 2023 semi final
+Thailand Open 2023 quarter final
+Thailand Open 2024 semi final
+Thailand Open 2024 quarter final
+Thailand Open 2025 semi final
+Thailand Open 2025 quarter final
+Korea Open 2017 final
+Korea Open 2018 final
+Korea Open 2019 final
+Korea Open 2020 final
+Korea Open 2021 final
+Korea Open 2022 final
+Korea Open 2023 final
+Korea Open 2024 final
+Korea Open 2025 final
+Korea Open 2022 semi final
+Korea Open 2022 quarter final
+Korea Open 2023 semi final
+Korea Open 2023 quarter final
+Korea Open 2024 semi final
+Korea Open 2024 quarter final
+Korea Open 2025 semi final
+Korea Open 2025 quarter final
+French Open 2017 final
+French Open 2018 final
+French Open 2019 final
+French Open 2020 final
+French Open 2021 final
+French Open 2022 final
+French Open 2023 final
+French Open 2024 final
+French Open 2025 final
+French Open 2022 semi final
+French Open 2022 quarter final
+French Open 2023 semi final
+French Open 2023 quarter final
+French Open 2024 semi final
+French Open 2024 quarter final
+French Open 2025 semi final
+French Open 2025 quarter final
+Hong Kong Open 2017 final
+Hong Kong Open 2018 final
+Hong Kong Open 2019 final
+Hong Kong Open 2020 final
+Hong Kong Open 2021 final
+Hong Kong Open 2022 final
+Hong Kong Open 2023 final
+Hong Kong Open 2024 final
+Hong Kong Open 2025 final
+Hong Kong Open 2022 semi final
+Hong Kong Open 2022 quarter final
+Hong Kong Open 2023 semi final
+Hong Kong Open 2023 quarter final
+Hong Kong Open 2024 semi final
+Hong Kong Open 2024 quarter final
+Hong Kong Open 2025 semi final
+Hong Kong Open 2025 quarter final
+World Championships 2017 final
+World Championships 2018 final
+World Championships 2019 final
+World Championships 2020 final
+World Championships 2021 final
+World Championships 2022 final
+World Championships 2023 final
+World Championships 2024 final
+World Championships 2025 final
+World Championships 2022 semi final
+World Championships 2022 quarter final
+World Championships 2023 semi final
+World Championships 2023 quarter final
+World Championships 2024 semi final
+World Championships 2024 quarter final
+World Championships 2025 semi final
+World Championships 2025 quarter final
+Sudirman Cup 2017 final
+Sudirman Cup 2018 final
+Sudirman Cup 2019 final
+Sudirman Cup 2020 final
+Sudirman Cup 2021 final
+Sudirman Cup 2022 final
+Sudirman Cup 2023 final
+Sudirman Cup 2024 final
+Sudirman Cup 2025 final
+Sudirman Cup 2022 semi final
+Sudirman Cup 2022 quarter final
+Sudirman Cup 2023 semi final
+Sudirman Cup 2023 quarter final
+Sudirman Cup 2024 semi final
+Sudirman Cup 2024 quarter final
+Sudirman Cup 2025 semi final
+Sudirman Cup 2025 quarter final
+Thomas Cup 2017 final
+Thomas Cup 2018 final
+Thomas Cup 2019 final
+Thomas Cup 2020 final
+Thomas Cup 2021 final
+Thomas Cup 2022 final
+Thomas Cup 2023 final
+Thomas Cup 2024 final
+Thomas Cup 2025 final
+Thomas Cup 2022 semi final
+Thomas Cup 2022 quarter final
+Thomas Cup 2023 semi final
+Thomas Cup 2023 quarter final
+Thomas Cup 2024 semi final
+Thomas Cup 2024 quarter final
+Thomas Cup 2025 semi final
+Thomas Cup 2025 quarter final
+Uber Cup 2017 final
+Uber Cup 2018 final
+Uber Cup 2019 final
+Uber Cup 2020 final
+Uber Cup 2021 final
+Uber Cup 2022 final
+Uber Cup 2023 final
+Uber Cup 2024 final
+Uber Cup 2025 final
+Uber Cup 2022 semi final
+Uber Cup 2022 quarter final
+Uber Cup 2023 semi final
+Uber Cup 2023 quarter final
+Uber Cup 2024 semi final
+Uber Cup 2024 quarter final
+Uber Cup 2025 semi final
+Uber Cup 2025 quarter final
+BWF World Tour Finals 2017 final
+BWF World Tour Finals 2018 final
+BWF World Tour Finals 2019 final
+BWF World Tour Finals 2020 final
+BWF World Tour Finals 2021 final
+BWF World Tour Finals 2022 final
+BWF World Tour Finals 2023 final
+BWF World Tour Finals 2024 final
+BWF World Tour Finals 2025 final
+BWF World Tour Finals 2022 semi final
+BWF World Tour Finals 2022 quarter final
+BWF World Tour Finals 2023 semi final
+BWF World Tour Finals 2023 quarter final
+BWF World Tour Finals 2024 semi final
+BWF World Tour Finals 2024 quarter final
+BWF World Tour Finals 2025 semi final
+BWF World Tour Finals 2025 quarter final
+Asian Championships 2017 final
+Asian Championships 2018 final
+Asian Championships 2019 final
+Asian Championships 2020 final
+Asian Championships 2021 final
+Asian Championships 2022 final
+Asian Championships 2023 final
+Asian Championships 2024 final
+Asian Championships 2025 final
+Asian Championships 2022 semi final
+Asian Championships 2022 quarter final
+Asian Championships 2023 semi final
+Asian Championships 2023 quarter final
+Asian Championships 2024 semi final
+Asian Championships 2024 quarter final
+Asian Championships 2025 semi final
+Asian Championships 2025 quarter final
+Malaysia Masters 2017 final
+Malaysia Masters 2018 final
+Malaysia Masters 2019 final
+Malaysia Masters 2020 final
+Malaysia Masters 2021 final
+Malaysia Masters 2022 final
+Malaysia Masters 2023 final
+Malaysia Masters 2024 final
+Malaysia Masters 2025 final
+Malaysia Masters 2022 semi final
+Malaysia Masters 2022 quarter final
+Malaysia Masters 2023 semi final
+Malaysia Masters 2023 quarter final
+Malaysia Masters 2024 semi final
+Malaysia Masters 2024 quarter final
+Malaysia Masters 2025 semi final
+Malaysia Masters 2025 quarter final
+Indonesia Masters 2017 final
+Indonesia Masters 2018 final
+Indonesia Masters 2019 final
+Indonesia Masters 2020 final
+Indonesia Masters 2021 final
+Indonesia Masters 2022 final
+Indonesia Masters 2023 final
+Indonesia Masters 2024 final
+Indonesia Masters 2025 final
+Indonesia Masters 2022 semi final
+Indonesia Masters 2022 quarter final
+Indonesia Masters 2023 semi final
+Indonesia Masters 2023 quarter final
+Indonesia Masters 2024 semi final
+Indonesia Masters 2024 quarter final
+Indonesia Masters 2025 semi final
+Indonesia Masters 2025 quarter final
+Australian Open badminton 2017 final
+Australian Open badminton 2018 final
+Australian Open badminton 2019 final
+Australian Open badminton 2020 final
+Australian Open badminton 2021 final
+Australian Open badminton 2022 final
+Australian Open badminton 2023 final
+Australian Open badminton 2024 final
+Australian Open badminton 2025 final
+Australian Open badminton 2022 semi final
+Australian Open badminton 2022 quarter final
+Australian Open badminton 2023 semi final
+Australian Open badminton 2023 quarter final
+Australian Open badminton 2024 semi final
+Australian Open badminton 2024 quarter final
+Australian Open badminton 2025 semi final
+Australian Open badminton 2025 quarter final
+Spain Masters 2017 final
+Spain Masters 2018 final
+Spain Masters 2019 final
+Spain Masters 2020 final
+Spain Masters 2021 final
+Spain Masters 2022 final
+Spain Masters 2023 final
+Spain Masters 2024 final
+Spain Masters 2025 final
+Spain Masters 2022 semi final
+Spain Masters 2022 quarter final
+Spain Masters 2023 semi final
+Spain Masters 2023 quarter final
+Spain Masters 2024 semi final
+Spain Masters 2024 quarter final
+Spain Masters 2025 semi final
+Spain Masters 2025 quarter final
+Swiss Open badminton 2017 final
+Swiss Open badminton 2018 final
+Swiss Open badminton 2019 final
+Swiss Open badminton 2020 final
+Swiss Open badminton 2021 final
+Swiss Open badminton 2022 final
+Swiss Open badminton 2023 final
+Swiss Open badminton 2024 final
+Swiss Open badminton 2025 final
+Swiss Open badminton 2022 semi final
+Swiss Open badminton 2022 quarter final
+Swiss Open badminton 2023 semi final
+Swiss Open badminton 2023 quarter final
+Swiss Open badminton 2024 semi final
+Swiss Open badminton 2024 quarter final
+Swiss Open badminton 2025 semi final
+Swiss Open badminton 2025 quarter final
+German Open badminton 2017 final
+German Open badminton 2018 final
+German Open badminton 2019 final
+German Open badminton 2020 final
+German Open badminton 2021 final
+German Open badminton 2022 final
+German Open badminton 2023 final
+German Open badminton 2024 final
+German Open badminton 2025 final
+German Open badminton 2022 semi final
+German Open badminton 2022 quarter final
+German Open badminton 2023 semi final
+German Open badminton 2023 quarter final
+German Open badminton 2024 semi final
+German Open badminton 2024 quarter final
+German Open badminton 2025 semi final
+German Open badminton 2025 quarter final
+Arctic Open 2017 final
+Arctic Open 2018 final
+Arctic Open 2019 final
+Arctic Open 2020 final
+Arctic Open 2021 final
+Arctic Open 2022 final
+Arctic Open 2023 final
+Arctic Open 2024 final
+Arctic Open 2025 final
+Arctic Open 2022 semi final
+Arctic Open 2022 quarter final
+Arctic Open 2023 semi final
+Arctic Open 2023 quarter final
+Arctic Open 2024 semi final
+Arctic Open 2024 quarter final
+Arctic Open 2025 semi final
+Arctic Open 2025 quarter final
