@@ -7,7 +7,6 @@
 import argparse
 import json
 import os
-import random
 import time
 import urllib.request
 import shutil
@@ -113,14 +112,15 @@ def download_one(item, out_dir):
     proxy = config.pick_proxy(vid)
     opts = {
         "proxy": proxy, "quiet": True, "no_warnings": True,
-        "retries": 1, "socket_timeout": 30,
-        "format": "18/best[height<=480][ext=mp4]/best[height<=720]/best",
+        "retries": 3, "socket_timeout": 30,
+        "format": "bv*[height<=480]+ba/b[height<=480]/18/b",
+        "merge_output_format": "mp4",
         "outtmpl": str(out_dir / f"{vid}.%(ext)s"),
         "noprogress": True,
         "ratelimit": None,
         "throttledratelimit": 50 * 1024,
-        "extractor_retries": 1,
-        "fragment_retries": 1,
+        "extractor_retries": 3,
+        "fragment_retries": 3,
         "concurrent_fragment_downloads": 1,
         "remote_components": ["ejs:github"],
     }
@@ -172,8 +172,9 @@ def run_download(workers, total_shards, shard_id):
                if r["video_id"] not in done
                and r["video_id"] not in blacklist
                and config.stable_mod(r["video_id"], total_shards) == shard_id]
-    random.shuffle(pending)
-    logger.info(f"[下载] 分片:{shard_id}/{total_shards} 待下:{len(pending)} workers:{workers}")
+    # 按时长升序: 先拉短视频快速出成果 (缺时长的排最后); 稳定排序保证跨机分片确定性
+    pending.sort(key=lambda r: r.get("duration") or float("inf"))
+    logger.info(f"[下载] 分片:{shard_id}/{total_shards} 待下:{len(pending)} workers:{workers} 顺序:时长升序")
 
     if not pending:
         logger.info("[下载] 无待下载任务")
