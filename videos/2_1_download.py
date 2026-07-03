@@ -7,7 +7,6 @@
 import argparse
 import json
 import os
-import random
 import time
 import urllib.request
 import shutil
@@ -26,9 +25,13 @@ logger = config.get_logger(__name__, "pipeline.log")
 
 # === 二阶段 cookies (一阶段已完成，两个账号都可用于下载) ===
 import tempfile
+_COOKIE_DIR = Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer")
 _COOKIE_ORIGINS = [
-    Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer/cookies_Resxuilpazcuoe_origin.txt"),
-    Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer/cookies_Cocoonconcoction070_origin.txt"),
+    _COOKIE_DIR / "cookies_Resxuilpazcuoe_origin.txt",
+    _COOKIE_DIR / "cookies_Cocoonconcoction070_origin.txt",
+    _COOKIE_DIR / "cookies_Henrypower8652_ori.txt",
+    _COOKIE_DIR / "cookies_Pinchnuncio927_ori.txt",
+    _COOKIE_DIR / "cookies_Tgrhhgr18_ori.txt",
 ]
 _COOKIE_COPIES = []
 for i, src in enumerate(_COOKIE_ORIGINS):
@@ -82,7 +85,9 @@ def sync_from_peers():
 # ==================== 下载 ====================
 
 def _pname(proxy):
-    return proxy.split('//')[1].split('/')[0]
+    # 只取 host:port, 剥离可能的 user:pass@ 认证段, 避免密码写入日志
+    hostport = proxy.split('//', 1)[-1].split('/')[0]
+    return hostport.rsplit('@', 1)[-1]
 
 
 def downloaded_file(out_dir: Path, vid: str) -> Path | None:
@@ -113,14 +118,15 @@ def download_one(item, out_dir):
     proxy = config.pick_proxy(vid)
     opts = {
         "proxy": proxy, "quiet": True, "no_warnings": True,
-        "retries": 1, "socket_timeout": 30,
-        "format": "18/best[height<=480][ext=mp4]/best[height<=720]/best",
+        "retries": 3, "socket_timeout": 30,
+        "format": "bv*[height<=480]+ba/b[height<=480]/18/b",
+        "merge_output_format": "mp4",
         "outtmpl": str(out_dir / f"{vid}.%(ext)s"),
         "noprogress": True,
         "ratelimit": None,
         "throttledratelimit": 50 * 1024,
-        "extractor_retries": 1,
-        "fragment_retries": 1,
+        "extractor_retries": 3,
+        "fragment_retries": 3,
         "concurrent_fragment_downloads": 1,
         "remote_components": ["ejs:github"],
     }
@@ -172,8 +178,9 @@ def run_download(workers, total_shards, shard_id):
                if r["video_id"] not in done
                and r["video_id"] not in blacklist
                and config.stable_mod(r["video_id"], total_shards) == shard_id]
-    random.shuffle(pending)
-    logger.info(f"[下载] 分片:{shard_id}/{total_shards} 待下:{len(pending)} workers:{workers}")
+    # 按时长升序: 先拉短视频快速出成果 (缺时长的排最后); 稳定排序保证跨机分片确定性
+    pending.sort(key=lambda r: r.get("duration") or float("inf"))
+    logger.info(f"[下载] 分片:{shard_id}/{total_shards} 待下:{len(pending)} workers:{workers} 顺序:时长升序")
 
     if not pending:
         logger.info("[下载] 无待下载任务")

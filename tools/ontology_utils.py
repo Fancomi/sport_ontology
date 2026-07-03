@@ -29,15 +29,16 @@ def strip_slots(text: str) -> str:
 # ── Ontology 构建 ──────────────────────────────────────────────────────────────
 
 
-def build_distractor_guard(ontology: dict, vocab: dict) -> "callable":
+def build_distractor_guard(ontology: dict, vocab: dict, gates: str = "ASCE") -> "callable":
     """构建挖掘端干扰项防护闸（全槽位统一，与 5_3b 去噪同判据的运行时兜底）。
 
     返回 guard(slot, correct, cand) -> bool：cand 作为 correct 的干扰项是否合格。
-    四闸（任一命中即不合格）：
-      同义：cand 与 correct 在本槽同义闭包同簇 → 语义等价，非负样本
-      上位：cand 是 correct 的 hypernym → 粒度错误
-      同槽：cand 不在本槽 vocab → 跨槽噪声
-      动作：cand 命中 exercise vocab 且非本槽合法值 → 动作名污染（黑名单）
+    四闸（gates 中出现的字母才启用，任一命中即不合格）：
+      A 同槽：cand 不在本槽 vocab → 跨槽噪声（挖掘端用；存量清洗关掉，避免误杀未入 vocab 的合理干扰）
+      S 同义：cand 与 correct 在本槽同义闭包同簇 → 语义等价，非负样本
+      C 上位：cand 是 correct 的 hypernym → 粒度错误
+      E 动作：cand 命中 exercise vocab（非 exercise 槽）→ 动作名污染（黑名单）
+    默认 "ASCE" 全开（挖掘端）；存量清洗传 gates="SCE" 关掉 A。
     """
     ex_vocab = set(vocab.get("exercise", {}))
     per_slot: dict[str, dict] = {}
@@ -59,13 +60,13 @@ def build_distractor_guard(ontology: dict, vocab: dict) -> "callable":
         p = per_slot.get(slot)
         if not p:
             return True
-        if cand not in p["vocab"]:                       # 同槽闸
+        if "A" in gates and cand not in p["vocab"]:            # 同槽闸
             return False
-        if cand in p["syn"].get(correct, set()):          # 同义闸
+        if "S" in gates and cand in p["syn"].get(correct, set()):   # 同义闸
             return False
-        if cand in p["hyper"].get(correct, set()):        # 上位闸
+        if "C" in gates and cand in p["hyper"].get(correct, set()): # 上位闸
             return False
-        if cand in p["ex_black"]:                          # 动作黑名单闸
+        if "E" in gates and cand in p["ex_black"]:              # 动作黑名单闸
             return False
         return True
 
