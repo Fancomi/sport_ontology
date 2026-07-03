@@ -27,6 +27,7 @@ PROXY_POOL = [
     "http://gzbh-aip-paddlecloud140.gzbh:8128",
     "http://10.162.37.16:8128",
     "http://10.8.5.5:3128",
+    "http://cmcproxy:WvUBhef4bQ@10.251.112.50:8128",  # cmc 认证代理 (支持 HTTPS 隧道, 实测可拉 YouTube)
 ]
 # 纯 HTTP 代理 (不支持 HTTPS 隧道，仅用于下载非 HTTPS 资源如 S3)
 HTTP_ONLY_PROXIES = [

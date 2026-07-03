@@ -25,9 +25,13 @@ logger = config.get_logger(__name__, "pipeline.log")
 
 # === 二阶段 cookies (一阶段已完成，两个账号都可用于下载) ===
 import tempfile
+_COOKIE_DIR = Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer")
 _COOKIE_ORIGINS = [
-    Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer/cookies_Resxuilpazcuoe_origin.txt"),
-    Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer/cookies_Cocoonconcoction070_origin.txt"),
+    _COOKIE_DIR / "cookies_Resxuilpazcuoe_origin.txt",
+    _COOKIE_DIR / "cookies_Cocoonconcoction070_origin.txt",
+    _COOKIE_DIR / "cookies_Henrypower8652_ori.txt",
+    _COOKIE_DIR / "cookies_Pinchnuncio927_ori.txt",
+    _COOKIE_DIR / "cookies_Tgrhhgr18_ori.txt",
 ]
 _COOKIE_COPIES = []
 for i, src in enumerate(_COOKIE_ORIGINS):
@@ -81,7 +85,9 @@ def sync_from_peers():
 # ==================== 下载 ====================
 
 def _pname(proxy):
-    return proxy.split('//')[1].split('/')[0]
+    # 只取 host:port, 剥离可能的 user:pass@ 认证段, 避免密码写入日志
+    hostport = proxy.split('//', 1)[-1].split('/')[0]
+    return hostport.rsplit('@', 1)[-1]
 
 
 def downloaded_file(out_dir: Path, vid: str) -> Path | None:
