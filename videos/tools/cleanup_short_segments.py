@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""清理所有 <1s 切片: 远端真删 + 六面本地清单同步。
-时长源 = caption json (每个含 duration; 覆盖 canonical)。
+"""清理切片: 远端真删 + 六面本地清单/caption 同步。
+待删集两种来源: (a) --drop-list 指定清单 (如 VLM 审核 reject.list); (b) 默认扫 caption json duration<1s。
 
 六面同步 (全做):
   1. 远端 rm videos_split/<clip>.mp4
@@ -13,8 +13,11 @@
 安全: 改清单前备份 <file>.bak-<ts>, 原子写 (.tmp -> rename)。--dry-run 只扫+报, 不删不写。
 
 用法:
+  # VLM 审核 reject 全删 (七面同步)
+  SSHPASS=3dvision python3 tools/cleanup_short_segments.py --drop-list <reject.list> --dry-run
+  SSHPASS=3dvision python3 tools/cleanup_short_segments.py --drop-list <reject.list>
+  # 默认 <1s 清理
   SSHPASS=3dvision python3 tools/cleanup_short_segments.py --dry-run
-  SSHPASS=3dvision python3 tools/cleanup_short_segments.py
 """
 import argparse
 import glob
@@ -119,15 +122,23 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--captions-root", default=CAPTIONS_ROOT)
+    ap.add_argument("--drop-list", default=None,
+                    help="待删 clip 清单 (每行一个裸名或 <name>.mp4); 提供则用它, 否则扫 caption <1s")
     args = ap.parse_args()
     if not args.dry_run and not os.environ.get("SSHPASS"):
         sys.exit("真删需 SSHPASS")
 
-    print(f"扫描 caption json 时长 < {MIN_DURATION}s ...", flush=True)
-    short = scan_short(args.captions_root)
-    print(f"<1s 切片: {len(short)}", flush=True)
+    if args.drop_list:
+        print(f"读待删清单 {args.drop_list} ...", flush=True)
+        short = {(l.strip()[:-4] if l.strip().endswith(".mp4") else l.strip())
+                 for l in open(args.drop_list) if l.strip()}
+        print(f"待删 clip: {len(short)}", flush=True)
+    else:
+        print(f"扫描 caption json 时长 < {MIN_DURATION}s ...", flush=True)
+        short = scan_short(args.captions_root)
+        print(f"<1s 切片: {len(short)}", flush=True)
     if not short:
-        print("无 <1s 切片, 退出。")
+        print("无待删切片, 退出。")
         return
 
     paths = dict(
