@@ -36,8 +36,9 @@ if [[ -n "$FIRST_PEER" && "$FIRST_PEER" != *"$LOCAL_IP"* ]]; then
         echo "  filtered.jsonl 已同步: $(wc -l < "$FILTERED_JSONL") 条"
 fi
 
+DL_WORKERS="${DL_WORKERS:-10}"   # 粘性绑定下 2 强号×2 IP: 每 IP ~5 并发, 稳态; 过高(如50)会打爆单 IP 触发风控雪崩
 while true; do
-    python3 2_1_download.py --dl-workers 50 --total-shards "$TOTAL" --shard-id "$RANK" 2>/dev/null
+    python3 2_1_download.py --dl-workers "$DL_WORKERS" --total-shards "$TOTAL" --shard-id "$RANK" 2>/dev/null
     echo "$(date '+%H:%M') 进程退出, 5分钟后重启..."
     sleep 300
 done

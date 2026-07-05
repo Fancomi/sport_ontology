@@ -148,6 +148,15 @@ def release_proxy(proxy: str):
         _proxy_sems[proxy].release()
 
 
+def acquire_proxy_slot(proxy: str) -> bool:
+    """占用指定代理的并发槽 (阻塞式), 用于 cookie↔代理 粘性绑定 (不做代理选择/轮询)。
+    返回 True; 未知代理 (不在信号量表) 返回 False 表示无需释放。"""
+    if proxy in _proxy_sems:
+        _proxy_sems[proxy].acquire()
+        return True
+    return False
+
+
 def cooldown_proxy(proxy: str, seconds=300):
     """将代理冷却指定秒数"""
     with _proxy_lock:

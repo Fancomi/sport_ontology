@@ -26,12 +26,13 @@ logger = config.get_logger(__name__, "pipeline.log")
 # === 二阶段 cookies (一阶段已完成，两个账号都可用于下载) ===
 import tempfile
 _COOKIE_DIR = Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer")
+# 仅启用含 LOGIN_INFO 的强鉴权号 (弱号会撞 bot 墙拖垮流程); 其余重登后再放开。
 _COOKIE_ORIGINS = [
     _COOKIE_DIR / "cookies_Resxuilpazcuoe_origin.txt",
     _COOKIE_DIR / "cookies_Cocoonconcoction070_origin.txt",
-    _COOKIE_DIR / "cookies_Henrypower8652_ori.txt",
-    _COOKIE_DIR / "cookies_Pinchnuncio927_ori.txt",
-    _COOKIE_DIR / "cookies_Tgrhhgr18_ori.txt",
+    # _COOKIE_DIR / "cookies_Henrypower8652_ori.txt",   # 缺 LOGIN_INFO, 待重登
+    # _COOKIE_DIR / "cookies_Pinchnuncio927_ori.txt",   # 缺 LOGIN_INFO, 待重登
+    # _COOKIE_DIR / "cookies_Tgrhhgr18_ori.txt",        # 缺 LOGIN_INFO, 待重登
 ]
 _COOKIE_COPIES = []
 for i, src in enumerate(_COOKIE_ORIGINS):
@@ -39,6 +40,18 @@ for i, src in enumerate(_COOKIE_ORIGINS):
         dst = Path(tempfile.gettempdir()) / f"yt_dl_cookies_{i}_{os.getpid()}.txt"
         shutil.copy2(src, dst)
         _COOKIE_COPIES.append(dst)
+
+# === cookie ↔ 代理 粘性绑定 (sticky session) ===
+# YouTube 关联"账号 cookie 在哪个 IP 活动": 同一 cookie 从多个代理 IP 发请求会被判会话异常
+# → "Sign in to confirm you're not a bot" / 集体 403。故每个 cookie 固定绑定一个代理,
+# 一账号始终从同一 IP 出。选两个来源不同的干净快代理: cmc(外部认证, ~5s) + baidu8188(~17s),
+# 最大化两账号的 IP 来源差异, 互不干扰。
+_STICKY_PROXIES = [
+    "http://cmcproxy:WvUBhef4bQ@10.251.112.50:8128",
+    "http://agent.baidu.com:8188",
+]
+_COOKIE_PROXY = [_STICKY_PROXIES[i % len(_STICKY_PROXIES)]
+                 for i in range(len(_COOKIE_COPIES))] if _COOKIE_COPIES else []
 
 # === 路径 ===
 DATA_DIR = config.DATA_DIR
@@ -115,7 +128,19 @@ def download_one(item, out_dir):
         return True, "exists", "local", 0.0, "local"
 
     t0 = time.time()
-    proxy = config.pick_proxy(vid)
+    # cookie ↔ 代理 粘性绑定: 先按 video_id 稳定选 cookie, 该 cookie 固定用其绑定的代理
+    # (避免同一账号跨 IP 跳跃触发 YouTube 会话异常风控)。无 cookie 时回退代理轮询。
+    cookie_name = "none"
+    if _COOKIE_COPIES:
+        idx = config.stable_mod(vid, len(_COOKIE_COPIES))
+        cookiefile = str(_COOKIE_COPIES[idx])
+        cookie_name = f"cookie{idx}"
+        proxy = _COOKIE_PROXY[idx]                 # 固定绑定, 不经 pick_proxy 轮询
+        acquired = config.acquire_proxy_slot(proxy) # 仅占并发槽 (不改选择)
+    else:
+        cookiefile = None
+        proxy = config.pick_proxy(vid)
+        acquired = True
     opts = {
         "proxy": proxy, "quiet": True, "no_warnings": True,
         "retries": 3, "socket_timeout": 30,
@@ -130,12 +155,8 @@ def download_one(item, out_dir):
         "concurrent_fragment_downloads": 1,
         "remote_components": ["ejs:github"],
     }
-    cookie_name = "none"
-    if _COOKIE_COPIES:
-        # 按 video_id 稳定分配 cookie，避免单账号压力集中
-        idx = config.stable_mod(vid, len(_COOKIE_COPIES))
-        opts["cookiefile"] = str(_COOKIE_COPIES[idx])
-        cookie_name = f"cookie{idx}"
+    if cookiefile:
+        opts["cookiefile"] = cookiefile
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([f"https://www.youtube.com/watch?v={vid}"])
@@ -165,7 +186,8 @@ def download_one(item, out_dir):
             reason = "other"
         return False, reason, _pname(proxy), time.time() - t0, cookie_name
     finally:
-        config.release_proxy(proxy)
+        if acquired:
+            config.release_proxy(proxy)
 
 
 def run_download(workers, total_shards, shard_id):
