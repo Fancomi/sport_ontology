@@ -169,12 +169,21 @@ _FITNESS_AUDIT_V2_PROMPT = """请完整描述这张图片的可见内容，并�
 - has_person: 画面里是否有真实人物 (真人, 非卡通/示意图);
 - person_is_subject: 人物是否为画面主体 (而非背景里很小的人);
 - is_exercising: 人物是否在进行身体运动/锻炼/训练动作 (拉伸/跑跳/举重/球类/舞蹈等任意身体活动都算);
+- is_person_closeup: 是否人物特写 (镜头贴近, 人物占画面大部分);
+- is_full_body: 是否完整人体出镜 (头到脚基本可见);
+- core_is_partial_body: 画面核心是否为局部人体 (只拍手臂/腿/躯干等局部);
+- is_head_closeup: 是否头部/面部特写;
+- is_half_body: 是否半身出镜 (大致腰部以上);
+- is_single_person: 是否单人场景 (画面只有一个人);
+- is_multi_person: 是否多人场景 (两人及以上);
+- is_talking: 画面中人物是否在对着镜头说话/讲解;
+- heavily_occluded: 是否有人物被标题文字或遮挡物大面积遮蔽;
 - scene_type: real_person / text_slide / animation / landscape / other;
 - caption: 客观描述画面可见内容;
 - reject_reason: 若判定不通过, 简述原因; 通过则空字符串。
 
 只回答 JSON:
-{"has_person":true,"person_is_subject":true,"is_exercising":true,"scene_type":"real_person","caption":"...","reject_reason":""}"""
+{"has_person":true,"person_is_subject":true,"is_exercising":true,"is_person_closeup":false,"is_full_body":true,"core_is_partial_body":false,"is_head_closeup":false,"is_half_body":false,"is_single_person":true,"is_multi_person":false,"is_talking":false,"heavily_occluded":false,"scene_type":"real_person","caption":"...","reject_reason":""}"""
 
 
 def _fitness_gate(a: dict) -> bool:

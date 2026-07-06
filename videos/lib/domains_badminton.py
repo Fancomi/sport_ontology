@@ -93,44 +93,84 @@ _CAPTION_PROMPT = """\
 单打或双打、击球方场上站位与落点区域（前场/中场/后场）、击球方动作姿态。
 40字以内，只输出一句中文描述。"""
 
-# ── 结构化审核 V2 (1/2/3 阶段统一): 纯客观描述 + 羽毛球属性 gate ──
-# 防目的泄露: 描述与抽取阶段均不提「比赛/固定机位/要不要」, 只客观抽属性, 判定交给 audit_gate。
+# ── 结构化审核 V2 (2/3 阶段): 纯客观描述 + 三维属性 gate (视角 / 场地 / 运动) ──
+# 防目的泄露: 描述阶段只客观抽属性, 判定交给 audit_gate。三维强字段收敛跨模型分歧:
+#   ① 视角: 是否"后场高位广角主机位"(球员背对/远离, 见完整纵深) + 排除侧面/近景/特写;
+#   ② 场地: 完整单一球场 + 球网可见;
+#   ③ 运动: 隔网球类真人实拍比赛 (羽毛球/网球等; 排除格斗/乒乓台/非球类)。
 _AUDIT_V2_SYSTEM = "你是图像内容分析助手，只客观描述与判断你所看到的画面，不做任何超出画面的推测。"
 
-_AUDIT_V2_PROMPT = """请完整描述这张图片的可见内容，并如实抽取属性。
+_AUDIT_V2_PROMPT = """请客观描述这张图片，并如实抽取属性。只描述你真正看到的，不猜测画面外信息。
 
-要求:
-- caption 用中文直接描述可见人物、动作、场地、物体、画面性质 (如「这是一张文字幻灯片」「这是风景照」);
-- 只描述你真正看到的，不要猜测画面外信息;
-- 如果画面里没有真人，如实填 has_person=false。
+【视角维度】(关键: 严格区分"正后方高位"与其他)
+- cam_backcourt_high_wide: 是否为「球场正后方·高位·广角主机位」—— 需同时满足: 镜头位于球场一端底线的**正后方中轴线上**(画面左右大致对称, 球网横平、两条边线对称向远端收拢), 且为**高位俯拍**(明显从上往下看, 能俯视整片场地), 球员背对或远离镜头。只要是斜后方/偏侧/平视/仰视, 一律填 false;
+- cam_low_or_upward: 是否为平视或仰视/低机位 (镜头大致与场地齐平或朝上, 地面边线看不清/不完整);
+- cam_side: 是否侧面或斜侧视角 (从球场侧边或斜后方拍, 画面左右不对称);
+- cam_close: 是否近距离/低机位视角 (贴近场上球员);
+- cam_person_closeup: 是否人物特写 (人物占画面大部分, 看不全场地);
+- ground_lines_clear: 地面球场边线是否清晰完整可见 (正后方高位时边线应清晰; 仰视/伪影/遮挡时看不清);
 
-属性字段:
-- has_person: 画面里是否有真实人物 (真人, 非卡通/示意图);
-- is_real_footage: 画面是否为真实实拍 (非动画/合成/文字幻灯片/纯图示);
-- on_badminton_court: 画面是否发生在羽毛球场上 (可见球场线/球网/球拍/羽毛球);
-- scene_type: match_live(真人在场上打球) / tutorial(教学讲解演示) / highlight(集锦快剪或慢动作分解) / talking_head(人对镜头说话或解说为主体) / text_slide(文字幻灯片/比分板/数据) / animation(卡通动画) / spectator(观众席看台颁奖采访) / other;
-- is_talking_head: 画面主体是否为人对着镜头说话/解说 (而非在打球);
+【场地维度】
+- court_full_visible: 是否能看到较完整的一片球场 (含大部分边线, 从近端底线到远端底线);
+- net_visible: 画面中是否可见球网;
+- single_court: 画面是否只有单一一片球场 (非多片球场同框的场馆远景);
+
+【运动维度】
+- sport_type: badminton(羽毛球) / tennis(网球) / table_tennis(乒乓球) / volleyball(排球) / other_sport(其他运动) / not_sport(非运动画面);
+- is_net_ball_sport: 是否隔网球类运动 (羽毛球/网球/排球等中间有球网的);
+- is_real_match_play: 是否真人在场上进行真实比赛/对打 (非教学/演示/慢放/摆拍);
+
+【干扰项 (任一为真通常应排除)】
+- is_talking: 画面中人物是否在对着镜头说话/解说;
+- is_spectator_or_ceremony: 是否以观众席/看台/颁奖/采访为主体;
+- heavily_occluded: 是否有大面积标题文字/图形/遮挡物盖住画面;
+- is_slide_or_anim: 是否文字幻灯片/比分板/卡通动画/合成图/明显伪影拼接 (非正常实拍);
+
+- has_person: 画面里是否有真实人物;
 - caption: 客观描述画面可见内容;
-- reject_reason: 若判定不通过, 简述原因; 通过则空字符串。
 
 只回答 JSON:
-{"has_person":true,"is_real_footage":true,"on_badminton_court":true,"scene_type":"match_live","is_talking_head":false,"caption":"...","reject_reason":""}"""
+{"cam_backcourt_high_wide":true,"cam_low_or_upward":false,"cam_side":false,"cam_close":false,"cam_person_closeup":false,"ground_lines_clear":true,"court_full_visible":true,"net_visible":true,"single_court":true,"sport_type":"badminton","is_net_ball_sport":true,"is_real_match_play":true,"is_talking":false,"is_spectator_or_ceremony":false,"heavily_occluded":false,"is_slide_or_anim":false,"has_person":true,"caption":"..."}"""
 
 
 def _badminton_gate(a: dict) -> bool:
-    """羽毛球 V2 严格门控 (2/3 阶段真实视频帧): 真人+实拍+在球场+真人对打+非说话头。缺字段视为 False。"""
-    return (bool(a.get("has_person")) and bool(a.get("is_real_footage"))
-            and bool(a.get("on_badminton_court"))
-            and a.get("scene_type") == "match_live"
-            and not bool(a.get("is_talking_head")))
+    """羽毛球 V2 严格门控 (2/3 阶段, 纯单图判定): 三维全 AND。
+    ① 视角: 正后方高位广角主机位 + 地面边线清晰 + 非侧面/近景/特写/平视仰视;
+    ② 场地: 完整单一球场 + 球网可见;
+    ③ 运动: 隔网球类真人真实比赛 (羽毛球/网球等; 排除乒乓/非球类);
+    并排除说话/看台颁奖/大面积遮挡/幻灯动画伪影。缺字段视为 False (保守拒)。"""
+    NET_SPORTS = {"badminton", "tennis", "volleyball"}
+    return (
+        # ① 视角: 正后方高位 + 边线清晰, 排除平视仰视/侧面/近景/特写
+        bool(a.get("cam_backcourt_high_wide"))
+        and bool(a.get("ground_lines_clear"))
+        and not bool(a.get("cam_low_or_upward"))
+        and not bool(a.get("cam_side"))
+        and not bool(a.get("cam_close"))
+        and not bool(a.get("cam_person_closeup"))
+        # ② 场地
+        and bool(a.get("court_full_visible"))
+        and bool(a.get("net_visible"))
+        and bool(a.get("single_court"))
+        # ③ 运动
+        and bool(a.get("has_person"))
+        and bool(a.get("is_net_ball_sport"))
+        and bool(a.get("is_real_match_play"))
+        and a.get("sport_type") in NET_SPORTS
+        # 干扰排除
+        and not bool(a.get("is_talking"))
+        and not bool(a.get("is_spectator_or_ceremony"))
+        and not bool(a.get("heavily_occluded"))
+        and not bool(a.get("is_slide_or_anim"))
+    )
 
 
 def _badminton_gate_thumb(a: dict) -> bool:
     """羽毛球缩略图宽松门控 (1 阶段): 缩略图多为选手特写/赛事海报/带 HIGHLIGHTS 花字,
-    严判 scene_type / on_badminton_court 会大量误杀真实比赛封面。故只排除「非真人 / 合成动画 /
-    纯文字幻灯」——即要求有真人且非合成; is_real_footage 缺失时从宽视为真 (宁放勿杀),
-    是否固定机位对打交给 2/3 阶段真实帧严判。"""
-    return bool(a.get("has_person")) and a.get("is_real_footage") is not False
+    严判视角/场地会大量误杀真实比赛封面。故只排除「非真人 / 合成动画/幻灯」——
+    要求有真人且非合成图; is_slide_or_anim 缺失时从宽视为假 (宁放勿杀),
+    是否后场主机位广角交给 2/3 阶段真实帧严判。"""
+    return bool(a.get("has_person")) and not bool(a.get("is_slide_or_anim"))
 
 BADMINTON = Domain(
     name="badminton",

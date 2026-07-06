@@ -1,78 +1,129 @@
-"""二阶段视频 VLM 审核 — 持续 watch videos/ 目录，对新下载视频抽中位帧审核
+#!/usr/bin/env python3
+"""二阶段整段视频 VLM 审核 (远端并行模式, 复用 lib/remote_audit 引擎)。
+
+与 2_3_sync 同构的常驻并行模式: 远端 videos/ 枚举 → 拉取 → medoid+VLM 判定 →
+不通过则远端删 + 黑名单 + 剔 filtered。双缓冲流水线 (拉 N+1 ∥ 审 N), 不与其他 IO 冲突。
+审完当前远端全量后, 每 --recheck 秒重新枚举远端 (吃 2_3 新同步上来的视频), 循环推进。
+
+续跑: audit_progress 已审跳过。判定走 lib.vlm_prompts.judge_frame (V2 结构化 gate)。
 
 用法:
-  source ../vllm_deploy/detect_ports.sh
-  python3 2_2_audit_videos.py $VLM [--workers 32] [--poll 30]
-
-逻辑:
-  - 每 --poll 秒扫描 videos/ 目录，找出未审核的完整视频（非 .part）
-  - 抽中位帧 base64 → VLM 图像审核（复用 1_4_filter_vlm 的 prompt）
-  - 通过: 记录进度，保留视频
-  - 失败: 写 blacklist，删除视频文件，从 filtered.jsonl 剔除
+  SSHPASS='3dvision' python3 2_2_audit_videos.py
+  SSHPASS='3dvision' nohup python3 2_2_audit_videos.py > data/badminton/logs/audit_videos.log 2>&1 &
 """
 import argparse
-import base64
 import json
 import os
 import sys
 import time
-import threading
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-import cv2
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from representative_frame import representative_frame_from_video
+from llm_client import build_vlm_endpoints, parse_ports
 from lib import config
-from lib import duration_filter
-from llm_client import build_vlm_endpoints, call_vlm_raw, frames_to_img_bytes, parse_ports
-from lib.vlm_prompts import judge_frame
+from lib.vlm_prompts import USE_V2
+from lib.remote_audit import EndpointRouter, RemoteAudit
 
-_lock = threading.Lock()
-
-VIDEOS_DIR = config.DATA_DIR / "videos"
-PROGRESS = config.DATA_DIR / "video_audit_progress.txt"
-VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
-
-
-def extract_median_frame(video_path: Path, max_side: int = 480) -> str | None:
-    """抽时间中值代表帧 (medoid), 缩放后返回 base64; 失败返回 None。
-    (原"取正中央帧"已修正为 1fps 抽 N 帧 -> 时间中值背景 -> L2 最近真实帧。)"""
-    frame, _idx, _n = representative_frame_from_video(video_path, fps=1.0, max_side=max_side)
-    if frame is None:
-        return None
-    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    return base64.b64encode(buf).decode() if ok else None
+REMOTE      = config.DOMAIN.remote_host
+REMOTE_DIR  = config.DOMAIN.remote_videos           # 整段视频目录 (非 _split)
+SHM_BASE    = "/dev/shm/audit_videos"
+AUDIT_PROGRESS = config.STATE_DIR / "2_audit_videos_progress.txt"  # 已审 <vid>.mp4 (续跑跳过)
+AUDIT_DELETED  = config.DELIVERABLES_DIR / "2_audit_videos_deleted.txt"
 
 
-def judge_video(video_path: Path, item: dict, eps, pick_ep, release_ep) -> tuple[bool, str]:
-    """抽中位帧 + VLM 判断，返回 (passed, reason)。走共享 judge_frame
-    (V2 结构化 gate; domain 未配 V2 则回退二元'是/否')。"""
-    if duration_filter.is_too_long(video_path):
-        return False, "too_long"
-    img_b64 = extract_median_frame(video_path)
-    if not img_b64:
-        return False, "extract_failed"
-    img_b = frames_to_img_bytes([img_b64])
-    i = pick_ep()
-    try:
-        passed = judge_frame(eps[i], img_b,
-                             title=item.get("title", ""), channel=item.get("channel", ""))
-        return passed, "pass" if passed else "reject"
-    except Exception as e:
-        return False, f"error:{e}"
-    finally:
-        release_ep(i)
+def _read_set(path: Path) -> set:
+    return ({l.strip() for l in path.read_text().splitlines() if l.strip()}
+            if path.exists() else set())
 
 
-def remove_from_filtered(reject_ids: set):
-    """从 filtered.jsonl 原子剔除拒绝 ID"""
-    if not reject_ids or not config.FILTERED.exists():
+def _append(path: Path, names):
+    names = list(names)
+    if names:
+        with open(path, "a") as f:
+            f.writelines(n + "\n" for n in names)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--port", default="8001,8002,8003,8004,8005,8006,8007,8008")
+    ap.add_argument("--per-port", type=int, default=30, help="每端口并发 (default: 30)")
+    ap.add_argument("--batch-size", type=int, default=500, help="每批视频数 (default: 500)")
+    ap.add_argument("--recheck", type=int, default=600,
+                    help="审完远端全量后, 重新枚举吃新同步视频的间隔秒 (0=一轮即停)")
+    args = ap.parse_args()
+
+    # 本地 VLM 调用绝不走代理 (httpx 走代理连不上 127.0.0.1)
+    for k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
+        os.environ.pop(k, None)
+    os.environ.setdefault("no_proxy", "127.0.0.1,localhost")
+    if not os.environ.get("SSHPASS"):
+        sys.exit("请设置 SSHPASS: SSHPASS='3dvision' python3 2_2_audit_videos.py")
+
+    eps = build_vlm_endpoints(args.host, parse_ports(args.port), max_conn=args.per_port + 16)
+    if not eps:
+        sys.exit("无可用 VLM 端点")
+    router = EndpointRouter(eps)
+    engine = RemoteAudit(REMOTE, REMOTE_DIR, SHM_BASE, router)
+    concurrency = len(eps) * args.per_port
+
+    print(f"═══ Audit Videos (远端并行) ═══")
+    print(f"远端: {REMOTE}:{REMOTE_DIR}")
+    print(f"判定: {'V2 结构化 gate' if USE_V2 else '二元 是/否'} | VLM {len(eps)}×{args.per_port}={concurrency}")
+
+    round_no = 0
+    while True:
+        round_no += 1
+        done = _read_set(AUDIT_PROGRESS)
+        blacklist = config.load_blacklist()
+        remote = engine.enumerate_remote()
+        # 跳过: 已审(续跑) + 已黑名单(下载重跑侧可能已拉黑, 避免重复审)
+        todo = [n for n in remote if n not in done and n[:-4] not in blacklist]
+        print(f"[轮 {round_no}] 远端 {len(remote)} | 已审 {len(done)} | 黑名单 {len(blacklist)} | 待审 {len(todo)}", flush=True)
+        if not todo:
+            if not args.recheck:
+                break
+            print(f"[info] 无待审, {args.recheck}s 后重新枚举...", flush=True)
+            time.sleep(args.recheck)
+            continue
+
+        cursor = 0
+        reject_ids: list[str] = []   # 本轮累计拒绝的 vid (用于末尾一次性剔 filtered)
+
+        def next_files():
+            nonlocal cursor
+            chunk = todo[cursor:cursor + args.batch_size]
+            cursor += len(chunk)
+            return chunk
+
+        def on_results(res: dict):
+            rej = [f for f, ok in res.items() if not ok]
+            if rej:
+                engine.remote_delete(rej)                 # 远端真删
+                _append(AUDIT_DELETED, rej)
+                vids = [f[:-4] for f in rej]              # <vid>.mp4 -> <vid>
+                config.append_blacklist(vids)            # 黑名单 (幂等去重)
+                reject_ids.extend(vids)
+            _append(AUDIT_PROGRESS, res.keys())          # 含留+删, 续跑跳过
+
+        engine.pipeline(next_files, on_results, concurrency,
+                        pull_workers=24, poll=0)         # 单轮耗尽即返回, 外层 while 控重扫
+
+        # 本轮结束: 一次性从 filtered.jsonl 原子剔除被拒 vid
+        if reject_ids:
+            _prune_filtered(set(reject_ids))
+        if not args.recheck:
+            break
+
+
+def _prune_filtered(reject_ids: set):
+    """从 filtered.jsonl 原子剔除拒绝 vid (先写 .tmp 再 rename, 备份 .bak)。"""
+    if not config.FILTERED.exists():
         return
-    tmp = config.FILTERED.with_suffix(".audit_tmp.jsonl")
+    tmp = config.FILTERED.with_suffix(".tmp")
     kept = removed = 0
     with open(config.FILTERED, encoding="utf-8") as src, open(tmp, "w", encoding="utf-8") as out:
         for line in src:
@@ -84,124 +135,10 @@ def remove_from_filtered(reject_ids: set):
             if vid in reject_ids:
                 removed += 1
             else:
-                out.write(line)
-                kept += 1
-    config.FILTERED.rename(config.FILTERED.with_suffix(".audit_bak.jsonl"))
-    tmp.rename(config.FILTERED)
-    return kept, removed
-
-
-def scan_pending(done: set, blacklist: set) -> list[Path]:
-    """扫描 videos/ 中未审核的完整视频（排除正在下载的）"""
-    if not VIDEOS_DIR.exists():
-        return []
-    # 正在下载的 vid（有对应 .part 文件）
-    downloading = {p.stem.split(".")[0] for p in VIDEOS_DIR.iterdir() if ".part" in p.name}
-    return [
-        p for p in VIDEOS_DIR.iterdir()
-        if p.suffix in VIDEO_EXTS
-        and not p.name.endswith(".part")
-        and p.stem not in done
-        and p.stem not in blacklist
-        and p.stem not in downloading
-    ]
-
-
-def run(workers: int, poll: int, eps):
-    done = config.read_lines(PROGRESS)
-    blacklist = config.load_blacklist()
-
-    # least-inflight 端点路由（线程安全）
-    inflight = [0] * len(eps)
-    ep_lock = threading.Lock()
-
-    def pick_ep():
-        with ep_lock:
-            i = inflight.index(min(inflight)); inflight[i] += 1
-        return i
-
-    def release_ep(i):
-        with ep_lock:
-            inflight[i] = max(0, inflight[i] - 1)
-
-    # 加载 filtered 的 meta 索引（用于 VLM prompt 的 title/channel）
-    meta_map = {}
-    if config.FILTERED.exists():
-        for line in open(config.FILTERED, encoding="utf-8"):
-            try:
-                r = json.loads(line)
-                meta_map[r["video_id"]] = r
-            except Exception:
-                pass
-
-    accepted = rejected = 0
-    reject_batch: set = set()
-    last_prune = time.time()
-
-    print(f"[audit] 启动 workers={workers} poll={poll}s done={len(done)} filtered={len(meta_map)}")
-
-    while True:
-        pending = scan_pending(done, blacklist)
-        if not pending:
-            time.sleep(poll)
-            continue
-
-        print(f"[audit] 发现 {len(pending)} 个待审视频", flush=True)
-        start = time.time()
-
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futs = {pool.submit(judge_video, p, meta_map.get(p.stem, {}),
-                                eps, pick_ep, release_ep): p
-                    for p in pending}
-            for fut in as_completed(futs):
-                vpath = futs[fut]
-                vid = vpath.stem
-                passed, reason = fut.result()
-
-                with _lock:
-                    done.add(vid)
-                    config.append_line(PROGRESS, vid)
-                    if passed:
-                        accepted += 1
-                    else:
-                        rejected += 1
-                        reject_batch.add(vid)
-                        config.append_blacklist(vid)
-                        blacklist.add(vid)
-                        vpath.unlink(missing_ok=True)
-
-        # 批量从 filtered 剔除（每轮结束或每 5 分钟）
-        if reject_batch and (time.time() - last_prune > 300 or not scan_pending(done, blacklist)):
-            result = remove_from_filtered(reject_batch)
-            if result:
-                kept, removed = result
-                print(f"[audit] filtered 剔除 {removed} 条，保留 {kept} 条")
-            reject_batch.clear()
-            last_prune = time.time()
-
-        elapsed = time.time() - start
-        total = accepted + rejected
-        rate = accepted / total * 100 if total else 0
-        print(f"[audit] 本轮 {len(pending)} 个 耗时:{elapsed:.1f}s "
-              f"通过:{accepted} 拒绝:{rejected} ({rate:.1f}%)", flush=True)
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", required=True)
-    parser.add_argument("-w", "--workers", type=int, default=32)
-    parser.add_argument("--think", action="store_true")
-    parser.add_argument("--poll", type=int, default=30, help="无新视频时等待秒数")
-    args = parser.parse_args()
-
-    ports = parse_ports(args.port)
-    # raw httpx 端点；max_conn 放开连接池上限，覆盖 workers 并发
-    eps = build_vlm_endpoints(args.host, ports, think=args.think,
-                              max_conn=args.workers + 16)
-    if not eps:
-        sys.exit("无可用 VLM 端点")
-    run(args.workers, args.poll, eps)
+                out.write(line); kept += 1
+    os.replace(config.FILTERED, config.FILTERED.with_suffix(".audit_bak.jsonl"))
+    os.replace(tmp, config.FILTERED)
+    print(f"[filtered] 剔除 {removed} 条, 保留 {kept} 条", flush=True)
 
 
 if __name__ == "__main__":

@@ -195,18 +195,22 @@ def load_blacklist() -> set:
 
 
 def append_blacklist(video_ids):
-    """追加写入黑名单 (接受 str 或 iterable)"""
+    """追加写入黑名单 (接受 str 或 iterable)。
+    flock 跨进程互斥: 审核(删除+拉黑) 与 下载重跑(invalid 拉黑) 可并发安全写同一文件。"""
+    import fcntl
     if isinstance(video_ids, str):
         video_ids = [video_ids]
     bl = load_blacklist()
     new_ids = [vid for vid in video_ids if vid and vid not in bl]
     if not new_ids:
         return
-    with _bl_lock:
+    with _bl_lock:                                # 进程内线程互斥
         bl.update(new_ids)
         with open(BLACKLIST, "a") as f:
-            for vid in new_ids:
-                f.write(vid + "\n")
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # 跨进程互斥
+            f.write("".join(vid + "\n" for vid in new_ids))
+            f.flush()
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
 def is_blacklisted(video_id: str) -> bool:
