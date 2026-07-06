@@ -235,3 +235,6 @@ __marimo__/
 
 # vlm_audit 实验产物 (gallery / result json, 可重生)
 videos/vlm_audit/_experiments/
+
+# 时间戳备份文件 (deliverables 等改动前的 .bak-YYYYMMDD_HHMMSS 快照, git 本身即历史)
+*.bak-[0-9]*
