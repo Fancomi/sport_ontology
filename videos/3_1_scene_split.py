@@ -36,13 +36,7 @@ REMOTE = config.DOMAIN.remote_host
 REMOTE_SRC = config.DOMAIN.remote_videos
 REMOTE_DST = config.DOMAIN.remote_videos + "_split"
 
-SSH_OPTS = (
-    "-o StrictHostKeyChecking=no "
-    "-o UserKnownHostsFile=/dev/null "
-    "-o Compression=no "
-    "-o ConnectTimeout=10 "
-    "-c aes128-gcm@openssh.com"
-)
+SSH_OPTS = config.SSH_OPTS   # 复用 config 统一 ssh 选项 (与 2_3/2_2/3_2 一致)
 
 DATA = config.DATA_ROOT   # 按领域分隔的 data/<domain>/
 PROGRESS_FILE = config.STATE_DIR / "3_scene_split_progress.txt"
@@ -76,10 +70,11 @@ def save_progress(stems: list[str]):
 _remote_file_cache: list[str] | None = None
 
 
-def list_remote_videos(done: set[str], batch_size: int) -> list[str]:
-    """列出远端待处理视频文件名 (带缓存, 跳过已完成)。"""
+def list_remote_videos(done: set[str], batch_size: int, refresh: bool = False) -> list[str]:
+    """列出远端待处理视频文件名 (带缓存, 跳过已完成)。refresh=True 强制重新枚举远端
+    (poll 常驻模式下吃审核新放行/下载新同步的视频)。"""
     global _remote_file_cache
-    if _remote_file_cache is None:
+    if _remote_file_cache is None or refresh:
         r = ssh_cmd(f"ls {REMOTE_SRC}/", timeout=300)
         if r.returncode != 0:
             print(f"[ERROR] 列远端目录失败: {r.stderr.strip()[:200]}", flush=True)
@@ -677,8 +672,19 @@ def run_pipeline(args):
         if args.max_batches and batch_num >= args.max_batches:
             break
 
-    # 清理
-    shutil.rmtree("/dev/shm/scene_split_A", ignore_errors=True)
+        # 当前批耗尽: poll>0 时等待并重扫 (与 2_3_sync/2_2_audit 一致的常驻模式,
+        # 吃审核新放行/下载新同步的视频); poll=0 则扫空即停。
+        if not pulled_curr:
+            if not args.poll:
+                break
+            print(f"[info] 无待切视频, {args.poll}s 后重新扫描远端...", flush=True)
+            time.sleep(args.poll)
+            files_curr = list_remote_videos(done, args.batch_size, refresh=True)
+            if not files_curr:
+                continue
+            os.makedirs(shm_curr_src, exist_ok=True)
+            os.makedirs(shm_curr_out, exist_ok=True)
+            pulled_curr = pull_batch(files_curr, shm_curr_src, args.workers_pull)
     shutil.rmtree("/dev/shm/scene_split_B", ignore_errors=True)
 
     elapsed = time.time() - t_start
@@ -701,6 +707,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--max-batches", type=int, default=0,
                         help="最多跑 N 批次 (0=不限)")
+    parser.add_argument("--poll", type=int, default=0,
+                        help="扫空后等待秒数再重扫 (常驻并行模式, 吃审核放行/下载新同步的视频; 0=扫空即停)")
     parser.add_argument("--replace", action="store_true",
                         help="按原片名重切+只覆盖远端幸存段 (不跑全量 pipeline)")
     parser.add_argument("--names", nargs="*", default=[],

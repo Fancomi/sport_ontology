@@ -56,6 +56,10 @@ COOKIES_ORIGIN = Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer/c
 # 数据目录 (阶段间共享, 工程外大盘; 按领域隔离)
 DATA_DIR = Path(DOMAIN.local_data_dir)
 
+# 远程 ssh/rsync 选项 (2_3_sync / 3_1_split / remote_audit 共用; 放 config 避免跨模块耦合)
+SSH_OPTS = ("-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+            "-o Compression=no -o ConnectTimeout=10 -c aes128-gcm@openssh.com")
+
 # 一阶段中间产物 (爬虫 jsonl, 归 pipeline_state)
 SEARCH_RESULTS = RESULTS_DIR / "search_results.jsonl"
 CHANNEL_VIDEOS = RESULTS_DIR / "channel_videos.jsonl"

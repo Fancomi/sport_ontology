@@ -26,8 +26,7 @@ from lib import config
 from lib import duration_filter
 from lib.vlm_prompts import judge_frame
 
-SSH_OPTS = ("-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
-            "-o Compression=no -o ConnectTimeout=10 -c aes128-gcm@openssh.com")
+SSH_OPTS = config.SSH_OPTS   # 复用 config 统一定义 (2_3/3_1/remote_audit 一致)
 
 
 class EndpointRouter:
