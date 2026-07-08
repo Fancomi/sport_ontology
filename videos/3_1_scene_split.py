@@ -577,16 +577,21 @@ def run_pipeline(args):
     total_done = 0
     batch_num = 0
 
-    # 预拉第一批
-    files_curr = list_remote_videos(done, args.batch_size)
-    if not files_curr:
-        print("[info] 无待处理视频。", flush=True)
-        return
-
     shm_curr_src = "/dev/shm/scene_split_A/src"
     shm_curr_out = "/dev/shm/scene_split_A/out"
     shm_next_src = "/dev/shm/scene_split_B/src"
     shm_next_out = "/dev/shm/scene_split_B/out"
+
+    # 预拉第一批: 常驻模式(poll>0)下即使当前无待切也轮询等待 (吃审核放行/下载新同步的视频),
+    # 与 2_3_sync/2_2_audit 一致; poll=0 则无待切即退。
+    files_curr = list_remote_videos(done, args.batch_size)
+    while not files_curr:
+        if not args.poll:
+            print("[info] 无待处理视频。", flush=True)
+            return
+        print(f"[info] 无待切视频, {args.poll}s 后重新扫描远端...", flush=True)
+        time.sleep(args.poll)
+        files_curr = list_remote_videos(done, args.batch_size, refresh=True)
 
     os.makedirs(shm_curr_src, exist_ok=True)
     os.makedirs(shm_curr_out, exist_ok=True)
@@ -640,13 +645,14 @@ def run_pipeline(args):
             results, t_split, total_segs, errors, n_pushed, push_mb, t_push = split_push_result[0]
             pulled_next = pull_next_result[0]
 
-            # 记录进度
-            completed_stems = [os.path.splitext(f)[0] for f in pulled_curr]
+            # 记录进度: 仅记切割未报错的 (error 视频不记 -> 下轮续跑重试, 避免永久漏切;
+            # no_cut/split/too_short 均属正常完成, 照记)。
+            ok_stems = [os.path.splitext(r[0])[0] for r in results if not r[2].startswith("error")]
             if not args.dry_run:
-                save_progress(completed_stems)
-                done.update(completed_stems)
+                save_progress(ok_stems)
+                done.update(ok_stems)
 
-            total_done += len(pulled_curr)
+            total_done += len(ok_stems)
             elapsed = time.time() - t_start
             rate = total_done / elapsed
             remaining = max(0, (len(_remote_file_cache or []) - len(done))) / rate if rate > 0 else 0
@@ -672,9 +678,10 @@ def run_pipeline(args):
         if args.max_batches and batch_num >= args.max_batches:
             break
 
-        # 当前批耗尽: poll>0 时等待并重扫 (与 2_3_sync/2_2_audit 一致的常驻模式,
-        # 吃审核新放行/下载新同步的视频); poll=0 则扫空即停。
-        if not pulled_curr:
+        # 当前批耗尽: poll>0 常驻等待并重扫 (与 2_3_sync interval / 2_2_audit recheck 同构,
+        # 持续吃审核放行/下载新同步的视频); poll=0 则扫空即停。
+        # 内层 while: 一直轮询直到重新拉到视频 (避免单次空扫即退出 while pulled_curr)。
+        while not pulled_curr:
             if not args.poll:
                 break
             print(f"[info] 无待切视频, {args.poll}s 后重新扫描远端...", flush=True)
@@ -685,6 +692,8 @@ def run_pipeline(args):
             os.makedirs(shm_curr_src, exist_ok=True)
             os.makedirs(shm_curr_out, exist_ok=True)
             pulled_curr = pull_batch(files_curr, shm_curr_src, args.workers_pull)
+
+    shutil.rmtree("/dev/shm/scene_split_A", ignore_errors=True)
     shutil.rmtree("/dev/shm/scene_split_B", ignore_errors=True)
 
     elapsed = time.time() - t_start

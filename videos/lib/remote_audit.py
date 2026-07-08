@@ -128,11 +128,22 @@ class RemoteAudit:
     def pipeline(self, next_files, on_results, concurrency: int,
                  pull_workers=24, poll=60):
         """next_files() -> list[str] 下一批待审 (空=暂无); on_results(dict{name:bool}) 处理结果。
-        poll>0 时无新文件等待重试; poll=0 则耗尽即停。返回 (total_pass, total_reject)。"""
+        poll>0 常驻: 无新文件时轮询等待, 持续吃上游新产出 (与 2_3_sync/3_1_split 同构);
+        poll=0 耗尽即停 (供 2_2 外层自管 recheck)。返回 (total_pass, total_reject)。"""
         shm_a, shm_b = f"{self.shm_base}_A", f"{self.shm_base}_B"
         total_pass = total_reject = batch = 0
         t0 = time.time()
-        pulled = self.pull_batch(next_files(), shm_a, pull_workers)
+
+        def pull_until(shm):
+            """拉一批; poll>0 时空则轮询等待直到非空; poll=0 空则返回 []。"""
+            got = self.pull_batch(next_files(), shm, pull_workers)
+            while not got and poll:
+                print(f"[info] 无新文件, {poll}s 后重试...", flush=True)
+                time.sleep(poll)
+                got = self.pull_batch(next_files(), shm, pull_workers)
+            return got
+
+        pulled = pull_until(shm_a)
         shm_curr, shm_next = shm_a, shm_b
         try:
             while pulled:
@@ -164,12 +175,8 @@ class RemoteAudit:
 
                 shm_curr, shm_next = _sn, _sc
                 pulled = pull_res
-                if not pulled:
-                    if not poll:
-                        break
-                    print(f"[info] 无新文件, {poll}s 后重试...", flush=True)
-                    time.sleep(poll)
-                    pulled = self.pull_batch(next_files(), shm_curr, pull_workers)
+                if not pulled:                # 预拉的下一批为空: poll>0 常驻轮询, poll=0 收工
+                    pulled = pull_until(shm_curr)
         finally:
             shutil.rmtree(shm_a, ignore_errors=True)
             shutil.rmtree(shm_b, ignore_errors=True)

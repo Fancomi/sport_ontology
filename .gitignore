@@ -6,6 +6,7 @@ __pycache__/
 *.py[codz]
 *$py.class
 vllm_deploy/benchmark/*json
+videos/data
 
 # C extensions
 *.so
