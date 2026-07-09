@@ -28,6 +28,9 @@ videos/data/*/pipeline_state/
 videos/data/*/logs/
 videos/data/*/downloads/
 
+# taxo 闭环运行态 (可重生)
+prompt_lab/taxo/runs/
+
 # Distribution / packaging
 .Python
 build/
