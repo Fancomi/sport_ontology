@@ -70,8 +70,9 @@ def _apply_review(registry, feedback):
             registry.keys[kid]["name"] = newname
 
 
-def run_loop(source, registry, judge, run_dir: Path, base_prompt: str):
-    """端到端: 立规则 → 多轮(抽取/碰撞/裂簇/沉淀/HTML/门) → 双闸停。"""
+def run_loop(source, registry, judge, run_dir: Path, base_prompt: str, extract_fn):
+    """端到端: 立规则 → 多轮(抽取/碰撞/裂簇/沉淀/HTML/门) → 双闸停。
+    extract_fn(image_bytes, keys) -> (caption, json_raw) 由调用方注入。"""
     run_dir = Path(run_dir)
     state = record.load_cursor(run_dir / "state.json", default={"last_round": -1})
     canon_map = canon.load_map(run_dir / "schema" / "canon_map.v0.json")
@@ -104,7 +105,7 @@ def run_loop(source, registry, judge, run_dir: Path, base_prompt: str):
 
     while round_no < config.MAX_ROUNDS:
         round_dir = run_dir / "rounds" / f"round_{round_no:02d}"
-        ctx = _mk_ctx(source, registry, canon_map, judge,
+        ctx = _mk_ctx(source, registry, canon_map, extract_fn,
                       round_dir, round_no, participant_ids)
         result = run_round.run_round(ctx)
         # 全局碰撞: 用本轮新指纹覆盖旧的, 再对全体 image 重新分桶
@@ -192,18 +193,12 @@ def run_loop(source, registry, judge, run_dir: Path, base_prompt: str):
     return history
 
 
-def _mk_ctx(source, registry, canon_map, judge, round_dir, round_no, participant_ids):
+def _mk_ctx(source, registry, canon_map, extract_fn, round_dir, round_no, participant_ids):
     from types import SimpleNamespace
     return SimpleNamespace(
         source=source, registry=registry, canon_map=canon_map,
-        extract_fn=judge_extract_fn(), round_dir=round_dir,
+        extract_fn=extract_fn, round_dir=round_dir,
         round_no=round_no, participant_ids=participant_ids)
-
-
-# extract_fn 由 main 注入真实 Extractor; 这里留个占位在 main 覆盖
-_EXTRACT_FN = None
-def judge_extract_fn():
-    return _EXTRACT_FN
 
 
 def _wait_review(path: Path):
@@ -222,7 +217,6 @@ def _wait_review(path: Path):
 
 
 def main():
-    import taxo.loop as L
     from taxo.backends.source import CocoSource
     from taxo.backends.extractor import Extractor
     from taxo.backends.judge import Judge
@@ -243,10 +237,9 @@ def main():
     registry = schema_mod.SchemaRegistry(run_dir)
     judge = Judge(cache_dir=run_dir / "judge_cache")
     extractor = Extractor()
-    L._EXTRACT_FN = extractor.extract
 
     base_prompt = "场景 / 主体 / 动作 / 物体 / 空间关系 / 视角 / 构图"
-    hist = run_loop(_Src(), registry, judge, run_dir, base_prompt)
+    hist = run_loop(_Src(), registry, judge, run_dir, base_prompt, extractor.extract)
     print(_json.dumps(hist, ensure_ascii=False, indent=2))
 
 
