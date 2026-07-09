@@ -39,8 +39,19 @@ import json as _json
 from pathlib import Path
 
 from taxo import metrics, run_round
-from taxo.core import canon, record, schema as schema_mod
+from taxo.core import canon, collide, record, schema as schema_mod
 from taxo.backends import reviewer
+
+
+def _rehydrate_history(run_dir: Path, last_round: int) -> list[dict]:
+    """续跑: 从已落盘的 rounds/round_XX/metrics.json 重建 history,
+    否则 should_stop 的收敛闸在重启后需重新累积 CONVERGE_WINDOW+1 轮。"""
+    hist = []
+    for r in range(last_round + 1):
+        mf = run_dir / "rounds" / f"round_{r:02d}" / "metrics.json"
+        if mf.exists():
+            hist.append(_json.loads(mf.read_text("utf-8")))
+    return hist
 
 
 def _thumb_b64(image_bytes: bytes) -> str:
@@ -79,18 +90,28 @@ def run_loop(source, registry, judge, run_dir: Path, base_prompt: str):
                              introduced_round=0, introduced_by="seed")
         registry.snapshot()
 
-    history = []
+    history = _rehydrate_history(run_dir, state["last_round"])
     participant_ids = None                 # 首轮全体
     round_no = state["last_round"] + 1
     # 缓存 image_bytes 供裂簇/HTML 用(小子集可全驻留)
     items_by_id = {it.image_id: it for it in source}
+    n_total = len(items_by_id)             # 全局图数(distinctness 分母, 固定不随子集缩)
+    # 全局 image_id -> 最新指纹; 增量轮只更新碰撞子集, 但碰撞按全局重算
+    global_fp = {r["image_id"]: r["label_set_fp"]
+                 for r in record.read_all(run_dir / "rounds" /
+                                          f"round_{state['last_round']:02d}" / "records.jsonl")} \
+        if state["last_round"] >= 0 else {}
 
     while round_no < config.MAX_ROUNDS:
         round_dir = run_dir / "rounds" / f"round_{round_no:02d}"
         ctx = _mk_ctx(source, registry, canon_map, judge,
                       round_dir, round_no, participant_ids)
         result = run_round.run_round(ctx)
-        clusters = result["clusters"]
+        # 全局碰撞: 用本轮新指纹覆盖旧的, 再对全体 image 重新分桶
+        for r in result["records"]:
+            global_fp[r["image_id"]] = r["label_set_fp"]
+        clusters = collide.find_collisions(
+            [{"image_id": iid, "label_set_fp": fp} for iid, fp in global_fp.items()])
 
         # 裂簇 + 沉淀
         new_keys_meta = []
@@ -110,18 +131,24 @@ def run_loop(source, registry, judge, run_dir: Path, base_prompt: str):
         if new_keys_meta:
             registry.snapshot()
 
-        # 指标
+        # 指标 (n_images = 全局总图数, 增量轮不因子集缩小分母)
         m = {
-            "round": round_no, "n_images": result["n_images"],
+            "round": round_no, "n_images": n_total,
+            "n_extracted_this_round": result["n_images"],
             "n_keys_total": registry.n_active(), "n_keys_new": len(new_keys_meta),
             "n_collision_clusters": len(clusters),
             "max_cluster_size": max((len(c["image_ids"]) for c in clusters), default=0),
-            "collision_rate": round(metrics.collision_rate(result["n_images"], clusters), 4),
-            "distinctness": round(metrics.distinctness(result["n_images"], clusters), 4),
+            "collision_rate": round(metrics.collision_rate(n_total, clusters), 4),
+            "distinctness": round(metrics.distinctness(n_total, clusters), 4),
             "new_key_yield": round(metrics.new_key_yield(len(new_keys_meta), len(clusters)), 4),
         }
         (round_dir / "metrics.json").write_text(
             _json.dumps(m, ensure_ascii=False, indent=2), "utf-8")
+        # 溯源产物 (设计 §10)
+        (round_dir / "collisions.json").write_text(
+            _json.dumps(clusters, ensure_ascii=False, indent=2), "utf-8")
+        (round_dir / "new_keys.json").write_text(
+            _json.dumps(new_keys_meta, ensure_ascii=False, indent=2), "utf-8")
         history.append(m)
 
         # HTML review 页
