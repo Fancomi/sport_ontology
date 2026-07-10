@@ -109,3 +109,49 @@ def representative_frame_from_video(video_path, fps=1.0, max_side=480,
     stack = np.stack(frames, axis=0)   # 同一视频同尺寸, 可堆叠
     frame, idx = representative_frame_from_stack(stack, method=method)
     return frame, idx, len(frames)
+
+
+def triptych_reps_from_video(video_path, n_seg=3, fps=1.0, max_side=480, method="median"):
+    """视频均匀分 n_seg 段, 每段各取 medoid 代表帧, 返回帧列表 [ndarray, ...]。
+
+    动机: 单张 medoid 只反映整段"典型"一帧, 无法暴露段内镜头切换/运镜/过渡;
+    取头/中/尾各段代表帧, 作为多图 (非拼接) 按序送入 VLM (与喂视频帧同法),
+    VLM 逐图判断"是否全程固定机位比赛"——某段是运镜/特写/无关场景即露馅。
+
+    返回 [rep_bgr, ...] (最多 n_seg 张; 段内无帧则跳过); 解码失败/无帧 -> []。
+    """
+    null = None; saved = None
+    frames, ts = [], []
+    try:
+        null = os.open(os.devnull, os.O_WRONLY); saved = os.dup(2); os.dup2(null, 2)
+        cap = cv2.VideoCapture(str(video_path))
+        src_fps = cap.get(cv2.CAP_PROP_FPS) or 0
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total > 0 and src_fps > 0 and fps > 0:
+            dur = total / src_fps
+            n = max(n_seg, min(64, int(dur * fps)))       # 至少 n_seg 帧才能分段
+            for i in range(n):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, min(total - 1, int(i * total / n)))
+                ret, fr = cap.read()
+                if ret:
+                    frames.append(_resize(fr, max_side)); ts.append(i / n)   # 归一化时间 0~1
+        cap.release()
+    finally:
+        if saved is not None:
+            os.dup2(saved, 2); os.close(saved)
+        if null is not None:
+            os.close(null)
+    if not frames:
+        return []
+    reps = []
+    for k in range(n_seg):
+        lo, hi = k / n_seg, (k + 1) / n_seg + (1e-3 if k == n_seg - 1 else 0)
+        seg = [f for f, t in zip(frames, ts) if lo <= t < hi]
+        if not seg:
+            continue
+        rep, _ = representative_frame_from_stack(np.stack(seg, axis=0), method=method)
+        if rep is not None:
+            reps.append(rep)
+    return reps
+
+

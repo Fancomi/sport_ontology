@@ -41,8 +41,8 @@ SSH_OPTS = config.SSH_OPTS   # 复用 config 统一 ssh 选项 (与 2_3/2_2/3_2 
 DATA = config.DATA_ROOT   # 按领域分隔的 data/<domain>/
 PROGRESS_FILE = config.STATE_DIR / "3_scene_split_progress.txt"
 REPLACE_PROGRESS = config.STATE_DIR / "3_replace_progress.txt"
-SCENE_THRESHOLD = 0.3
-MIN_SEGMENT_SEC = 0.5
+SCENE_THRESHOLD = 0.05    # 场景切点阈值 (实测: 0.3 漏切混合场景; 0.05 能切开又不过度碎片化)
+MIN_SEGMENT_SEC = 5.0     # 段长下限: <5s 直接丢弃 (只留够长的完整回合段)
 
 
 # ═══════════════════════════ 工具 ═══════════════════════════
@@ -711,8 +711,10 @@ def main():
                         help="并发切割数 (default: 32)")
     parser.add_argument("--workers-push", type=int, default=4,
                         help="并发推送数 (default: 4)")
-    parser.add_argument("--scene-threshold", type=float, default=0.3,
-                        help="ffmpeg scene 阈值 (default: 0.3)")
+    parser.add_argument("--scene-threshold", type=float, default=0.05,
+                        help="ffmpeg scene 阈值 (default: 0.05; 越低切越细)")
+    parser.add_argument("--min-seg", type=float, default=5.0,
+                        help="段长下限秒, 短于此的段丢弃 (default: 5.0)")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--max-batches", type=int, default=0,
                         help="最多跑 N 批次 (0=不限)")
@@ -732,8 +734,9 @@ def main():
                         help="--replace: 并发原片数 (default 16)")
     args = parser.parse_args()
 
-    global SCENE_THRESHOLD
+    global SCENE_THRESHOLD, MIN_SEGMENT_SEC
     SCENE_THRESHOLD = args.scene_threshold
+    MIN_SEGMENT_SEC = args.min_seg
 
     if not os.environ.get("SSHPASS"):
         print("请设置 SSHPASS: SSHPASS='3dvision' python3 3_1_scene_split.py")

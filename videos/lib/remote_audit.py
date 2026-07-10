@@ -21,7 +21,7 @@ from pathlib import Path
 
 import cv2
 from llm_client import call_vlm_raw, frames_to_img_bytes
-from representative_frame import representative_frame_from_video
+from representative_frame import triptych_reps_from_video
 from lib import config
 from lib import duration_filter
 from lib.vlm_prompts import judge_frame
@@ -99,15 +99,21 @@ class RemoteAudit:
             list(ex.map(lambda n: self._pull_one(n, shm), files))
         return [f for f in os.listdir(shm) if f.endswith(".mp4")]
 
-    # ── 单文件审核: 时长预闸 → medoid → judge_frame ──
+    # ── 单文件审核: 时长预闸 → 3段medoid多图 → judge_frame ──
     def audit_one(self, path: str) -> bool:
         if duration_filter.is_too_long(path) or duration_filter.is_too_short(path):
             return False   # 超长/过短直接判否 → 调用方远端删
-        frame, _idx, _n = representative_frame_from_video(path, fps=1.0, max_side=480)
-        if frame is None:
+        reps = triptych_reps_from_video(path, n_seg=3, fps=1.0, max_side=480)  # 头/中/尾各 medoid
+        if not reps:
             return False
-        _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        img_b = frames_to_img_bytes([base64.b64encode(buf).decode()])
+        b64s = []
+        for fr in reps:
+            ok, buf = cv2.imencode(".jpg", fr, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if ok:
+                b64s.append(base64.b64encode(buf).decode())
+        if not b64s:
+            return False
+        img_b = frames_to_img_bytes(b64s)   # 多图按序 (与喂视频帧同法), 非拼接
         i = self.router.pick()
         try:
             return judge_frame(self.router.eps[i], img_b)

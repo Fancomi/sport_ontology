@@ -107,11 +107,11 @@ _AUDIT_V2_PROMPT = """请客观描述这张图片，并如实抽取属性。只�
 - cam_low_or_upward: 是否为平视或仰视/低机位 (镜头大致与场地齐平或朝上, 地面边线看不清/不完整);
 - cam_side: 是否侧面或斜侧视角 (从球场侧边或斜后方拍, 画面左右不对称);
 - cam_close: 是否近距离/低机位视角 (贴近场上球员);
-- cam_person_closeup: 是否人物特写 (人物占画面大部分, 看不全场地);
+- cam_person_closeup: 是否人物特写 —— 球员(半身/上身/脸部)占据画面显著比例、看不到完整球场时即为 true。只要镜头拉近到"以人为主体"而非"以整片球场为主体", 一律 true;
 - ground_lines_clear: 地面球场边线是否清晰完整可见 (正后方高位时边线应清晰; 仰视/伪影/遮挡时看不清);
 
-【场地维度】
-- court_full_visible: 是否能看到较完整的一片球场 (含大部分边线, 从近端底线到远端底线);
+【场地维度】(关键判别: 必须"整片羽毛球场"为画面主体)
+- court_full_visible: 是否能看到**较完整的整片羽毛球场** —— 从近端底线到远端底线、含大部分边线都在画面内才 true。只拍到半场/局部场地/看不到远端底线/以人物为主体挡住场地, 一律 false;
 - net_visible: 画面中是否可见球网;
 - single_court: 画面是否只有单一一片球场 (非多片球场同框的场馆远景);
 
@@ -134,29 +134,27 @@ _AUDIT_V2_PROMPT = """请客观描述这张图片，并如实抽取属性。只�
 
 
 def _badminton_gate(a: dict) -> bool:
-    """羽毛球 V2 严格门控 (2/3 阶段, 纯单图判定): 三维全 AND。
-    ① 视角: 正后方高位广角主机位 + 地面边线清晰 + 非侧面/近景/特写/平视仰视;
-    ② 场地: 完整单一球场 + 球网可见;
-    ③ 运动: 隔网球类真人真实比赛 (羽毛球/网球等; 排除乒乓/非球类);
-    并排除说话/看台颁奖/大面积遮挡/幻灯动画伪影。缺字段视为 False (保守拒)。"""
-    NET_SPORTS = {"badminton", "tennis", "volleyball"}
+    """羽毛球 V2 严格门控 (2/3 阶段): 三维全 AND, 宁可错杀不放过。
+    ① 运动: 必须是羽毛球 (sport_type=='badminton', 网球/乒乓/排球一律拒);
+    ② 场地: 羽毛球场完整出镜 + 单一球场 + 球网可见 (核心判别: 场景不全即拒);
+    ③ 视角: 正后方高位广角主机位 + 边线清晰, 且非侧面/近景/平视仰视/人物特写 (核心判别: 特写即拒);
+    并排除说话/看台颁奖/大面积遮挡。缺字段视为 False (保守拒)。"""
     return (
-        # ① 视角: 正后方高位 + 边线清晰, 排除平视仰视/侧面/近景/特写
-        bool(a.get("cam_backcourt_high_wide"))
-        and bool(a.get("ground_lines_clear"))
-        and not bool(a.get("cam_low_or_upward"))
-        and not bool(a.get("cam_side"))
-        and not bool(a.get("cam_close"))
-        and not bool(a.get("cam_person_closeup"))
-        # ② 场地
-        and bool(a.get("court_full_visible"))
-        and bool(a.get("net_visible"))
-        and bool(a.get("single_court"))
-        # ③ 运动
+        # ① 运动: 只留羽毛球
+        a.get("sport_type") == "badminton"
         and bool(a.get("has_person"))
-        and bool(a.get("is_net_ball_sport"))
         and bool(a.get("is_real_match_play"))
-        and a.get("sport_type") in NET_SPORTS
+        # ② 场地完整 (核心判别之一)
+        and bool(a.get("court_full_visible"))
+        and bool(a.get("single_court"))
+        and bool(a.get("net_visible"))
+        and bool(a.get("ground_lines_clear"))
+        # ③ 视角: 正后方高位广角, 排除特写/侧面/近景/平视仰视 (核心判别之一)
+        and bool(a.get("cam_backcourt_high_wide"))
+        and not bool(a.get("cam_person_closeup"))
+        and not bool(a.get("cam_close"))
+        and not bool(a.get("cam_side"))
+        and not bool(a.get("cam_low_or_upward"))
         # 干扰排除
         and not bool(a.get("is_talking"))
         and not bool(a.get("is_spectator_or_ceremony"))
