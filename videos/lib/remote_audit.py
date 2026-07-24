@@ -150,10 +150,15 @@ class RemoteAudit:
             result = judge_frame_detailed(self.router.eps[i], img_b)
             return AuditDecision(result.passed, result.reason_code, result.detail)
         except Exception as e:
-            # VLM 端点请求异常 (超时/连接失败等): 保守保留 (与既有行为一致), 但标记
-            # 为 endpoint_error/transient, 供调用方避免误判为「内容拒绝」。
+            # VLM 端点请求异常 (超时/连接失败等): 结果不确定, 不能当作「通过」——
+            # 这不是「判定为无害内容」, 只是「这次没问出结果」。之前版本 passed=True
+            # 会让调用方直接把它计入 total_pass/写入完成态, 从而把一次基础设施抖动
+            # 永久固化成「已确认保留」, 与 transient 失败「应重试而非被动接受」的
+            # 设计意图相悖。返回 passed=False + endpoint_error(transient=True):
+            # 调用方 (2_2/3_2 on_results) 据 is_transient 既不远端删也不写入完成态,
+            # 该文件会在下一轮重新入队重试, 而不是被误计为已判定通过或已判定拒绝。
             from lib.vlm_prompts import REASON_ENDPOINT_ERROR
-            return AuditDecision(True, REASON_ENDPOINT_ERROR, f"{type(e).__name__}: {e}")
+            return AuditDecision(False, REASON_ENDPOINT_ERROR, f"{type(e).__name__}: {e}")
         finally:
             self.router.release(i)
 

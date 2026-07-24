@@ -187,11 +187,13 @@ def test_audit_one_backward_compat_bool_api(monkeypatch):
     assert engine.audit_one("/tmp/whatever.mp4") is False
 
 
-def test_audit_one_endpoint_exception_marked_transient_not_deleted(monkeypatch):
-    """finding 5 核心: VLM 端点异常时保守保留 (passed=True, 与旧行为一致), 但仍带
-    endpoint_error/transient 标记, 供调用方的「是否可删」逻辑正确处理 (虽然 passed=True
-    时调用方本来就不会删, 这里确认标记存在且分类正确, 为未来把 endpoint 异常改为
-    「不确定」而非「保守保留」留下扩展空间)。"""
+def test_audit_one_endpoint_exception_marked_transient_and_not_passed(monkeypatch):
+    """回归 (final re-review #1): VLM 端点异常必须返回 passed=False + endpoint_error
+    (transient=True), 不能是 passed=True。「保守保留」的旧行为等价于把一次基础设施
+    抖动直接固化成「已确认保留」(调用方的 pipeline() 会把它计入 total_pass,
+    on_results 会把它写进 AUDIT_PROGRESS 完成态) —— 这与「transient 失败应重试,
+    不该被当作确定性结论」的设计意图相悖。正确行为是 passed=False 且 is_transient
+    为真, 使调用方既不远端删也不写入完成态, 该条目在下一轮被重新排入待审。"""
     from lib.remote_audit import RemoteAudit, EndpointRouter
     router = EndpointRouter([object()])  # 至少一个端点, pick()/release() 可正常工作
     engine = RemoteAudit("host", "/remote/dir", "/dev/shm/x", router)
@@ -207,6 +209,26 @@ def test_audit_one_endpoint_exception_marked_transient_not_deleted(monkeypatch):
     monkeypatch.setattr("lib.remote_audit.judge_frame_detailed", boom)
 
     decision = engine.audit_one_detailed("/tmp/whatever.mp4")
-    assert decision.passed is True, "端点异常仍保守保留 (与既有行为一致)"
+    assert decision.passed is False, "端点异常不能算通过 (结果不确定, 不是内容判定)"
     assert decision.reason_code == V.REASON_ENDPOINT_ERROR
     assert decision.is_transient is True
+    assert bool(decision) is False, "__bool__ 投影必须与 passed 一致"
+
+
+def test_audit_one_endpoint_exception_releases_router_slot(monkeypatch):
+    """端点异常路径仍必须释放 router 的 in-flight 计数 (finally 块), 不能因为改了
+    返回值就漏掉资源释放, 否则该端点会被永久判定为「在途」进而被路由算法冷落。"""
+    from lib.remote_audit import RemoteAudit, EndpointRouter
+    router = EndpointRouter([object(), object()])
+    engine = RemoteAudit("host", "/remote/dir", "/dev/shm/x", router)
+    monkeypatch.setattr("lib.remote_audit.duration_filter.is_too_long", lambda path: False)
+    monkeypatch.setattr("lib.remote_audit.duration_filter.is_too_short", lambda path: False)
+    monkeypatch.setattr("lib.remote_audit.triptych_reps_from_video",
+                        lambda *a, **kw: [object()])
+    import cv2
+    monkeypatch.setattr(cv2, "imencode", lambda *a, **kw: (True, b"fakejpegbytes"))
+    monkeypatch.setattr("lib.remote_audit.judge_frame_detailed",
+                        lambda *a, **kw: (_ for _ in ()).throw(ConnectionError("boom")))
+
+    engine.audit_one_detailed("/tmp/whatever.mp4")
+    assert router._inflight == [0, 0], "router 的 in-flight 计数必须在异常后归零"
