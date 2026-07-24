@@ -3,6 +3,13 @@
 
 双缓冲 pipeline: pull(N+1) 与 audit+delete(N) 并行执行。
 
+续跑 (finding 3, policy-identity-aware): 经 lib.checkpoint 检查 AUDIT_PROGRESS 里
+每个切片最近一条 policy_records 溯源记录的身份是否与当前 audit_policy 一致;
+旧策略判过的/从未记录过身份的 (legacy/unversioned) 条目重新纳入待审。
+
+判定走 lib.vlm_prompts.judge_frame_detailed (finding 5): 只有内容性/时长拒绝才
+触发远端删除, transient (解析/抽帧/端点) 失败不删除, 不写入完成态, 留给下一轮重试。
+
 用法:
   SSHPASS='3dvision' python3 3_2_audit_splits.py
   SSHPASS='3dvision' nohup python3 3_2_audit_splits.py > logs/audit_splits.log 2>&1 &
@@ -21,6 +28,7 @@ from lib import config
 from lib.vlm_prompts import USE_V2
 from lib.remote_audit import EndpointRouter, RemoteAudit, SSH_OPTS
 from lib.policy_records import audit_record, append_json_record
+from lib.checkpoint import load_checkpoint, resolve_todo, current_identity
 
 # ═══════════════════════════ 配置 ═══════════════════════════
 
@@ -103,25 +111,46 @@ def run(args):
     engine = RemoteAudit(REMOTE, REMOTE_DIR, SHM_BASE, router)
     concurrency = len(eps) * args.per_port
 
+    # done: 用于队列供给去重的「已出现在进度文件」全集 (含 legacy); checkpoint 额外
+    # 记录每个名字最近一次判定所用的策略身份, 供 policy-identity-aware 续跑判断。
     done = _read_set(AUDIT_PROGRESS)
+    checkpoint = load_checkpoint(AUDIT_PROGRESS, AUDIT_RECORDS)
+    logged_stale: set = set()   # 已打印过「重新纳入待审」日志的名字, 避免重复刷屏
     print(f"═══ Audit Splits Pipeline (split_queue 队列模式) ═══")
     print(f"远端: {REMOTE}:{REMOTE_DIR}")
     print(f"判定: {'V2 结构化 gate' if USE_V2 else '二元 是/否'} | VLM {len(eps)}×{args.per_port}={concurrency}")
-    print(f"已完成: {len(done)}", flush=True)
+    print(f"已完成 (含 legacy): {len(done)}", flush=True)
 
     def next_files():
-        return next_batch_from_queue(done, args.batch_size)
+        batch = next_batch_from_queue(done, args.batch_size)
+        # queue 已经排除了 done (纯文件名匹配) 的条目; 这里再补上「done 里身份非当前
+        # 策略」的条目 (旧策略判过/legacy 未记录, finding 3) 重新纳入待审, 与队列批量
+        # 合并去重后截断到 batch_size。resolve_todo 每次都基于当前 checkpoint 重算,
+        # on_results 写回当前身份后该名字下一次就不再落入 stale。
+        resolved = resolve_todo(list(done), checkpoint, config.DOMAIN)
+        for name in resolved["stale"]:
+            if name not in logged_stale:
+                logged_stale.add(name)
+                print(f"[legacy] {name} 的最近判定身份非当前策略, 重新纳入待审", flush=True)
+        return list(dict.fromkeys(batch + resolved["stale"]))[:args.batch_size]
 
     def on_results(res: dict):
-        for name, ok in res.items():
-            append_json_record(AUDIT_RECORDS, audit_record(config.DOMAIN, name, ok))
-        rej = [f for f, ok in res.items() if not ok]
+        # res: dict{name: AuditDecision} (finding 5 结构化决策)
+        for name, decision in res.items():
+            append_json_record(AUDIT_RECORDS, audit_record(
+                config.DOMAIN, name, decision.passed, decision.reason_code))
+        rej = [f for f, d in res.items() if not d.passed and not d.is_transient]
         if rej:
             engine.remote_delete(rej)
             _append(AUDIT_DELETED, rej)
-        _append(AUDIT_KEPT, [f for f, ok in res.items() if ok])
-        _append(AUDIT_PROGRESS, res.keys())
-        done.update(res.keys())
+        _append(AUDIT_KEPT, [f for f, d in res.items() if d.passed])
+        # transient 失败不写入完成态 (AUDIT_PROGRESS/done/checkpoint), 留给下一轮
+        # 重新排入待审, 而不是被误标记为「已按当前策略完成」。
+        settled = [f for f, d in res.items() if d.passed or not d.is_transient]
+        _append(AUDIT_PROGRESS, settled)
+        done.update(settled)
+        current = current_identity(config.DOMAIN)
+        checkpoint.update({f: current for f in settled})
 
     tp, tr = engine.pipeline(next_files, on_results, concurrency,
                              pull_workers=16, poll=args.poll)
@@ -131,7 +160,8 @@ def run(args):
 # ═══════════════════════════ --list 模式 (吃远端清单, 不走 split_queue) ═══════════════════════════
 
 def run_list(args):
-    """吃 args.list 清单 -> medoid+VLM 审核 -> 真删不合格. 续跑跳过 AUDIT_PROGRESS.
+    """吃 args.list 清单 -> medoid+VLM 审核 -> 真删不合格. 续跑跳过 AUDIT_PROGRESS
+    (policy-identity-aware, finding 3: 身份非当前策略的条目重新纳入待审).
     三名单落 deliverables/ (audit_progress/deleted/kept)。复用 remote_audit 引擎。"""
     eps = build_vlm_endpoints(args.host, parse_ports(args.port), max_conn=args.per_port + 16)
     if not eps:
@@ -141,13 +171,15 @@ def run_list(args):
     concurrency = len(eps) * args.per_port
 
     all_names = [l.strip() for l in open(args.list) if l.strip().endswith(".mp4")]
-    done = _read_set(AUDIT_PROGRESS)
-    todo = [n for n in all_names if n not in done]
+    checkpoint = load_checkpoint(AUDIT_PROGRESS, AUDIT_RECORDS)
+    resolved = resolve_todo(all_names, checkpoint, config.DOMAIN)
+    todo = resolved["todo"]
     print(f"═══ Audit (--list) ═══")
-    print(f"清单: {args.list}  共 {len(all_names)}  已审跳过 {len(done)}  待审 {len(todo)}")
+    print(f"清单: {args.list}  共 {len(all_names)}  当前策略已完成 {len(resolved['current'])}  "
+          f"旧策略/未记录身份需重审 {len(resolved['stale'])}  待审 {len(todo)}")
     print(f"判定: {'V2 结构化 gate' if USE_V2 else '二元 是/否'} | VLM {len(eps)}×{args.per_port}={concurrency}", flush=True)
     if not todo:
-        print("无待审 (全部已审)。"); return
+        print("无待审 (全部已按当前策略审过)。"); return
 
     cursor = 0
     def next_files():
@@ -155,13 +187,16 @@ def run_list(args):
         chunk = todo[cursor:cursor + args.batch_size]; cursor += len(chunk); return chunk
 
     def on_results(res: dict):
-        for name, ok in res.items():
-            append_json_record(AUDIT_RECORDS, audit_record(config.DOMAIN, name, ok))
-        rej = [f for f, ok in res.items() if not ok]
+        # res: dict{name: AuditDecision} (finding 5 结构化决策)
+        for name, decision in res.items():
+            append_json_record(AUDIT_RECORDS, audit_record(
+                config.DOMAIN, name, decision.passed, decision.reason_code))
+        rej = [f for f, d in res.items() if not d.passed and not d.is_transient]
         if rej:
-            engine.remote_delete(rej); _append(AUDIT_DELETED, rej)   # 真删
-        _append(AUDIT_KEPT, [f for f, ok in res.items() if ok])
-        _append(AUDIT_PROGRESS, res.keys())
+            engine.remote_delete(rej); _append(AUDIT_DELETED, rej)   # 真删 (非 transient 才删)
+        _append(AUDIT_KEPT, [f for f, d in res.items() if d.passed])
+        settled = [f for f, d in res.items() if d.passed or not d.is_transient]
+        _append(AUDIT_PROGRESS, settled)   # transient 失败不记完成态, 留给下次 --list 重试
 
     tp, tr = engine.pipeline(next_files, on_results, concurrency, pull_workers=24, poll=0)
     print(f"\n═══ 完成: pass={tp} reject(已删)={tr} ═══")
