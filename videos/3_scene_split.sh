@@ -3,7 +3,7 @@
 # 场景切割 Pipeline 启动脚本
 # 从远端磁盘阵列拉视频 → 场景切割 → 推送切片回远端
 #
-# 用法: DOMAIN=<fitness|badminton> bash 3_scene_split.sh
+# 用法: DOMAIN=<fitness|badminton|tennis> bash 3_scene_split.sh
 # 后台: nohup bash 3_scene_split.sh > logs/scene_split.log 2>&1 &
 # ══════════════════════════════════════════════════════════════
 set -euo pipefail

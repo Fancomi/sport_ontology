@@ -1,6 +1,6 @@
 #!/bin/bash
 # 阶段二: 将本地已完成且未进 blacklist 的视频逐条 rsync 到远端硬盘，成功后删除本地文件释放空间。
-# 用法: DOMAIN=<fitness|badminton> bash 2_3_sync_videos.sh
+# 用法: DOMAIN=<fitness|badminton|tennis> bash 2_3_sync_videos.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 

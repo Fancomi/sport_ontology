@@ -5,7 +5,7 @@
 #
 # 前置: bash install_deno.sh (首次)
 # 用法:
-#   DOMAIN=<fitness|badminton> bash 2_download.sh [总分片数] [本进程编号]
+#   DOMAIN=<fitness|badminton|tennis> bash 2_download.sh [总分片数] [本进程编号]
 #   bash 2_download.sh 3 0    # 三机各一进程
 #   bash 2_download.sh        # 单机
 #

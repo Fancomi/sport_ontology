@@ -1,15 +1,26 @@
-# videos — 健身训练视频数据生产流水线
+# videos — 多领域运动视频数据生产流水线
 
-从 YouTube 采集健身/体能训练视频，经多轮筛选、下载、场景切割、内容审核，
+从 YouTube 采集运动/训练视频，经多轮筛选、下载、场景切割、内容审核，
 最终对每个切片按 **每 3 秒一个窗口** 生成中文 caption，产出用于
-sport_ontology 对比学习训练的视频-文本数据。
+sport_ontology 对比学习训练的视频-文本数据。一套引擎多领域复用，领域差异集中在
+`lib/domains.py` / `lib/domains_badminton.py` / `lib/domains_tennis.py`，用 `DOMAIN=<域名>`
+环境变量切换（缺省 `fitness`，向后兼容）。
 
-> **当前进度（2026-06-28）**：阶段 1-4 已完成一整轮。权威切片名单
+## 支持领域
+
+| DOMAIN | 领域 | 说明文档 |
+|--------|------|----------|
+| `fitness`（默认） | 健身/体能训练 | 见本文件其余章节 |
+| `badminton` | 羽毛球比赛 | [`data/badminton/README.md`](data/badminton/README.md) |
+| `tennis` | 网球比赛 | [`data/tennis/README.md`](data/tennis/README.md) |
+
+> **当前进度（2026-06-28）**：`fitness` 领域阶段 1-4 已完成一整轮。权威切片名单
 > `data/deliverables/3_canonical_segments.list`（1,961,084 切片，= 远端∩审核通过）。
 > caption 已与权威名单严格对齐：每个权威切片均有 caption，上一轮残留的
 > 363,863 个孤儿 caption 已移入 `captions/_orphan/`（待确认后清理）。
 
 ---
+
 
 ## 阶段总览与依赖关系
 

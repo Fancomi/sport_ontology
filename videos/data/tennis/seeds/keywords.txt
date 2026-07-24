@@ -1,0 +1,125 @@
+# === 网球比赛关键词库 (面向「固定机位真人比赛」高召回) ===
+# 格式: 每行一个搜索词; 采集侧会叠加 search_suffixes/diverse_modifiers 扩展。
+# 说明: 这里只是高召回的粗筛输入 (关键词/频道命中即入池), 最终是否保留
+# 由 1_4/2_2/3_2 三阶段的 VLM 结构化审核 (court-match 策略) 判定，
+# 不是靠关键词/频道匹配本身来当分类器——教学/讲解/集锦也可能命中关键词，
+# 交给 VLM 拒绝。
+
+# === 通用比赛词 (中英) ===
+tennis match
+tennis full match
+tennis final
+tennis game
+tennis rally
+tennis point
+tennis court
+tennis live
+tennis tournament
+tennis open
+网球比赛
+网球对打
+网球单打
+网球双打
+网球决赛
+网球全场
+网球现场
+
+# === 专业赛事 / ATP / WTA / ITF 体系 ===
+ATP full match
+ATP final
+ATP Masters 1000
+ATP 500
+ATP 250
+ATP World Tour Finals
+WTA full match
+WTA final
+WTA 1000
+WTA 500
+WTA 250
+ITF full match
+ITF World Tennis Tour
+Davis Cup tennis
+Billie Jean King Cup
+Laver Cup tennis
+Olympic tennis
+United Cup tennis
+
+# === 四大满贯 (Grand Slam) ===
+Australian Open tennis
+French Open tennis
+Roland Garros
+Wimbledon tennis
+US Open tennis
+Australian Open tennis final
+French Open tennis final
+Wimbledon final
+US Open tennis final
+
+# === 单打/双打/混双分项 ===
+tennis men's singles
+tennis women's singles
+tennis men's doubles
+tennis women's doubles
+tennis mixed doubles
+男单 网球
+女单 网球
+男双 网球
+女双 网球
+混双 网球
+
+# === 场地/室内外变体 ===
+hard court tennis match
+clay court tennis match
+grass court tennis match
+indoor tennis match
+outdoor tennis match
+红土网球比赛
+硬地网球比赛
+草地网球比赛
+
+# === 明星选手 (职业固定机位比赛主力来源) ===
+Novak Djokovic match
+Rafael Nadal match
+Roger Federer match
+Carlos Alcaraz match
+Jannik Sinner match
+Daniil Medvedev match
+Alexander Zverev match
+Iga Swiatek match
+Aryna Sabalenka match
+Coco Gauff match
+Naomi Osaka match
+Serena Williams match
+郑钦文 比赛
+德约科维奇 比赛
+纳达尔 比赛
+费德勒 比赛
+
+# === 业余 / 民间 / 训练对打 ===
+amateur tennis match
+club tennis match
+local tennis tournament
+recreational tennis game
+tennis practice match
+tennis sparring
+业余网球比赛
+网球 民间高手
+网球 约球 对打
+网球 俱乐部比赛
+
+# === 近年年份变体 ===
+tennis 2023 full match
+tennis 2024 full match
+tennis 2025 full match
+tennis 2026 full match
+
+# === 多语言 (扩大召回: 中日韩西法葡) ===
+テニス 試合
+テニス 決勝
+テニス 全試合
+테니스 경기
+테니스 결승
+partido de tenis
+tenis partido completo
+match de tennis complet
+partida de tênis completa

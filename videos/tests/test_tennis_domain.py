@@ -31,3 +31,16 @@ def test_tennis_caption_names_visible_match_attributes():
     text = domain.caption_prompt.lower()
     assert "单打" in domain.caption_prompt or "doubles" in text
     assert "网" in domain.caption_prompt or "net" in text
+
+
+def test_tennis_seed_files_are_nonempty_and_categorized():
+    root = VIDEOS / "data" / "tennis" / "seeds"
+    keywords = (root / "keywords.txt").read_text(encoding="utf-8")
+    channels = (root / "channels_seed.txt").read_text(encoding="utf-8")
+    assert len([line for line in keywords.splitlines() if line and not line.startswith("#")]) >= 80
+    assert len([line for line in channels.splitlines() if line and not line.startswith("#")]) >= 20
+    assert "ATP" in keywords or "ATP" in channels
+    assert "WTA" in keywords or "WTA" in channels
+    assert "full match" in keywords.lower()
+    assert "singles" in keywords.lower()
+    assert "doubles" in keywords.lower()
