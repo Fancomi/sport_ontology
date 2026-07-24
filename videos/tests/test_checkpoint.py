@@ -47,6 +47,58 @@ def test_load_latest_identities_ignores_malformed_lines(tmp_path):
     assert identities == {"a.mp4": {"domain": "tennis", "schema_version": "s", "policy_version": "p"}}
 
 
+def test_load_latest_identities_skips_explicit_settled_false_records(tmp_path):
+    """re-review fix #2: a record with settled=False (transient failure) must not
+    be surfaced as the item's identity, even if it is the last line in the file."""
+    records = tmp_path / "records.jsonl"
+    records.write_text(
+        '{"item":"a.mp4","domain":"tennis","schema_version":"court-match-v1",'
+        '"policy_version":"court-match-tennis-v1","settled":true}\n'
+        '{"item":"a.mp4","domain":"tennis","schema_version":"court-match-v1",'
+        '"policy_version":"court-match-tennis-v1","reason":"endpoint_error","settled":false}\n',
+        encoding="utf-8",
+    )
+    identities = load_latest_identities(records)
+    assert identities["a.mp4"]["policy_version"] == "court-match-tennis-v1", (
+        "the settled=True record must still be surfaced; the trailing "
+        "settled=False record must be ignored, not overwrite it"
+    )
+
+
+def test_load_latest_identities_item_with_only_transient_records_has_no_identity(tmp_path):
+    """If every record for an item is settled=False, the item must have no identity
+    at all (not merely 'stale identity') -- it has never been settled once."""
+    records = tmp_path / "records.jsonl"
+    records.write_text(
+        '{"item":"b.mp4","domain":"tennis","schema_version":"court-match-v1",'
+        '"policy_version":"court-match-tennis-v1","reason":"vlm_parse_failed","settled":false}\n'
+        '{"item":"b.mp4","domain":"tennis","schema_version":"court-match-v1",'
+        '"policy_version":"court-match-tennis-v1","reason":"endpoint_error","settled":false}\n',
+        encoding="utf-8",
+    )
+    identities = load_latest_identities(records)
+    assert "b.mp4" not in identities
+
+
+def test_load_latest_identities_falls_back_to_reason_code_when_settled_field_absent(tmp_path):
+    """Backward compatibility: records written before this fix have no 'settled'
+    field. load_latest_identities must classify them by reason code instead of
+    treating every historical record as settled by default."""
+    records = tmp_path / "records.jsonl"
+    records.write_text(
+        '{"item":"a.mp4","domain":"tennis","schema_version":"court-match-v1",'
+        '"policy_version":"court-match-tennis-v1","reason":""}\n'
+        '{"item":"a.mp4","domain":"tennis","schema_version":"court-match-v1",'
+        '"policy_version":"court-match-tennis-v1","reason":"endpoint_error"}\n',
+        encoding="utf-8",
+    )
+    identities = load_latest_identities(records)
+    assert identities["a.mp4"]["policy_version"] == "court-match-tennis-v1", (
+        "legacy record with reason='' (settled) must still be surfaced despite "
+        "the trailing legacy record with reason='endpoint_error' (unsettled)"
+    )
+
+
 def test_load_latest_identities_missing_file_returns_empty(tmp_path):
     assert load_latest_identities(tmp_path / "does_not_exist.jsonl") == {}
 
@@ -136,3 +188,51 @@ def test_resolve_todo_badminton_migration_scenario():
     result = resolve_todo(["x.mp4"], checkpoint, badminton)
     assert result["todo"] == ["x.mp4"]
     assert result["current"] == []
+
+
+def test_legacy_then_transient_then_restart_remains_stale(tmp_path):
+    """re-review fix #2 的完整时序复现: legacy (从未记录身份) -> 本轮审核因端点异常
+    只写入一条 settled=False 记录 -> 「进程重启」(重新 load_checkpoint) -> 该条目必须
+    仍然落在 stale/todo, 不能因为 records.jsonl 里终于出现了这个 item 名字就被误判
+    为「已按当前策略完成」。"""
+    from lib.policy_records import audit_record
+
+    tennis = load_domain("tennis")
+    progress = tmp_path / "progress.txt"
+    records = tmp_path / "records.jsonl"
+
+    # Step 1: legacy 状态 -- x.mp4 只在进度文件里 (老版本行为), 从未被 policy_records 记录。
+    progress.write_text("x.mp4\n", encoding="utf-8")
+    checkpoint = load_checkpoint(progress, records)
+    resolved = resolve_todo(["x.mp4"], checkpoint, tennis)
+    assert resolved["todo"] == ["x.mp4"], "legacy 状态: 必须待审"
+
+    # Step 2: 本轮尝试审核, 但 VLM 端点异常, 只产出一条 settled=False 的 transient 记录
+    # (模拟 2_2_audit_videos.py/3_2_audit_splits.py 的 on_results 只在 transient 时写
+    # records 但不写 progress —— 但这里显式测试「即便被写进了 records」这个更严格的
+    # 情形, 确保 checkpoint 层本身不依赖调用方"不写progress"这一约定单独兜底)。
+    transient_rec = audit_record(tennis, "x.mp4", False, "endpoint_error")
+    assert transient_rec["settled"] is False
+    with open(records, "a", encoding="utf-8") as f:
+        import json
+        f.write(json.dumps(transient_rec) + "\n")
+
+    # Step 3: 「进程重启」-- 重新从磁盘 load_checkpoint (不复用内存中的旧 dict)。
+    checkpoint_after_restart = load_checkpoint(progress, records)
+    resolved_after_restart = resolve_todo(["x.mp4"], checkpoint_after_restart, tennis)
+    assert resolved_after_restart["todo"] == ["x.mp4"], (
+        "重启后仍必须待审: transient 记录不能让 x.mp4 被误判为已确认完成"
+    )
+    assert resolved_after_restart["current"] == []
+    assert resolved_after_restart["stale"] == ["x.mp4"]
+
+    # Step 4: 这次审核成功, 写入一条 settled=True 的确定性记录 -> 现在才应变为 current。
+    settled_rec = audit_record(tennis, "x.mp4", True)
+    assert settled_rec["settled"] is True
+    with open(records, "a", encoding="utf-8") as f:
+        import json
+        f.write(json.dumps(settled_rec) + "\n")
+    checkpoint_final = load_checkpoint(progress, records)
+    resolved_final = resolve_todo(["x.mp4"], checkpoint_final, tennis)
+    assert resolved_final["current"] == ["x.mp4"], "settled=True 的最新记录应使其变为 current"
+    assert resolved_final["todo"] == []
