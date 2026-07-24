@@ -75,3 +75,24 @@ def test_badminton_policy_rejects_side_camera_and_partial_court():
     policy = build_court_match_policy("badminton", "羽毛球", "羽毛球场", "court-match-badminton-v1")
     assert policy.decide({**BADMINTON_BASE, "cam_side": True}, thumb=False) is False
     assert policy.decide({**BADMINTON_BASE, "court_full_visible": False}, thumb=False) is False
+
+
+def test_selected_badminton_policy_prompt_declares_scene_type_field():
+    """回归: domains_badminton 暴露给 tools/*_preview.py 兼容脚本的 audit_v2_prompt 必须
+    与 BADMINTON.audit_policy 同源, prompt 里必须声明 scene_type 字段 (Domain.audit_policy
+    的 required_fields 契约要求), 防止出现字段缺失的旧版 prompt 又被引入。"""
+    from lib.domains import BADMINTON
+    from lib.domains_badminton import _AUDIT_V2_PROMPT
+    policy = BADMINTON.audit_policy
+    assert _AUDIT_V2_PROMPT is policy.prompt_template
+    assert "scene_type" in _AUDIT_V2_PROMPT
+    assert policy.required_fields == {"sport_type", "scene_type"} | set(
+        f for f in policy.boolean_fields)
+
+
+def test_complete_valid_badminton_attrs_pass_and_missing_scene_type_fails_closed():
+    policy = build_court_match_policy("badminton", "羽毛球", "羽毛球场", "court-match-badminton-v1")
+    assert policy.decide(BADMINTON_BASE, thumb=False) is True
+    missing_scene_type = dict(BADMINTON_BASE)
+    del missing_scene_type["scene_type"]
+    assert policy.decide(missing_scene_type, thumb=False) is False
