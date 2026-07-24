@@ -4,6 +4,9 @@
         sport_ontology/videos/tests/test_scene_split_fix.py
 """
 import os, sys, subprocess, tempfile, shutil, importlib.util
+from unittest.mock import patch
+
+import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODULE_PATH = os.path.join(HERE, "..", "3_1_scene_split.py")
@@ -149,6 +152,8 @@ def test_survivors_and_original_maps():
 
 
 def test_fetch_gallery_no_duration_label():
+    if not os.path.exists(FFBN_PATH):
+        pytest.skip(f"外部 muscle_wiki 工具未安装: {FFBN_PATH}")
     ff = load(FFBN_PATH, "ffbn")
     d = tempfile.mkdtemp()
     try:
@@ -329,19 +334,33 @@ def test_is_too_short_boundary_via_actual_patch():
 
 
 def test_audit_one_skips_short_before_frame():
-    import importlib.util
-    p = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                      "..", "3_2_audit_splits.py"))
-    spec = importlib.util.spec_from_file_location("audit_splits", p)
-    a = importlib.util.module_from_spec(spec); spec.loader.exec_module(a)
-    # 桩: 太短 -> True; 抽帧函数若被调到则失败
-    a.duration_filter.is_too_long = lambda path: False
-    a.duration_filter.is_too_short = lambda path: True
-    called = []
-    a.representative_frame_from_video = lambda *args, **kw: (called.append(1), (None, 0, 0))[1]
-    ok = a.audit_one("/tmp/whatever.mp4", eps=[], pick_ep=lambda: 0, release_ep=lambda i: None)
-    assert ok is False, "短切片应判否"
-    assert called == [], "短切片不应抽帧/调 VLM (闸在抽帧前短路)"
+    video_root = os.path.realpath(os.path.join(HERE, ".."))
+    tools_root = os.path.realpath(os.path.join(video_root, "..", "tools"))
+    for path in (video_root, tools_root):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+    from lib import remote_audit
+
+    engine = remote_audit.RemoteAudit(
+        remote_host="unused",
+        remote_dir="unused",
+        shm_base="/tmp/unused",
+        router=remote_audit.EndpointRouter(["unused"]),
+    )
+    with (
+        patch.object(remote_audit.duration_filter, "is_too_long", return_value=False),
+        patch.object(remote_audit.duration_filter, "is_too_short", return_value=True),
+        patch.object(
+            remote_audit,
+            "triptych_reps_from_video",
+            side_effect=AssertionError("短切片不应抽帧/调 VLM"),
+        ),
+    ):
+        result = engine.audit_one_detailed("/tmp/whatever.mp4")
+
+    assert result.passed is False, "短切片应判否"
+    assert result.reason_code == remote_audit.REASON_DURATION_REJECTED
+    assert result.detail == "too_short"
 
 
 def test_cleanup_scan_and_sync():
