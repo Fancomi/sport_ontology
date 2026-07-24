@@ -235,8 +235,10 @@ FITNESS = Domain(
 
 # 羽毛球领域包 (定义见 domains_badminton, 拆分文件避免本模块过长)
 from lib.domains_badminton import BADMINTON  # noqa: E402
+# 网球领域包 (定义见 domains_tennis, 与羽毛球同构、存储隔离)
+from lib.domains_tennis import TENNIS  # noqa: E402
 
-_REGISTRY = {d.name: d for d in (FITNESS, BADMINTON)}
+_REGISTRY = {d.name: d for d in (FITNESS, BADMINTON, TENNIS)}
 
 # 导入时校验: 领域名非空、存储根 (local_data_dir / remote_videos) 互不冲突。
 # 遍历 _REGISTRY.values() 而非枚举具体领域, 使新领域 (如 Task 5 的 tennis) 自动纳入同一检查。
