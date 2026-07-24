@@ -224,16 +224,75 @@ def _atomic_write(path: Path, lines: list[str]):
     os.replace(tmp, path)   # 同分区原子 rename, 不产生中间可见态
 
 
+def _kept_under_current_policy(records_path: Path, domain) -> set:
+    """从 JSONL 溯源记录里算出「按当前策略身份、且最新一条 settled 记录判定为
+    passed=True」的切片集合 (finalize 再审修复 #5)。
+
+    `AUDIT_KEPT` 是纯追加文本文件: 一个切片一旦在任意一轮被判 passed 就会被写进去,
+    且旧记录永不删除。如果该切片后来因策略升级被 `resolve_todo` 重新纳入待审并判为
+    拒绝, `AUDIT_KEPT` 里那条陈旧的「曾经通过」记录依然存在, `finalize()` 原先直接
+    读 `AUDIT_KEPT` 会把它错误地计入 canonical 名单——即使它现在按当前策略已被拒绝、
+    甚至已被远端删除。
+
+    改为从 `AUDIT_RECORDS`（结构化 policy_records JSONL, 每条都带 domain/schema_version/
+    policy_version/settled/passed）里为每个 item 找「最后一条 settled=True 的记录」,
+    只有该记录的身份等于当前 `domain` 的生效身份、且 `passed` 为真, 才计入返回集合。
+    这样一次策略变更/重新判定会立即让旧的『通过』结论失效, 不需要清理 `AUDIT_KEPT`
+    这份纯追加审计凭证 (它仍按原样保留, 供人工审计回溯全部历史判定, 语义不变;
+    只是 finalize 的权威判定不再直接信它)。
+    """
+    from lib.checkpoint import load_latest_identities, is_current
+
+    current = None
+    kept = set()
+    for rec in _iter_settled_records(records_path):
+        item = rec.get("item")
+        if not item:
+            continue
+        identity = {"domain": rec.get("domain"), "schema_version": rec.get("schema_version"),
+                    "policy_version": rec.get("policy_version")}
+        if not is_current(identity, domain):
+            kept.discard(item)   # 最新记录身份非当前策略 -> 不算已确认 (不论 passed)
+            continue
+        if rec.get("passed"):
+            kept.add(item)
+        else:
+            kept.discard(item)  # 最新的当前策略结论是拒绝 -> 从 kept 移除 (覆盖更早的通过)
+    return kept
+
+
+def _iter_settled_records(records_path: Path):
+    """按文件顺序遍历 records JSONL 里的 settled 记录 (跳过 transient/未决记录),
+    供 `_kept_under_current_policy` 按「最新一条 settled 记录」的语义折叠状态。"""
+    from lib.checkpoint import _is_settled
+    import json
+    if not records_path.exists():
+        return
+    with open(records_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if _is_settled(rec):
+                yield rec
+
+
 def finalize():
     if not os.environ.get("SSHPASS"):
         sys.exit("--finalize 需 SSHPASS (远端枚举)")
     print("远端枚举中 (ls -1U, 单次)...", flush=True)
     remote = set(_enumerate_remote())
-    kept = ({l.strip() for l in AUDIT_KEPT.read_text().splitlines() if l.strip()}
-            if AUDIT_KEPT.exists() else set())
+    # finalize 再审修复 (#5): 不再直接信任纯追加的 AUDIT_KEPT 文本文件 (可能包含
+    # 已被后续重审推翻的陈旧「通过」记录); 改为从结构化 records JSONL 按「最新一条
+    # settled 记录 + 身份匹配当前策略 + passed=True」重算权威 kept 集合。
+    kept = _kept_under_current_policy(AUDIT_RECORDS, config.DOMAIN)
     deleted = ({l.strip() for l in AUDIT_DELETED.read_text().splitlines() if l.strip()}
                if AUDIT_DELETED.exists() else set())
-    canonical = sorted(remote & kept)        # 远端真实存在 且 审核通过
+    canonical = sorted(remote & kept)        # 远端真实存在 且 (按当前策略) 审核通过
     ghost = kept - remote                    # 保留但远端已无 (剔除)
     orphan = remote - kept - deleted         # 远端有但从未审 (漏网, 应为 0)
     revived = remote & deleted               # 删了又复活 (应为 0)
@@ -243,7 +302,7 @@ def finalize():
 
     print(f"\n═══ Finalize 对齐报告 ═══")
     print(f"远端真实存在:      {len(remote):>9}")
-    print(f"审核保留 kept:     {len(kept):>9}")
+    print(f"审核保留 kept (按当前策略, 非追加文件): {len(kept):>9}")
     print(f"审核删除 deleted:  {len(deleted):>9}")
     print(f"── 唯一权威名单 (远端∩kept) canonical_segments.list: {len(canonical)} ──")
     print(f"幽灵 (kept-远端, 已剔除):   {len(ghost):>9}")
