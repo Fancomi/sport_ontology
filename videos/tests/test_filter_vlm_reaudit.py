@@ -71,9 +71,10 @@ def test_main_exits_with_nonzero_when_reaudit_used_on_structured_domain(monkeypa
 
 
 def test_judge_one_text_only_mode_uses_text_prompt_not_image_gate():
-    """judge_one(text_only=True) 走文本单发二元, 不调用 judge_frame (图像结构化 gate)。
-    验证决策路径完全独立于 image gate —— 这正是「text-only 不能代表结构化图像 policy
-    结论」这一事实在代码层面的体现, 也是为什么必须在 main() 层面禁用而不是让它继续跑。"""
+    """judge_one(text_only=True) 走文本单发二元, 不调用 judge_frame_detailed (图像结构化
+    gate)。验证决策路径完全独立于 image gate —— 这正是「text-only 不能代表结构化图像
+    policy 结论」这一事实在代码层面的体现, 也是为什么必须在 main() 层面禁用而不是让它
+    继续跑。judge_one 现在返回 (vid, JudgeResult) 而不是 (vid, passed, resp)。"""
     m = _load_filter_vlm()
 
     class FakeClient:
@@ -88,21 +89,21 @@ def test_judge_one_text_only_mode_uses_text_prompt_not_image_gate():
     client = FakeClient("是")
     item = {"video_id": "abc", "title": "t", "channel": "c"}
 
-    judge_frame_called = []
-    monkeypatch_judge_frame = m.judge_frame
-    def fake_judge_frame(*args, **kwargs):
-        judge_frame_called.append((args, kwargs))
-        return True
-    m.judge_frame = fake_judge_frame
+    judge_frame_detailed_called = []
+    original = m.judge_frame_detailed
+    def fake_judge_frame_detailed(*args, **kwargs):
+        judge_frame_detailed_called.append((args, kwargs))
+        return original(*args, **kwargs)
+    m.judge_frame_detailed = fake_judge_frame_detailed
     try:
-        vid, passed, resp = m.judge_one(item, client, eps=[], pick_ep=lambda: 0,
-                                        release_ep=lambda i: None, text_only=True)
+        vid, result = m.judge_one(item, client, eps=[], pick_ep=lambda: 0,
+                                  release_ep=lambda i: None, text_only=True)
     finally:
-        m.judge_frame = monkeypatch_judge_frame
+        m.judge_frame_detailed = original
 
     assert vid == "abc"
-    assert passed is True
-    assert judge_frame_called == [], "text_only 分支绝不应调用图像 judge_frame"
+    assert result.passed is True
+    assert judge_frame_detailed_called == [], "text_only 分支绝不应调用图像 judge_frame_detailed"
     assert client.calls, "text_only 分支应调用 LLMClient.chat"
 
 
@@ -122,14 +123,14 @@ def test_judge_one_image_mode_never_calls_client_chat(tmp_path, monkeypatch):
         pass
 
     called = {}
-    def fake_judge_frame(ep, img_b, *, thumb, title, channel):
+    def fake_judge_frame_detailed(ep, img_b, *, thumb, title, channel):
         called["thumb"] = thumb
-        return True
-    monkeypatch.setattr(m, "judge_frame", fake_judge_frame)
+        return m.JudgeResult(True)
+    monkeypatch.setattr(m, "judge_frame_detailed", fake_judge_frame_detailed)
 
     item = {"video_id": "abc", "title": "t", "channel": "c"}
-    vid, passed, resp = m.judge_one(item, FakeClient(), eps=[FakeEp()], pick_ep=lambda: 0,
-                                    release_ep=lambda i: None, text_only=False)
+    vid, result = m.judge_one(item, FakeClient(), eps=[FakeEp()], pick_ep=lambda: 0,
+                              release_ep=lambda i: None, text_only=False)
     assert vid == "abc"
-    assert passed is True
+    assert result.passed is True
     assert called["thumb"] is True

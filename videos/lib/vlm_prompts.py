@@ -68,6 +68,12 @@ class JudgeResult:
     reason_code: str = REASON_OK
     detail: str = ""
 
+    @property
+    def is_transient(self) -> bool:
+        """基础设施/解析层失败 (非内容性拒绝); 调用方不应据此对判否结果做
+        不可逆操作 (删除/拉黑/写入完成态), 应留给下一轮重试。"""
+        return self.reason_code in TRANSIENT_REASONS
+
     def __bool__(self):
         return self.passed
 
