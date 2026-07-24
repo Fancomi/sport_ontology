@@ -8,7 +8,10 @@
 """
 import os
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from lib.domain_policies import AuditPolicy
 
 
 @dataclass(frozen=True)
@@ -44,6 +47,9 @@ class Domain:
     audit_v2_prompt: str = ""
     audit_gate: Optional[Callable[[dict], bool]] = None
     audit_gate_thumb: Optional[Callable[[dict], bool]] = None
+    # 可复用结构化审核策略 (Task 2 的 AuditPolicy); 可选字段, 向后兼容旧领域。
+    # 配置了它的领域由 vlm_prompts 优先走 policy.decide, 未配置则回退上面的 audit_v2_prompt/audit_gate。
+    audit_policy: "Optional[AuditPolicy]" = None
 
 
 # ═══════════════════════ 健身 (原样搬运, 行为零变化) ═══════════════════════
