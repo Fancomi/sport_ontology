@@ -232,10 +232,36 @@ from lib.domains_badminton import BADMINTON  # noqa: E402
 
 _REGISTRY = {d.name: d for d in (FITNESS, BADMINTON)}
 
+# 导入时校验: 领域名非空、存储根 (local_data_dir / remote_videos) 互不冲突。
+# 遍历 _REGISTRY.values() 而非枚举具体领域, 使新领域 (如 Task 5 的 tennis) 自动纳入同一检查。
+_seen_local = set()
+_seen_remote = set()
+for _domain in _REGISTRY.values():
+    if not _domain.name:
+        raise ValueError("领域 name 不能为空")
+    if _domain.local_data_dir in _seen_local:
+        raise ValueError(f"重复 local_data_dir: {_domain.local_data_dir}")
+    if _domain.remote_videos in _seen_remote:
+        raise ValueError(f"重复 remote_videos: {_domain.remote_videos}")
+    _seen_local.add(_domain.local_data_dir)
+    _seen_remote.add(_domain.remote_videos)
+
+
+def list_domains() -> tuple:
+    """返回全部已注册领域名, 按字母序排列。"""
+    return tuple(sorted(_REGISTRY))
+
+
+def load_domain(name: str) -> Domain:
+    """按名称加载领域配置; 未知名称抛出 ValueError 并列出可选项。"""
+    if name not in _REGISTRY:
+        raise ValueError(f"未知 DOMAIN={name!r}, 可选: {list_domains()}")
+    domain = _REGISTRY[name]
+    if domain.name != name:
+        raise ValueError(f"领域注册名与 Domain.name 不一致: {name!r}")
+    return domain
+
 
 def current() -> Domain:
     """按 DOMAIN 环境变量返回领域配置; 缺省 fitness。"""
-    name = os.environ.get("DOMAIN", "fitness")
-    if name not in _REGISTRY:
-        raise ValueError(f"未知 DOMAIN={name!r}, 可选: {sorted(_REGISTRY)}")
-    return _REGISTRY[name]
+    return load_domain(os.environ.get("DOMAIN", "fitness"))
