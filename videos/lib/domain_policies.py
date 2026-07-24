@@ -60,6 +60,7 @@ def build_court_match_policy(sport_code: str, sport_name_cn: str, court_name_cn:
     def strict_gate(attrs):
         return (
             attrs["sport_type"] == sport_code
+            and attrs["scene_type"] == "real_person"
             and attrs["has_person"]
             and attrs["is_real_match_play"]
             and attrs["court_full_visible"]
@@ -73,7 +74,8 @@ def build_court_match_policy(sport_code: str, sport_name_cn: str, court_name_cn:
                 "heavily_occluded")))
 
     def thumb_gate(attrs):
-        return attrs["has_person"] and not attrs["is_slide_or_anim"]
+        return (attrs["scene_type"] == "real_person"
+                and attrs["has_person"] and not attrs["is_slide_or_anim"])
 
     prompt = f"""请客观描述这张图片，并如实抽取属性。目标运动是【{sport_name_cn}】，目标场地是【{court_name_cn}】。只描述真正看到的内容，不猜测画面外信息，只输出 JSON。
 

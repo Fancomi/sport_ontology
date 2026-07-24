@@ -1,8 +1,10 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from lib.domain_policies import build_court_match_policy
+from lib.domain_policies import build_court_match_policy, COURT_MATCH_SCENE_ENUM
 
 
 BASE = {
@@ -96,3 +98,73 @@ def test_complete_valid_badminton_attrs_pass_and_missing_scene_type_fails_closed
     missing_scene_type = dict(BADMINTON_BASE)
     del missing_scene_type["scene_type"]
     assert policy.decide(missing_scene_type, thumb=False) is False
+
+
+# ── Regression (finding 2): synthetic scene_type must not pass either gate, ──
+# ── even when every boolean field is internally consistent with a match. ──
+
+NON_REAL_PERSON_SCENE_TYPES = sorted(COURT_MATCH_SCENE_ENUM - {"real_person"})
+
+
+@pytest.mark.parametrize("sport_code,sport_name,court_name,policy_version,base", [
+    ("tennis", "网球", "网球场", "court-match-tennis-v1", BASE),
+    ("badminton", "羽毛球", "羽毛球场", "court-match-badminton-v1", BADMINTON_BASE),
+])
+@pytest.mark.parametrize("scene_type", NON_REAL_PERSON_SCENE_TYPES)
+def test_synthetic_scene_type_fails_strict_gate_even_with_consistent_booleans(
+        sport_code, sport_name, court_name, policy_version, base, scene_type):
+    """反映 finding 2 的原始复现: 即便其余布尔字段全部摆成「完整比赛」的样子,
+    scene_type 只要不是 real_person, strict_gate 必须拒绝 (防合成/动画/PPT/风景 冒充真人比赛)。"""
+    policy = build_court_match_policy(sport_code, sport_name, court_name, policy_version)
+    attrs = {**base, "scene_type": scene_type}
+    assert policy.decide(attrs, thumb=False) is False
+
+
+@pytest.mark.parametrize("sport_code,sport_name,court_name,policy_version,base", [
+    ("tennis", "网球", "网球场", "court-match-tennis-v1", BASE),
+    ("badminton", "羽毛球", "羽毛球场", "court-match-badminton-v1", BADMINTON_BASE),
+])
+@pytest.mark.parametrize("scene_type", NON_REAL_PERSON_SCENE_TYPES)
+def test_synthetic_scene_type_fails_thumb_gate_even_with_consistent_booleans(
+        sport_code, sport_name, court_name, policy_version, base, scene_type):
+    """同上, 但检查缩略图宽松门控: 宽松只放宽机位/几何字段, scene_type 仍须真人。"""
+    policy = build_court_match_policy(sport_code, sport_name, court_name, policy_version)
+    attrs = {**base, "scene_type": scene_type}
+    assert policy.decide(attrs, thumb=True) is False
+
+
+@pytest.mark.parametrize("scene_type", sorted(COURT_MATCH_SCENE_ENUM))
+def test_all_enum_scene_type_values_are_valid_attrs(scene_type):
+    """枚举里的每个取值都应通过字段契约校验 (只有门控层拒绝, 不是 validate_attrs 拒绝)。"""
+    policy = build_court_match_policy("tennis", "网球", "网球场", "court-match-tennis-v1")
+    attrs = {**BASE, "scene_type": scene_type}
+    assert policy.validate_attrs(attrs) is True
+
+
+def test_contradictory_animation_with_is_slide_or_anim_false_still_rejected():
+    """scene_type=animation 但 is_slide_or_anim=False (自相矛盾输出) 仍必须拒绝 —
+    scene_type 校验独立生效, 不依赖 is_slide_or_anim 是否被模型正确联动设置。"""
+    policy = build_court_match_policy("tennis", "网球", "网球场", "court-match-tennis-v1")
+    attrs = {**BASE, "scene_type": "animation", "is_slide_or_anim": False}
+    assert policy.decide(attrs, thumb=False) is False
+    assert policy.decide(attrs, thumb=True) is False
+
+
+def test_reproduction_from_finding_report_is_rejected():
+    """final-review-findings.md #2 的原始复现片段: 必须两个门控都拒绝。"""
+    p = build_court_match_policy("tennis", "网球", "网球场", "court-match-tennis-v1")
+    a = {k: False for k in p.boolean_fields}
+    a.update(
+        sport_type="tennis",
+        scene_type="animation",
+        has_person=True,
+        is_real_match_play=True,
+        court_full_visible=True,
+        single_court=True,
+        net_visible=True,
+        ground_lines_clear=True,
+        cam_backcourt_high_wide=True,
+    )
+    assert p.validate_attrs(a) is True
+    assert p.decide(a, thumb=False) is False
+    assert p.decide(a, thumb=True) is False
