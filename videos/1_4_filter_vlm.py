@@ -7,6 +7,14 @@
 输出:
   DATA_DIR/filtered.jsonl   # 通过的 → 阶段二输入
   DATA_DIR/rejected.jsonl   # 拒绝的
+
+--reaudit (finding 4): text-only 重新审核只依据标题/频道文本单发二元判定 (SYSTEM +
+PROMPT_TEXT_ONLY), 完全绕过结构化图像 audit_policy (court-match 等)。对配了
+audit_policy 的结构化领域 (tennis/badminton), --reaudit 现在直接拒绝执行 ——
+文本判定的结论如果被记成结构化 policy 的身份 (domain/schema_version/policy_version),
+会让后续按身份判断"是否已按当前策略审过"的续跑逻辑 (lib.checkpoint, finding 3) 误以为
+该条目已经过图像结构化审核, 而实际上决策依据完全不同。未配置 audit_policy 的旧领域
+(fitness) 不受影响, --reaudit 行为不变。
 """
 import argparse
 import base64
@@ -26,11 +34,17 @@ from lib.vlm_prompts import SYSTEM, PROMPT, PROMPT_TEXT_ONLY, judge_frame, USE_V
 from lib.policy_records import audit_record, append_json_record
 
 # 图像分支经 lib.vlm_prompts.judge_frame 统一裁决 (V2 结构化 gate / 二元, 按 domain);
-# text-only reaudit 分支无图, 仍走 LLMClient.chat 单发二元。
+# text-only reaudit 分支无图, 仍走 LLMClient.chat 单发二元 —— 结构化领域禁用该分支
+# (finding 4), 见 main() 里对 args.reaudit + config.DOMAIN.audit_policy 的检查。
 
 _lock = threading.Lock()
 
 AUDIT_RECORDS = config.STATE_DIR / "1_filter_audit_records.jsonl"  # 判定溯源 (domain/policy_version), 不影响既有 filtered/rejected 契约
+
+# text-only 判定的独立身份 (finding 4): 与图像结构化 audit_policy 完全区分开,
+# 供未来若要支持结构化领域 text-only 判定时使用真实的、不同的身份而非借用图像策略身份。
+TEXT_ONLY_SCHEMA_VERSION = "text-only-v1"
+TEXT_ONLY_POLICY_VERSION = "text-only-binary-v1"
 
 
 def _finalize_reaudit(total_items):
@@ -126,6 +140,22 @@ def judge_one(item, client, eps, pick_ep, release_ep, text_only=False):
         release_ep(i)
 
 
+def reaudit_block_reason(domain) -> str | None:
+    """finding 4: 若当前领域配置了结构化 audit_policy, --reaudit (text-only 二元判定)
+    必须被禁用, 返回说明文案; 未配置 audit_policy 的旧领域返回 None (放行, 行为不变)。
+    抽成独立函数便于单测覆盖两种领域, 不依赖 main() 的 argparse/VLM 端点探测流程。"""
+    if domain.audit_policy is None:
+        return None
+    return (
+        f"--reaudit 已对结构化领域 (DOMAIN={domain.name}, "
+        f"audit_policy={domain.audit_policy.policy_version}) 禁用: "
+        "text-only 二元判定不能代表结构化图像审核策略的结论。"
+        "如需重新审核该领域, 请改用 2_2_audit_videos.py / 3_2_audit_splits.py "
+        "对真实视频帧重新走结构化 audit_policy, 或改用 "
+        "--audit-filtered-missing-meta (仍走图像 judge_frame)。"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
@@ -138,6 +168,11 @@ def main():
     parser.add_argument("--audit-filtered-missing-meta", action="store_true",
                         help="只审核 filtered 中不在 meta 的旧项；失败写黑名单并从 filtered/thumbs 删除")
     args = parser.parse_args()
+
+    if args.reaudit:
+        block_reason = reaudit_block_reason(config.DOMAIN)
+        if block_reason:
+            sys.exit(block_reason)
 
     ports = parse_ports(args.port)
     # 文本单发 (reaudit) 用 LLMClient; 图像判定 (judge_frame) 用 raw httpx 端点池
