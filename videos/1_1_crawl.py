@@ -160,13 +160,28 @@ def run_search():
 
 # ==================== 频道爬取 ====================
 
-def _crawl_one(channel, seen_ids, blacklist):
-    """爬取单个频道"""
+def _channel_urls(channel: str) -> list[str]:
+    """把一个频道输入 (URL / @handle / UC频道ID / 纯展示名) 归一化成候选 URL 列表。
+
+    优先尝试稳定标识 (完整 URL / @handle / UCxxxxx 频道ID); 只有当输入既不是 URL
+    也不是 @handle/UC ID 时, 才退化为「猜测」路径 —— 把空格删掉拼 /@name 或 /c/name,
+    这种猜测对展示名带空格、大小写、特殊字符的频道并不可靠, 只作为没有稳定标识时的兜底。
+    """
+    channel = channel.strip()
+    if channel.startswith("http://") or channel.startswith("https://"):
+        url = channel if channel.rstrip("/").endswith("/videos") else channel.rstrip("/") + "/videos"
+        return [url]
+    if channel.startswith("@") or channel.startswith("UC"):
+        return [f"https://www.youtube.com/{channel}/videos"]
+    # 纯展示名: 无稳定标识可用, 猜测 handle/自定义 URL (不可靠, 仅兜底)
     clean = channel.replace(" ", "")
-    urls = [f"https://www.youtube.com/@{clean}/videos",
+    return [f"https://www.youtube.com/@{clean}/videos",
             f"https://www.youtube.com/c/{clean}/videos"]
-    if channel.startswith("UC") or channel.startswith("@"):
-        urls.insert(0, f"https://www.youtube.com/{channel}/videos")
+
+
+def _crawl_one(channel, seen_ids, blacklist):
+    """爬取单个频道 (channel 可以是 URL / @handle / UC频道ID / 展示名, 见 _channel_urls)"""
+    urls = _channel_urls(channel)
 
     opts = _ydl_opts(extract_flat="in_playlist", playlistend=config.MAX_PER_CHANNEL_CRAWL)
     results = []
@@ -196,32 +211,41 @@ def _crawl_one(channel, seen_ids, blacklist):
     return results
 
 
+def _is_valid_channel_name(ch: str) -> bool:
+    """频道名合法性校验 (长度 + 首字符), 与旧版 run_channels 内联判断口径一致。"""
+    return len(ch) > 2 and (ch[0].isalnum() or ch.startswith("@") or ch.startswith("UC")
+                             or ch.startswith("http://") or ch.startswith("https://"))
+
+
 def run_channels():
-    """频道爬取主流程"""
+    """频道爬取主流程。
+
+    候选集 = (搜索/多样性发现且出现≥2次的频道) ∪ (种子文件里的全部频道)，取并集
+    而不是只把种子当「发现频道的爬取阈值豁免」——否则种子频道只有在恰好被关键词搜索
+    命中同名展示名时才会被爬取，导致空发现结果下种子完全不生效 (0 待爬)。
+    """
     from collections import Counter
-    # 从已有搜索结果 + 种子文件发现频道, 只爬出现≥2次的 (过滤噪音)
+    # 从已有搜索结果 + 种子文件发现频道计数, 用于「出现≥2次」的噪音过滤门槛
     ch_counter = Counter()
     for src in [config.SEARCH_RESULTS, config.DIVERSE_VIDEOS]:
         for r in config.read_jsonl(src):
             if r.get("channel"):
                 ch_counter[r["channel"].strip()] += 1
-    # 种子频道直接入选
+    # 种子频道 (直接入选, 不受出现次数门槛限制)
     seed = set()
     if config.CHANNELS_SEED.exists():
         with open(config.CHANNELS_SEED, "r", encoding="utf-8") as f:
             seed = {l.strip() for l in f if l.strip() and not l.startswith("#")}
-    # 只保留出现≥2次 或 种子频道, 且名字合法
-    channels = sorted(ch for ch, cnt in ch_counter.items()
-                      if (cnt >= 2 or ch in seed)
-                      and len(ch) > 2
-                      and (ch[0].isalnum() or ch.startswith("@") or ch.startswith("UC")))
+    # 候选集 = 出现≥2次的发现频道 ∪ 全部种子频道 (并集, 而非仅用种子做阈值豁免)
+    discovered = {ch for ch, cnt in ch_counter.items() if cnt >= 2}
+    channels = sorted(ch for ch in (discovered | seed) if _is_valid_channel_name(ch))
 
     blacklist = config.load_blacklist()
     seen_ids = {r["video_id"] for r in config.read_jsonl(config.SEARCH_RESULTS)}
     seen_ids |= {r["video_id"] for r in config.read_jsonl(config.CHANNEL_VIDEOS)}
     done = config.read_lines(config.CRAWL_PROGRESS)
     pending = [ch for ch in channels if ch not in done]
-    logger.info(f"频道: {len(channels)} | 待爬: {len(pending)} | 已有ID: {len(seen_ids)}")
+    logger.info(f"频道: {len(channels)} | 待爬: {len(pending)} | 已有ID: {len(seen_ids)} | 种子: {len(seed)}")
     if not pending:
         return
 

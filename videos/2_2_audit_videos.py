@@ -5,7 +5,16 @@
 不通过则远端删 + 黑名单 + 剔 filtered。双缓冲流水线 (拉 N+1 ∥ 审 N), 不与其他 IO 冲突。
 审完当前远端全量后, 每 --recheck 秒重新枚举远端 (吃 2_3 新同步上来的视频), 循环推进。
 
-续跑: audit_progress 已审跳过。判定走 lib.vlm_prompts.judge_frame (V2 结构化 gate)。
+续跑 (finding 3, policy-identity-aware): 是否跳过不再只按文件名匹配 audit_progress,
+而是经 lib.checkpoint.resolve_todo 检查该文件最近一条 policy_records 溯源记录的身份
+是否与当前 DOMAIN 生效的 audit_policy 身份一致。旧策略判过的/从未记录过身份的
+(legacy/unversioned) 条目会被重新纳入待审 (每轮日志打印规模), 避免策略升级后旧判定
+被静默复用。
+
+判定走 lib.vlm_prompts.judge_frame_detailed (V2 结构化 gate, 保留原因码, finding 5):
+只有内容性拒绝 (policy_rejected / duration_rejected) 才会触发远端删除 + 黑名单;
+基础设施/解析层的 transient 失败 (vlm_parse_failed / frame_decode_failed /
+endpoint_error) 不删除远端文件, 只记录溯源, 留给下一轮重试。
 
 用法:
   SSHPASS='3dvision' python3 2_2_audit_videos.py
@@ -25,12 +34,15 @@ from llm_client import build_vlm_endpoints, parse_ports
 from lib import config
 from lib.vlm_prompts import USE_V2
 from lib.remote_audit import EndpointRouter, RemoteAudit
+from lib.policy_records import audit_record, append_json_record
+from lib.checkpoint import load_checkpoint, resolve_todo
 
 REMOTE      = config.DOMAIN.remote_host
 REMOTE_DIR  = config.DOMAIN.remote_videos           # 整段视频目录 (非 _split)
 SHM_BASE    = "/dev/shm/audit_videos"
 AUDIT_PROGRESS = config.STATE_DIR / "2_audit_videos_progress.txt"  # 已审 <vid>.mp4 (续跑跳过)
 AUDIT_DELETED  = config.DELIVERABLES_DIR / "2_audit_videos_deleted.txt"
+AUDIT_RECORDS  = config.STATE_DIR / "2_audit_records.jsonl"  # 判定溯源 (domain/policy_version)
 
 
 def _read_set(path: Path) -> set:
@@ -77,12 +89,15 @@ def main():
     round_no = 0
     while True:
         round_no += 1
-        done = _read_set(AUDIT_PROGRESS)
+        checkpoint = load_checkpoint(AUDIT_PROGRESS, AUDIT_RECORDS)
         blacklist = config.load_blacklist()
         remote = engine.enumerate_remote()
-        # 跳过: 已审(续跑) + 已黑名单(下载重跑侧可能已拉黑, 避免重复审)
-        todo = [n for n in remote if n not in done and n[:-4] not in blacklist]
-        print(f"[轮 {round_no}] 远端 {len(remote)} | 已审 {len(done)} | 黑名单 {len(blacklist)} | 待审 {len(todo)}", flush=True)
+        remote_not_blacklisted = [n for n in remote if n[:-4] not in blacklist]
+        resolved = resolve_todo(remote_not_blacklisted, checkpoint, config.DOMAIN)
+        todo = resolved["todo"]
+        print(f"[轮 {round_no}] 远端 {len(remote)} | 当前策略已完成 {len(resolved['current'])} | "
+              f"旧策略/未记录身份需重审 {len(resolved['stale'])} | 黑名单 {len(blacklist)} | "
+              f"待审 {len(todo)}", flush=True)
         if not todo:
             if not args.recheck:
                 break
@@ -100,14 +115,29 @@ def main():
             return chunk
 
         def on_results(res: dict):
-            rej = [f for f, ok in res.items() if not ok]
+            # res: dict{name: AuditDecision} (lib.remote_audit, finding 5 结构化决策)
+            for name, decision in res.items():
+                append_json_record(AUDIT_RECORDS, audit_record(
+                    config.DOMAIN, name, decision.passed, decision.reason_code))
+            # 只有非 transient 的拒绝 (内容性/时长拒绝) 才远端删 + 拉黑; transient 的
+            # (VLM 解析失败/抽帧失败/端点异常) 只记录溯源, 留给下一轮重新枚举重试,
+            # 不对远端文件做不可逆删除 (finding 5)。
+            rej = [f for f, d in res.items() if not d.passed and not d.is_transient]
             if rej:
                 engine.remote_delete(rej)                 # 远端真删
                 _append(AUDIT_DELETED, rej)
                 vids = [f[:-4] for f in rej]              # <vid>.mp4 -> <vid>
                 config.append_blacklist(vids)            # 黑名单 (幂等去重)
                 reject_ids.extend(vids)
-            _append(AUDIT_PROGRESS, res.keys())          # 含留+删, 续跑跳过
+            transient = [f for f, d in res.items() if not d.passed and d.is_transient]
+            if transient:
+                print(f"[info] {len(transient)} 个 transient 失败 (未删除, 留待重试): "
+                      f"{[res[f].reason_code for f in transient[:3]]}...", flush=True)
+            # 续跑进度只记「已给出确定性结论」的条目 (留 + 内容性删); transient 失败
+            # 不写入 AUDIT_PROGRESS, 使其在下一轮枚举时仍被视为待审 (todo), 而不是被
+            # 误标记为「已完成」。
+            settled = [f for f, d in res.items() if d.passed or not d.is_transient]
+            _append(AUDIT_PROGRESS, settled)
 
         engine.pipeline(next_files, on_results, concurrency,
                         pull_workers=24, poll=0)         # 单轮耗尽即返回, 外层 while 控重扫

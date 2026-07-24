@@ -8,7 +8,10 @@
 """
 import os
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from lib.domain_policies import AuditPolicy
 
 
 @dataclass(frozen=True)
@@ -44,6 +47,9 @@ class Domain:
     audit_v2_prompt: str = ""
     audit_gate: Optional[Callable[[dict], bool]] = None
     audit_gate_thumb: Optional[Callable[[dict], bool]] = None
+    # 可复用结构化审核策略 (Task 2 的 AuditPolicy); 可选字段, 向后兼容旧领域。
+    # 配置了它的领域由 vlm_prompts 优先走 policy.decide, 未配置则回退上面的 audit_v2_prompt/audit_gate。
+    audit_policy: "Optional[AuditPolicy]" = None
 
 
 # ═══════════════════════ 健身 (原样搬运, 行为零变化) ═══════════════════════
@@ -229,13 +235,93 @@ FITNESS = Domain(
 
 # 羽毛球领域包 (定义见 domains_badminton, 拆分文件避免本模块过长)
 from lib.domains_badminton import BADMINTON  # noqa: E402
+# 网球领域包 (定义见 domains_tennis, 与羽毛球同构、存储隔离)
+from lib.domains_tennis import TENNIS  # noqa: E402
 
-_REGISTRY = {d.name: d for d in (FITNESS, BADMINTON)}
+_REGISTRY = {d.name: d for d in (FITNESS, BADMINTON, TENNIS)}
+
+
+def _normalized_path(value: str) -> str:
+    """归一化路径用于碰撞检测: 去尾部 '/', 空串保持空串 (由必填校验单独拦截)。"""
+    return value.rstrip("/") if value else value
+
+
+def validate_domain(domain: "Domain", registry: "Optional[dict]" = None) -> None:
+    """校验单个 Domain 是否满足各阶段脚本的契约, 不满足抛 ValueError。
+
+    校验项 (finding 7):
+    - name / local_data_dir / remote_host / remote_videos 非空 (各阶段脚本直接拼路径/ssh目标使用);
+    - local_data_dir 与 remote_videos 归一化后与 registry 中其他领域互不冲突 (含大小写/尾斜杠等价);
+    - local_data_dir 与自身的 remote_videos 不能是同一物理位置的字符串 (防误配);
+    - 配了 audit_policy (结构化领域) 时: schema_version/policy_version 非空,
+      且 prompt_template 中必须出现 required_fields 里的每个字段名 (prompt/gate 一致性),
+      否则模型不知道要输出哪些字段, strict_gate/thumb_gate 会必然因缺字段保守拒绝。
+    """
+    if not domain.name:
+        raise ValueError("领域 name 不能为空")
+    if not domain.local_data_dir:
+        raise ValueError(f"领域 {domain.name!r} 的 local_data_dir 不能为空")
+    if not domain.remote_host:
+        raise ValueError(f"领域 {domain.name!r} 的 remote_host 不能为空")
+    if not domain.remote_videos:
+        raise ValueError(f"领域 {domain.name!r} 的 remote_videos 不能为空")
+
+    if registry is not None:
+        local_norm = _normalized_path(domain.local_data_dir)
+        remote_norm = _normalized_path(domain.remote_videos)
+        for other in registry.values():
+            if other.name == domain.name:
+                continue
+            if _normalized_path(other.local_data_dir) == local_norm:
+                raise ValueError(
+                    f"local_data_dir 与领域 {other.name!r} 归一化后路径冲突: {domain.local_data_dir!r}")
+            if _normalized_path(other.remote_videos) == remote_norm:
+                raise ValueError(
+                    f"remote_videos 与领域 {other.name!r} 归一化后路径冲突: {domain.remote_videos!r}")
+
+    policy = domain.audit_policy
+    if policy is not None:
+        if not policy.schema_version:
+            raise ValueError(f"领域 {domain.name!r} 的 audit_policy.schema_version 不能为空")
+        if not policy.policy_version:
+            raise ValueError(f"领域 {domain.name!r} 的 audit_policy.policy_version 不能为空")
+        if not policy.prompt_template:
+            raise ValueError(f"领域 {domain.name!r} 的 audit_policy.prompt_template 不能为空")
+        missing = sorted(f for f in policy.required_fields if f not in policy.prompt_template)
+        if missing:
+            raise ValueError(
+                f"领域 {domain.name!r} 的 audit_policy prompt 未声明必填字段: {missing}")
+        if policy.strict_gate is None or policy.thumb_gate is None:
+            raise ValueError(f"领域 {domain.name!r} 的 audit_policy 缺少 strict_gate/thumb_gate")
+
+
+# 导入时校验: 遍历 _REGISTRY.values() 而非枚举具体领域, 使新领域 (如 tennis) 自动纳入同一检查。
+# 分两步 (先注入 registry 供互查, 再逐个校验) 而非边填边查, 使冲突判定与顺序无关。
+for _domain in _REGISTRY.values():
+    validate_domain(_domain, _REGISTRY)
+
+
+def list_domains() -> tuple:
+    """返回全部已注册领域名, 按字母序排列。"""
+    return tuple(sorted(_REGISTRY))
+
+
+def load_domain(name: str) -> Domain:
+    """按名称加载领域配置; 未知名称抛出 ValueError 并列出可选项。
+
+    加载时重新跑一遍 validate_domain (finding 7): 即便某个畸形 Domain 是在导入后
+    才被直接塞进 _REGISTRY (例如测试/临时注册), load_domain 仍会在其被实际使用前
+    捕获契约缺陷, 而不是让它带着空路径/字段不一致的 prompt 一路跑到阶段执行时才报错。
+    """
+    if name not in _REGISTRY:
+        raise ValueError(f"未知 DOMAIN={name!r}, 可选: {list_domains()}")
+    domain = _REGISTRY[name]
+    if domain.name != name:
+        raise ValueError(f"领域注册名与 Domain.name 不一致: {name!r}")
+    validate_domain(domain, _REGISTRY)
+    return domain
 
 
 def current() -> Domain:
     """按 DOMAIN 环境变量返回领域配置; 缺省 fitness。"""
-    name = os.environ.get("DOMAIN", "fitness")
-    if name not in _REGISTRY:
-        raise ValueError(f"未知 DOMAIN={name!r}, 可选: {sorted(_REGISTRY)}")
-    return _REGISTRY[name]
+    return load_domain(os.environ.get("DOMAIN", "fitness"))

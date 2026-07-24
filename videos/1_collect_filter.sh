@@ -24,7 +24,7 @@
 #     thumbs/{id}.jpg         ← 缩略图
 #     filtered.jsonl          ← VLM 筛选 → 阶段二输入
 #
-# 用法: DOMAIN=<fitness|badminton> bash 1_collect_filter.sh [search|channels|diverse|datasets|process|thumbs|vlm|all]
+# 用法: DOMAIN=<fitness|badminton|tennis> bash 1_collect_filter.sh [search|channels|diverse|datasets|process|thumbs|vlm|all]
 # ══════════════════════════════════════════════════════════════
 set -e
 cd "$(dirname "$0")"

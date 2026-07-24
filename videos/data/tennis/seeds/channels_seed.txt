@@ -1,0 +1,41 @@
+# 网球比赛 YouTube 频道 (种子列表)
+# 格式: 每行一个频道名（与 YouTube 频道名一致）; 采集侧会爬取其视频列表。
+# 侧重「上传完整比赛录像/固定机位赛事」的官方与赛事频道。
+# 说明: 命中频道只是高召回入池信号, 最终留存与否仍由 VLM court-match 审核判定。
+
+# === 官方 / 赛事组织 (ATP / WTA / ITF) ===
+ATP Tour
+WTA
+ITF Tennis
+International Tennis Federation
+Tennis TV
+Tennis Channel
+
+# === 四大满贯官方频道 ===
+Australian Open TV
+Roland Garros
+Wimbledon
+US Open Tennis Championships
+
+# === 转播 / 完整录像搬运 ===
+Tennis Full Match
+Tennis Highlights HD
+Tennis Legends
+Tennis TV Classic Matches
+Court Level Tennis
+
+# === 地区赛事 / 国家协会 ===
+China Tennis Association
+Japan Tennis Association
+Korea Tennis Association
+LTA Tennis
+Tennis Australia
+USTA
+Federación Mexicana de Tenis
+
+# === 业余 / 民间对打 ===
+Amateur Tennis
+Club Tennis Matches
+网球比赛录像
+网球全场录像
+业余网球

@@ -7,6 +7,22 @@
 输出:
   DATA_DIR/filtered.jsonl   # 通过的 → 阶段二输入
   DATA_DIR/rejected.jsonl   # 拒绝的
+
+--reaudit (finding 4): text-only 重新审核只依据标题/频道文本单发二元判定 (SYSTEM +
+PROMPT_TEXT_ONLY), 完全绕过结构化图像 audit_policy (court-match 等)。对配了
+audit_policy 的结构化领域 (tennis/badminton), --reaudit 现在直接拒绝执行 ——
+文本判定的结论如果被记成结构化 policy 的身份 (domain/schema_version/policy_version),
+会让后续按身份判断"是否已按当前策略审过"的续跑逻辑 (lib.checkpoint, finding 3) 误以为
+该条目已经过图像结构化审核, 而实际上决策依据完全不同。未配置 audit_policy 的旧领域
+(fitness) 不受影响, --reaudit 行为不变。
+
+结构化图像判定 (再审修复 #3/#4): 正常初筛 (无 --reaudit/--audit-filtered-missing-meta)
+以及 --audit-filtered-missing-meta 都经 judge_frame_detailed 判定, 保留具体拒绝原因
+(vlm_parse_failed/missing_fields/invalid_enum/invalid_boolean_type/policy_rejected)。
+两者的续跑判断都改为 lib.checkpoint.resolve_todo (policy-identity-aware), 不再是纯文件名
+`done` 集合匹配。VLM 解析失败/端点异常等 transient 结果既不写入完成态进度文件、也不
+拉黑、也不从 filtered/thumbs 删除 —— 这些是「还没问出结果」而不是「判定为不合格」,
+必须留给下一轮重试, 否则一次瞬时故障会被永久固化成误判。
 """
 import argparse
 import base64
@@ -22,12 +38,27 @@ sys.path.insert(0, str(Path(__file__).parent))
 from llm_client import LLMClient, parse_ports, build_vlm_endpoints, call_vlm_raw, frames_to_img_bytes
 
 from lib import config
-from lib.vlm_prompts import SYSTEM, PROMPT, PROMPT_TEXT_ONLY, judge_frame, USE_V2
+from lib.vlm_prompts import (
+    SYSTEM, PROMPT, PROMPT_TEXT_ONLY, judge_frame, judge_frame_detailed,
+    JudgeResult, REASON_OK, USE_V2,
+)
+from lib.policy_records import audit_record, append_json_record
+from lib.checkpoint import load_checkpoint, resolve_todo
 
-# 图像分支经 lib.vlm_prompts.judge_frame 统一裁决 (V2 结构化 gate / 二元, 按 domain);
-# text-only reaudit 分支无图, 仍走 LLMClient.chat 单发二元。
+# 图像分支经 lib.vlm_prompts.judge_frame_detailed 统一裁决 (V2 结构化 gate / 二元, 按
+# domain), 保留 reason_code/detail; text-only reaudit 分支无图, 仍走 LLMClient.chat
+# 单发二元 —— 结构化领域禁用该分支 (finding 4), 见 main() 里对 args.reaudit +
+# config.DOMAIN.audit_policy 的检查。
 
 _lock = threading.Lock()
+
+AUDIT_RECORDS = config.STATE_DIR / "1_filter_audit_records.jsonl"  # 判定溯源 (domain/policy_version), 不影响既有 filtered/rejected 契约
+AUDIT_FILTERED_RECORDS = config.STATE_DIR / "1_audit_filtered_missing_meta_records.jsonl"  # --audit-filtered-missing-meta 独立溯源 (与 AUDIT_RECORDS 分流, 不混用同一 checkpoint 视角)
+
+# text-only 判定的独立身份 (finding 4): 与图像结构化 audit_policy 完全区分开,
+# 供未来若要支持结构化领域 text-only 判定时使用真实的、不同的身份而非借用图像策略身份。
+TEXT_ONLY_SCHEMA_VERSION = "text-only-v1"
+TEXT_ONLY_POLICY_VERSION = "text-only-binary-v1"
 
 
 def _finalize_reaudit(total_items):
@@ -91,9 +122,18 @@ def encode_thumb(vid):
     return base64.b64encode(path.read_bytes()).decode()
 
 
-def judge_one(item, client, eps, pick_ep, release_ep, text_only=False):
-    """判断单条。text_only=True 走 LLMClient 文本单发二元 (无图, reaudit 用);
-    否则走 judge_frame (V2 结构化 gate / 二元, 按 domain) 判缩略图。"""
+def judge_one(item, client, eps, pick_ep, release_ep, text_only=False) -> tuple:
+    """判断单条, 返回 (vid, JudgeResult)。
+
+    text_only=True 走 LLMClient 文本单发二元 (无图, reaudit 用) —— 该分支本身没有
+    结构化 reason_code 概念 (只有「是/否」), 用 REASON_OK/REASON_POLICY_REJECTED 语义
+    近似表达 passed/not passed, 异常统一归为 REASON_VLM_PARSE_FAILED (transient)。
+
+    否则走 judge_frame_detailed (V2 结构化 gate / 二元, 按 domain) 判缩略图, 直接
+    转发其 JudgeResult (含 vlm_parse_failed/missing_fields/invalid_enum/
+    invalid_boolean_type/policy_rejected 等具体原因, 再审修复 #4)。
+    """
+    from lib.vlm_prompts import REASON_POLICY_REJECTED, REASON_VLM_PARSE_FAILED
     vid = item["video_id"]
 
     if text_only:
@@ -104,23 +144,43 @@ def judge_one(item, client, eps, pick_ep, release_ep, text_only=False):
         ]
         try:
             resp = client.chat(messages, max_tokens=8, temperature=0)
-            return vid, bool(resp and "是" in resp[:5]), resp
+            passed = bool(resp and "是" in resp[:5])
+            return vid, JudgeResult(passed, REASON_OK if passed else REASON_POLICY_REJECTED, resp or "")
         except Exception as e:
-            return vid, False, f"error:{e}"
+            return vid, JudgeResult(False, REASON_VLM_PARSE_FAILED, f"{type(e).__name__}: {e}")
 
     img_b64 = encode_thumb(vid)
     if not img_b64:
-        return vid, False, "no_thumb"
+        # 缩略图缺失是数据完整性问题, 不是 VLM 判定失败, 但既不是内容拒绝也不是
+        # 可重试的 transient 失败 (换个时间点重跑, 缩略图依然不存在) —— 与
+        # policy_rejected 一起划入「不可重试的确定性拒绝」更合适: 不阻塞续跑,
+        # 不应无限期占用 todo 队列。使用 REASON_POLICY_REJECTED 以外的独立标签
+        # 更准确, 但为避免引入未在 vlm_prompts 里定义的新常量, 复用现有
+        # REASON_POLICY_REJECTED 语义 (确定性拒绝, 非 transient)。
+        return vid, JudgeResult(False, REASON_POLICY_REJECTED, "no_thumb")
     img_b = frames_to_img_bytes([img_b64])
     i = pick_ep()
     try:
-        passed = judge_frame(eps[i], img_b, thumb=True,
-                             title=item.get("title", ""), channel=item.get("channel", ""))
-        return vid, passed, "pass" if passed else "reject"
-    except Exception as e:
-        return vid, False, f"error:{e}"
+        return vid, judge_frame_detailed(eps[i], img_b, thumb=True,
+                                         title=item.get("title", ""), channel=item.get("channel", ""))
     finally:
         release_ep(i)
+
+
+def reaudit_block_reason(domain) -> str | None:
+    """finding 4: 若当前领域配置了结构化 audit_policy, --reaudit (text-only 二元判定)
+    必须被禁用, 返回说明文案; 未配置 audit_policy 的旧领域返回 None (放行, 行为不变)。
+    抽成独立函数便于单测覆盖两种领域, 不依赖 main() 的 argparse/VLM 端点探测流程。"""
+    if domain.audit_policy is None:
+        return None
+    return (
+        f"--reaudit 已对结构化领域 (DOMAIN={domain.name}, "
+        f"audit_policy={domain.audit_policy.policy_version}) 禁用: "
+        "text-only 二元判定不能代表结构化图像审核策略的结论。"
+        "如需重新审核该领域, 请改用 2_2_audit_videos.py / 3_2_audit_splits.py "
+        "对真实视频帧重新走结构化 audit_policy, 或改用 "
+        "--audit-filtered-missing-meta (仍走图像 judge_frame)。"
+    )
 
 
 def main():
@@ -135,6 +195,11 @@ def main():
     parser.add_argument("--audit-filtered-missing-meta", action="store_true",
                         help="只审核 filtered 中不在 meta 的旧项；失败写黑名单并从 filtered/thumbs 删除")
     args = parser.parse_args()
+
+    if args.reaudit:
+        block_reason = reaudit_block_reason(config.DOMAIN)
+        if block_reason:
+            sys.exit(block_reason)
 
     ports = parse_ports(args.port)
     # 文本单发 (reaudit) 用 LLMClient; 图像判定 (judge_frame) 用 raw httpx 端点池
@@ -179,14 +244,32 @@ def main():
                 for r in items:
                     f.write(r["video_id"] + "\n")
             print(f"审核旧filtered项: filtered={len(filtered_items)} meta={len(meta_ids)} 固定target={len(items)}")
-        done = config.read_lines(config.DATA_DIR / "audit_filtered_progress.txt")
+        progress_path = config.DATA_DIR / "audit_filtered_progress.txt"
+        records_path = AUDIT_FILTERED_RECORDS
     elif args.reaudit:
         items = config.read_jsonl(config.FILTERED)
-        done = config.read_lines(config.DATA_DIR / "reaudit_progress.txt")
+        progress_path = config.DATA_DIR / "reaudit_progress.txt"
+        records_path = None   # text-only 分支不参与 policy-identity checkpoint (finding 4)
+        done = config.read_lines(progress_path)
         print(f"重新审核模式: {len(items)} 条, 已完成 {len(done)}")
     else:
         items = config.read_jsonl(config.META_FILE)
-        done = config.read_lines(config.FILTER_PROGRESS)
+        progress_path = config.FILTER_PROGRESS
+        records_path = AUDIT_RECORDS
+
+    all_ids = [r["video_id"] for r in items]
+    if records_path is not None:
+        # 再审修复 #3: 正常初筛与 --audit-filtered-missing-meta 都改用
+        # lib.checkpoint.resolve_todo (policy-identity-aware), 不再是纯文件名匹配。
+        # 旧策略判过的/只有 transient 未决记录的条目会被重新纳入待审。
+        checkpoint = load_checkpoint(progress_path, records_path)
+        resolved = resolve_todo(all_ids, checkpoint, config.DOMAIN)
+        done = set(resolved["current"])
+        stale_count = len(resolved["stale"])
+        if stale_count:
+            print(f"[policy-identity] {stale_count} 条身份非当前策略/未记录, 重新纳入待审")
+    else:
+        done = config.read_lines(progress_path)
 
     pending = [r for r in items
                if r["video_id"] not in done and r["video_id"] not in blacklist]
@@ -202,15 +285,14 @@ def main():
 
     if args.audit_filtered_missing_meta:
         out_ok = None  # 通过项已在 filtered 中，不重复写入
-        prog_file = config.DATA_DIR / "audit_filtered_progress.txt"
         reject_ids_file = config.DATA_DIR / "audit_filtered_rejected_ids.txt"
     else:
         out_ok = config.DATA_DIR / "filtered_new.jsonl" if args.reaudit else config.FILTERED
-        prog_file = config.DATA_DIR / "reaudit_progress.txt" if args.reaudit else config.FILTER_PROGRESS
         reject_ids_file = None
+    prog_file = progress_path
     out_no = config.REJECTED
 
-    accepted, rejected = 0, 0
+    accepted, rejected, transient = 0, 0, 0
     f_ok = open(out_ok, "a", encoding="utf-8") if out_ok else None
     f_no = open(out_no, "a", encoding="utf-8")
     f_prog = open(prog_file, "a", encoding="utf-8")
@@ -239,17 +321,26 @@ def main():
                 done_set, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
                 for fut in done_set:
                     item = fut.item
-                    vid, passed, resp = fut.result()
+                    vid, result = fut.result()   # result: JudgeResult
                     done_n += 1
 
                     with _lock:
-                        if passed:
+                        if result.is_transient:
+                            # 再审修复 #4: transient 失败 (VLM 解析失败/端点异常等) 既不
+                            # 拉黑、也不写入完成态进度文件、也不从 filtered/thumbs 删除
+                            # (audit_filtered_missing_meta 分支) —— 这不是「判定不合格」,
+                            # 只是「这次没问出结果」, 必须留给下一轮重试, 否则一次瞬时
+                            # 故障会被永久固化成误判。仍写入 records (settled=False),
+                            # 供事后排查, 但不计入 accepted/rejected 统计。
+                            transient += 1
+                        elif result.passed:
                             if f_ok:
                                 f_ok.write(json.dumps(item, ensure_ascii=False) + "\n")
                             accepted += 1
                         else:
-                            f_no.write(json.dumps({"video_id": vid, "reason": str(resp)[:50]},
-                                                 ensure_ascii=False) + "\n")
+                            f_no.write(json.dumps(
+                                {"video_id": vid, "reason": (result.reason_code or result.detail)[:50]},
+                                ensure_ascii=False) + "\n")
                             config.append_blacklist(vid)
                             if f_reject_ids:
                                 f_reject_ids.write(vid + "\n")
@@ -257,7 +348,12 @@ def main():
                             if args.audit_filtered_missing_meta and thumb.exists():
                                 thumb.unlink()
                             rejected += 1
-                        f_prog.write(vid + "\n")
+                        if records_path is not None:
+                            append_json_record(records_path, audit_record(
+                                config.DOMAIN, vid, result.passed,
+                                result.reason_code or result.detail))
+                        if not result.is_transient:
+                            f_prog.write(vid + "\n")
 
                     submit_next(pool)
 
@@ -271,7 +367,7 @@ def main():
                         qps = done_n / elapsed
                         eta = (len(pending) - done_n) / qps / 3600 if qps else 0
                         rate = accepted / done_n * 100 if done_n else 0
-                        print(f"  [{done_n}/{len(pending)}] 用时:{elapsed/60:.1f}m 速度:{qps:.1f}/s ETA:{eta:.1f}h 通过:{accepted} 拒绝:{rejected} ({rate:.1f}%)", flush=True)
+                        print(f"  [{done_n}/{len(pending)}] 用时:{elapsed/60:.1f}m 速度:{qps:.1f}/s ETA:{eta:.1f}h 通过:{accepted} 拒绝:{rejected} transient:{transient} ({rate:.1f}%)", flush=True)
     finally:
         if f_ok:
             f_ok.close()
@@ -281,7 +377,7 @@ def main():
             f_reject_ids.close()
 
     total = accepted + rejected
-    print(f"\n完成! 通过: {accepted} ({accepted/total*100:.1f}%) 拒绝: {rejected}")
+    print(f"\n完成! 通过: {accepted} ({accepted/max(total,1)*100:.1f}%) 拒绝: {rejected} transient(未落进度, 待重试): {transient}")
 
     if args.audit_filtered_missing_meta:
         _finalize_filtered_audit()
