@@ -5,6 +5,10 @@
 固定机位比赛画面 (业余/专业均可)。caption 聚焦赛场可见的击球与站位信息。
 """
 from lib.domains import Domain
+from lib.domain_policies import build_court_match_policy
+
+_BADMINTON_AUDIT_POLICY = build_court_match_policy(
+    "badminton", "羽毛球", "羽毛球场", "court-match-badminton-v1")
 
 # 反转: 屏蔽讲解/教学/花字/非比赛内容 (仍保留通用垃圾词)
 _TITLE_BLACKLIST = [
@@ -193,4 +197,5 @@ BADMINTON = Domain(
     audit_v2_prompt=_AUDIT_V2_PROMPT,
     audit_gate=_badminton_gate,
     audit_gate_thumb=_badminton_gate_thumb,
+    audit_policy=_BADMINTON_AUDIT_POLICY,
 )

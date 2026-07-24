@@ -61,3 +61,17 @@ def test_missing_or_invalid_fields_reject():
     assert policy.decide(missing, thumb=False) is False
     invalid = {**BASE, "has_person": "true"}
     assert policy.decide(invalid, thumb=False) is False
+
+
+BADMINTON_BASE = {**BASE, "sport_type": "badminton"}
+
+
+def test_badminton_policy_accepts_complete_rear_court():
+    policy = build_court_match_policy("badminton", "羽毛球", "羽毛球场", "court-match-badminton-v1")
+    assert policy.decide(BADMINTON_BASE, thumb=False) is True
+
+
+def test_badminton_policy_rejects_side_camera_and_partial_court():
+    policy = build_court_match_policy("badminton", "羽毛球", "羽毛球场", "court-match-badminton-v1")
+    assert policy.decide({**BADMINTON_BASE, "cam_side": True}, thumb=False) is False
+    assert policy.decide({**BADMINTON_BASE, "court_full_visible": False}, thumb=False) is False
