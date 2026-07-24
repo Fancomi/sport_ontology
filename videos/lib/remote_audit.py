@@ -9,6 +9,13 @@
   - on_results(res): 处理一批结果 dict{name: passed_bool} (记进度 / 远端删 / 黑名单 等)。
 
 领域差异 (stage2 整段 vs stage3 切片) 落在调用方的 next_files/on_results, 引擎不感知。
+
+结构化审核决策 (finding 5): `audit_one` 返回布尔值 (向后兼容既有调用方: preview 工具、
+test_scene_split_fix.py 里按路径加载脚本后直接调 `a.audit_one(...)` 的既有测试)。
+`audit_one_detailed` 是它的结构化版本, 返回 `AuditDecision {passed, reason_code, detail}`,
+区分「时长预闸拒绝」「抽帧失败」「VLM 解析失败」「字段缺失/类型错误/枚举非法」
+「门控内容性拒绝」等具体原因, 供调用方 (2_2/3_2) 落盘到 policy_records 时保留诊断信息,
+并据 reason_code 是否 transient 决定是否可以对远端文件做不可逆删除。
 """
 import os
 import base64
@@ -17,6 +24,7 @@ import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -24,9 +32,28 @@ from llm_client import call_vlm_raw, frames_to_img_bytes
 from representative_frame import triptych_reps_from_video
 from lib import config
 from lib import duration_filter
-from lib.vlm_prompts import judge_frame
+from lib.vlm_prompts import (
+    judge_frame_detailed, REASON_OK, REASON_DURATION_REJECTED,
+    REASON_FRAME_DECODE_FAILED, TRANSIENT_REASONS,
+)
 
 SSH_OPTS = config.SSH_OPTS   # 复用 config 统一定义 (2_3/3_1/remote_audit 一致)
+
+
+@dataclass(frozen=True)
+class AuditDecision:
+    """单文件审核的结构化结果: 是否保留 + 拒绝原因码 + 细节, 供调用方落盘/决定是否可删。"""
+    passed: bool
+    reason_code: str = REASON_OK
+    detail: str = ""
+
+    @property
+    def is_transient(self) -> bool:
+        """基础设施/解析层失败 (非内容性拒绝); 调用方不应据此对远端文件做不可逆删除。"""
+        return self.reason_code in TRANSIENT_REASONS
+
+    def __bool__(self):
+        return self.passed
 
 
 class EndpointRouter:
@@ -100,32 +127,45 @@ class RemoteAudit:
         return [f for f in os.listdir(shm) if f.endswith(".mp4")]
 
     # ── 单文件审核: 时长预闸 → 3段medoid多图 → judge_frame ──
-    def audit_one(self, path: str) -> bool:
-        if duration_filter.is_too_long(path) or duration_filter.is_too_short(path):
-            return False   # 超长/过短直接判否 → 调用方远端删
+    def audit_one_detailed(self, path: str) -> AuditDecision:
+        """结构化版本 (finding 5): 保留时长拒绝/抽帧失败/VLM判定各自的原因码,
+        不再把它们全部塌缩成同一个 False。"""
+        if duration_filter.is_too_long(path):
+            return AuditDecision(False, REASON_DURATION_REJECTED, "too_long")
+        if duration_filter.is_too_short(path):
+            return AuditDecision(False, REASON_DURATION_REJECTED, "too_short")
         reps = triptych_reps_from_video(path, n_seg=3, fps=1.0, max_side=480)  # 头/中/尾各 medoid
         if not reps:
-            return False
+            return AuditDecision(False, REASON_FRAME_DECODE_FAILED, "no representative frames")
         b64s = []
         for fr in reps:
             ok, buf = cv2.imencode(".jpg", fr, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if ok:
                 b64s.append(base64.b64encode(buf).decode())
         if not b64s:
-            return False
+            return AuditDecision(False, REASON_FRAME_DECODE_FAILED, "jpeg encode failed")
         img_b = frames_to_img_bytes(b64s)   # 多图按序 (与喂视频帧同法), 非拼接
         i = self.router.pick()
         try:
-            return judge_frame(self.router.eps[i], img_b)
-        except Exception:
-            return True    # VLM 异常保守保留
+            result = judge_frame_detailed(self.router.eps[i], img_b)
+            return AuditDecision(result.passed, result.reason_code, result.detail)
+        except Exception as e:
+            # VLM 端点请求异常 (超时/连接失败等): 保守保留 (与既有行为一致), 但标记
+            # 为 endpoint_error/transient, 供调用方避免误判为「内容拒绝」。
+            from lib.vlm_prompts import REASON_ENDPOINT_ERROR
+            return AuditDecision(True, REASON_ENDPOINT_ERROR, f"{type(e).__name__}: {e}")
         finally:
             self.router.release(i)
 
+    def audit_one(self, path: str) -> bool:
+        """布尔投影 (向后兼容既有调用方: preview 工具 / test_scene_split_fix.py 的既有测试)。"""
+        return self.audit_one_detailed(path).passed
+
     def _audit_batch(self, names: list[str], shm: str, concurrency: int) -> dict:
+        """返回 dict{name: AuditDecision} (结构化)。调用方若只需布尔可对值取 bool()/.passed。"""
         res = {}
         with ThreadPoolExecutor(max_workers=concurrency) as ex:
-            futs = {ex.submit(self.audit_one, os.path.join(shm, f)): f for f in names}
+            futs = {ex.submit(self.audit_one_detailed, os.path.join(shm, f)): f for f in names}
             for fut in as_completed(futs):
                 res[futs[fut]] = fut.result()
         return res
@@ -133,7 +173,9 @@ class RemoteAudit:
     # ── 双缓冲流水线 (拉 N+1 ∥ 审 N) ──
     def pipeline(self, next_files, on_results, concurrency: int,
                  pull_workers=24, poll=60):
-        """next_files() -> list[str] 下一批待审 (空=暂无); on_results(dict{name:bool}) 处理结果。
+        """next_files() -> list[str] 下一批待审 (空=暂无);
+        on_results(dict{name: AuditDecision}) 处理结果 (真值可当 bool 用, 结构化调用方
+        可读 .reason_code/.detail/.is_transient)。
         poll>0 常驻: 无新文件时轮询等待, 持续吃上游新产出 (与 2_3_sync/3_1_split 同构);
         poll=0 耗尽即停 (供 2_2 外层自管 recheck)。返回 (total_pass, total_reject)。"""
         shm_a, shm_b = f"{self.shm_base}_A", f"{self.shm_base}_B"
