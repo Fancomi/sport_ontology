@@ -23,11 +23,14 @@ from llm_client import LLMClient, parse_ports, build_vlm_endpoints, call_vlm_raw
 
 from lib import config
 from lib.vlm_prompts import SYSTEM, PROMPT, PROMPT_TEXT_ONLY, judge_frame, USE_V2
+from lib.policy_records import audit_record, append_json_record
 
 # 图像分支经 lib.vlm_prompts.judge_frame 统一裁决 (V2 结构化 gate / 二元, 按 domain);
 # text-only reaudit 分支无图, 仍走 LLMClient.chat 单发二元。
 
 _lock = threading.Lock()
+
+AUDIT_RECORDS = config.STATE_DIR / "1_filter_audit_records.jsonl"  # 判定溯源 (domain/policy_version), 不影响既有 filtered/rejected 契约
 
 
 def _finalize_reaudit(total_items):
@@ -257,6 +260,9 @@ def main():
                             if args.audit_filtered_missing_meta and thumb.exists():
                                 thumb.unlink()
                             rejected += 1
+                        append_json_record(AUDIT_RECORDS,
+                                            audit_record(config.DOMAIN, vid, passed,
+                                                         "" if passed else str(resp)[:50]))
                         f_prog.write(vid + "\n")
 
                     submit_next(pool)

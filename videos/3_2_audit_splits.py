@@ -20,6 +20,7 @@ from llm_client import build_vlm_endpoints, parse_ports
 from lib import config
 from lib.vlm_prompts import USE_V2
 from lib.remote_audit import EndpointRouter, RemoteAudit, SSH_OPTS
+from lib.policy_records import audit_record, append_json_record
 
 # ═══════════════════════════ 配置 ═══════════════════════════
 
@@ -33,6 +34,7 @@ SPLIT_PROGRESS = STATE / "3_scene_split_progress.txt"
 AUDIT_PROGRESS = STATE / "3_audit_progress.txt"   # 已审切片 (含删+留), 续跑跳过
 AUDIT_DELETED  = DELIV / "3_audit_deleted.txt"    # 被真删切片 (审计凭证)
 AUDIT_KEPT     = DELIV / "3_audit_kept.txt"       # 保留切片 (审计凭证)
+AUDIT_RECORDS  = STATE / "3_audit_records.jsonl"  # 判定溯源 (domain/policy_version)
 CANONICAL      = DELIV / "3_canonical_segments.list"   # 唯一权威名单 = 远端 ∩ kept
 
 # 拉取/删除/审核/双缓冲流水线复用 lib.remote_audit.RemoteAudit; 本文件只保留 split_queue
@@ -111,6 +113,8 @@ def run(args):
         return next_batch_from_queue(done, args.batch_size)
 
     def on_results(res: dict):
+        for name, ok in res.items():
+            append_json_record(AUDIT_RECORDS, audit_record(config.DOMAIN, name, ok))
         rej = [f for f, ok in res.items() if not ok]
         if rej:
             engine.remote_delete(rej)
@@ -151,6 +155,8 @@ def run_list(args):
         chunk = todo[cursor:cursor + args.batch_size]; cursor += len(chunk); return chunk
 
     def on_results(res: dict):
+        for name, ok in res.items():
+            append_json_record(AUDIT_RECORDS, audit_record(config.DOMAIN, name, ok))
         rej = [f for f, ok in res.items() if not ok]
         if rej:
             engine.remote_delete(rej); _append(AUDIT_DELETED, rej)   # 真删

@@ -25,12 +25,14 @@ from llm_client import build_vlm_endpoints, parse_ports
 from lib import config
 from lib.vlm_prompts import USE_V2
 from lib.remote_audit import EndpointRouter, RemoteAudit
+from lib.policy_records import audit_record, append_json_record
 
 REMOTE      = config.DOMAIN.remote_host
 REMOTE_DIR  = config.DOMAIN.remote_videos           # 整段视频目录 (非 _split)
 SHM_BASE    = "/dev/shm/audit_videos"
 AUDIT_PROGRESS = config.STATE_DIR / "2_audit_videos_progress.txt"  # 已审 <vid>.mp4 (续跑跳过)
 AUDIT_DELETED  = config.DELIVERABLES_DIR / "2_audit_videos_deleted.txt"
+AUDIT_RECORDS  = config.STATE_DIR / "2_audit_records.jsonl"  # 判定溯源 (domain/policy_version)
 
 
 def _read_set(path: Path) -> set:
@@ -100,6 +102,8 @@ def main():
             return chunk
 
         def on_results(res: dict):
+            for name, ok in res.items():
+                append_json_record(AUDIT_RECORDS, audit_record(config.DOMAIN, name, ok))
             rej = [f for f, ok in res.items() if not ok]
             if rej:
                 engine.remote_delete(rej)                 # 远端真删
