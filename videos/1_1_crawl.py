@@ -34,11 +34,16 @@ SP_PARAMS = [
     "EgIIAQ%253D%253D",   # 直播
     "",                    # 默认
 ]
+PLAYLIST_SP = "EgIQAw%3D%3D"   # playlist 过滤器
 
 # === 搜索修饰词 (领域相关, 取自 config.DOMAIN) ===
 SEARCH_SUFFIXES = config.DOMAIN.search_suffixes
 DIVERSE_MODIFIERS = config.DOMAIN.diverse_modifiers
 PLAYLIST_QUERIES = config.DOMAIN.playlist_queries
+# 多样性搜索召回口径 (领域相关, 见 lib/domains.py 的字段说明)
+DIVERSE_MODIFIER_SAMPLE = config.DOMAIN.diverse_modifier_sample
+DIVERSE_MODIFIER_ALL_SP = config.DOMAIN.diverse_modifier_all_sp
+DIVERSE_PER_CHANNEL_CAP = config.DOMAIN.diverse_per_channel_cap
 
 # Kinetics 数据集 URL
 KINETICS_URLS = {
@@ -266,68 +271,114 @@ def run_channels():
 
 # ==================== 多样性搜索 ====================
 
-def _diverse_search(query, sp, seen_ids, blacklist, ch_counts):
-    """多样性搜索 (频道配额限制)"""
-    url = f"https://www.youtube.com/results?search_query={quote_plus(query)}&sp={sp}"
+def _extract_search_entries(url):
+    """拉取一个搜索页的扁平条目列表 (抽出来便于测试打桩, 不含任何过滤逻辑)。"""
     opts = _ydl_opts(extract_flat="in_playlist")
-    results = []
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            for e in (info.get("entries") or []):
-                if not e or not e.get("id"):
-                    continue
-                vid = e["id"]
-                ch = e.get("channel") or e.get("uploader") or "unknown"
-                if vid in blacklist:
-                    continue
-                with _lock:
-                    if vid in seen_ids:
-                        continue
-                    if ch_counts[ch] >= config.MAX_PER_CHANNEL_DIVERSE:
-                        continue
-                    seen_ids.add(vid)
-                    ch_counts[ch] += 1
-                dur = e.get("duration") or 0
-                if dur < 5 or dur > 600:
-                    continue
-                results.append({
-                    "video_id": vid, "title": e.get("title"),
-                    "url": f"https://www.youtube.com/watch?v={vid}",
-                    "duration": dur, "channel": ch,
-                    "view_count": e.get("view_count"), "query": query,
-                    "source": "diverse_search",
-                })
-                if len(results) >= 100:
-                    break
+            return list((info or {}).get("entries") or [])
     except Exception:
-        pass
+        return []
+
+
+def _diverse_search(query, sp, seen_ids, blacklist, ch_counts,
+                    per_channel_cap=None):
+    """多样性搜索 (频道配额限制)。
+
+    时长口径走领域配置 (config.MIN_DURATION ~ config.MAX_DURATION), 而非硬编码
+    5~600s —— 网球/羽毛球的完整比赛动辄 1~3 小时, 用 600s 会把主力素材整段丢掉。
+    per_channel_cap 为 None 时取领域配置值。
+    """
+    cap = DIVERSE_PER_CHANNEL_CAP if per_channel_cap is None else per_channel_cap
+    url = f"https://www.youtube.com/results?search_query={quote_plus(query)}&sp={sp}"
+    results = []
+    for e in _extract_search_entries(url):
+        if not e or not e.get("id"):
+            continue
+        vid = e["id"]
+        ch = e.get("channel") or e.get("uploader") or "unknown"
+        if vid in blacklist:
+            continue
+        dur = e.get("duration") or 0
+        if dur < config.MIN_DURATION or dur > config.MAX_DURATION:
+            continue
+        with _lock:
+            if vid in seen_ids:
+                continue
+            if ch_counts[ch] >= cap:
+                continue
+            seen_ids.add(vid)
+            ch_counts[ch] += 1
+        results.append({
+            "video_id": vid, "title": e.get("title"),
+            "url": f"https://www.youtube.com/watch?v={vid}",
+            "duration": dur, "channel": ch,
+            "view_count": e.get("view_count"), "query": query,
+            "source": "diverse_search",
+        })
+        if len(results) >= cap:
+            break
     return results
 
 
-def run_diverse():
-    """多样性搜索主流程 — 使用统一关键词 × 全部SP × modifier"""
-    all_kws = _load_keywords()
-    logger.info(f"多样性: 加载 {len(all_kws)} 个关键词")
+def build_diverse_tasks(keywords, modifiers, playlist_queries,
+                        modifier_sample, modifier_all_sp):
+    """构造 (query, sp) 任务网格 —— 确定性、可复现、可续跑。
 
-    # 生成任务: 关键词 × SP × modifier
+    - 基础查询: 每个关键词 × 全部 SP 过滤器;
+    - modifier 查询: 每个关键词 × 前 modifier_sample 个 modifier
+      × (全部 SP 若 modifier_all_sp 否则仅第一个 SP);
+    - playlist 查询: 固定 playlist SP。
+
+    取 modifier 的前 N 个而不是 random.sample: 随机采样会让同一份关键词库每次生成
+    不同任务集, 续跑时 DIVERSE_PROGRESS 对不上, 既无法复现也无法判断「还差多少」。
+    """
     tasks = []
-    for kw in all_kws:
+    mods = list(modifiers)[:max(0, modifier_sample)]
+    mod_sps = list(SP_PARAMS) if modifier_all_sp else [SP_PARAMS[0]]
+    for kw in keywords:
         for sp in SP_PARAMS:
             tasks.append((kw, sp))
-        # 每个关键词额外加3个随机modifier (控制总量不膨胀10x)
-        for mod in random.sample(DIVERSE_MODIFIERS, min(3, len(DIVERSE_MODIFIERS))):
-            tasks.append((f"{kw} {mod}", SP_PARAMS[0]))
-    for pq in PLAYLIST_QUERIES:
-        tasks.append((pq, "EgIQAw%3D%3D"))
-    random.shuffle(tasks)
+        for mod in mods:
+            for sp in mod_sps:
+                tasks.append((f"{kw} {mod}", sp))
+    for pq in playlist_queries:
+        tasks.append((pq, PLAYLIST_SP))
+    # 去重但保序 (同一 (query, sp) 只跑一次)
+    return list(dict.fromkeys(tasks))
+
+
+def load_diverse_state():
+    """从已落盘的 diverse 结果恢复 (seen_ids, 频道计数)。
+
+    续跑时频道配额必须接着算: 否则每次重启 ch_counts 归零, 同一个大频道可以被
+    反复灌满配额, 既浪费请求也让候选池向少数频道倾斜。
+    """
+    seen_ids, ch_counts = set(), defaultdict(int)
+    for r in config.read_jsonl(config.DIVERSE_VIDEOS):
+        vid = r.get("video_id")
+        if not vid or vid in seen_ids:
+            continue
+        seen_ids.add(vid)
+        ch_counts[r.get("channel") or "unknown"] += 1
+    return seen_ids, ch_counts
+
+
+def run_diverse():
+    """多样性搜索主流程 — 关键词 × modifier × SP 网格 (口径由领域配置决定)"""
+    all_kws = _load_keywords()
+    tasks = build_diverse_tasks(all_kws, DIVERSE_MODIFIERS, PLAYLIST_QUERIES,
+                               DIVERSE_MODIFIER_SAMPLE, DIVERSE_MODIFIER_ALL_SP)
+    logger.info(f"多样性: 加载 {len(all_kws)} 个关键词 | modifier {len(DIVERSE_MODIFIERS)} "
+                f"(用满 {min(DIVERSE_MODIFIER_SAMPLE, len(DIVERSE_MODIFIERS))}) "
+                f"| modifier×全SP={DIVERSE_MODIFIER_ALL_SP} | 每频道上限 {DIVERSE_PER_CHANNEL_CAP}")
 
     blacklist = config.load_blacklist()
-    seen_ids = {r["video_id"] for r in config.read_jsonl(config.DIVERSE_VIDEOS)}
-    ch_counts = defaultdict(int)
+    seen_ids, ch_counts = load_diverse_state()
     done = config.read_lines(config.DIVERSE_PROGRESS)
     pending = [(kw, sp) for kw, sp in tasks if f"{kw}|{sp}" not in done]
-    logger.info(f"多样性: 总任务 {len(tasks)} | 待执行: {len(pending)}")
+    logger.info(f"多样性: 总任务 {len(tasks)} | 待执行: {len(pending)} | 已有: {len(seen_ids)}")
     if not pending:
         return
 
@@ -343,8 +394,9 @@ def run_diverse():
                 total += len(results)
             config.append_line(config.DIVERSE_PROGRESS, f"{kw}|{sp}")
             if i % 100 == 0:
-                logger.info(f"多样性 [{i}/{len(pending)}] 累计: {total}, 频道: {len(ch_counts)}")
-    logger.info(f"多样性搜索完成! 新增: {total}, 频道: {len(ch_counts)}")
+                logger.info(f"多样性 [{i}/{len(pending)}] 累计新增: {total}, "
+                            f"总唯一: {len(seen_ids)}, 频道: {len(ch_counts)}")
+    logger.info(f"多样性搜索完成! 新增: {total}, 总唯一: {len(seen_ids)}, 频道: {len(ch_counts)}")
 
 
 # ==================== 数据集获取 ====================

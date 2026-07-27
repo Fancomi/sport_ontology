@@ -118,6 +118,11 @@ TENNIS = Domain(
     title_blacklist=_TITLE_BLACKLIST,
     search_suffixes=_SEARCH_SUFFIXES,
     diverse_modifiers=_DIVERSE_MODIFIERS,
+    # 阶段一最上游要尽可能大 (后面还有标题黑名单 + 缩略图 VLM + 真实帧 VLM 三轮筛):
+    # 全部 modifier 用满 × 全部 SP 过滤器, 单频道上限放到 120 (官方赛事频道素材密度高)。
+    diverse_modifier_sample=len(_DIVERSE_MODIFIERS),
+    diverse_modifier_all_sp=True,
+    diverse_per_channel_cap=120,
     playlist_queries=_PLAYLIST_QUERIES,
     kinetics_labels=_KINETICS_LABELS,
     vlm_system=_VLM_SYSTEM,

@@ -32,6 +32,16 @@ class Domain:
     diverse_modifiers: list = field(default_factory=list)
     playlist_queries: list = field(default_factory=list)
     kinetics_labels: frozenset = frozenset()  # 空 = 跳过 Kinetics 源
+    # --- 多样性搜索召回口径 (1 阶段最上游, 决定候选池规模上限) ---
+    # diverse_modifier_sample: 每个关键词实际使用的 modifier 个数 (>= len(diverse_modifiers)
+    #   即等价于「全部用满」); 缺省 3 = 沿用健身/羽毛球原有的随机抽 3 个口径。
+    # diverse_modifier_all_sp: modifier 查询是否跨全部 SP 过滤器; 缺省 False = 只用第一个 SP
+    #   (原实现口径)。置 True 后 modifier 查询数 ×len(SP_PARAMS), 显著扩大召回面。
+    # diverse_per_channel_cap: 单频道在 diverse 里的条数上限; 缺省 15 (原实现)。官方赛事
+    #   频道 (ATP/WTA/Grand Slam) 素材密度高, 15 会被一次打满, 需按领域放大。
+    diverse_modifier_sample: int = 3
+    diverse_modifier_all_sp: bool = False
+    diverse_per_channel_cap: int = 15
     # --- VLM 判定 (1/2/3 阶段筛选审核 + 4 阶段 caption) ---
     vlm_system: str = ""
     vlm_prompt: str = ""
