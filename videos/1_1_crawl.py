@@ -21,6 +21,7 @@ import yt_dlp
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from lib import config
+from lib.keyword_expansion import expand_domain_keywords, merge_keywords
 
 logger = config.get_logger(__name__, "crawl.log")
 _lock = threading.Lock()
@@ -58,9 +59,15 @@ KINETICS_URLS = {
 
 
 def _load_keywords():
-    """从统一关键词文件加载"""
+    """关键词 = keywords.txt 手写词 + 领域声明的组合展开词 (对阵/赛事×年份×轮次)。
+
+    组合词不写回文件 (见 lib/keyword_expansion.py 的取舍说明): 领域配置是唯一真相,
+    展开是配置的纯函数, 确定且可复现, 所以 search/diverse 的 progress 仍可续跑。
+    未声明名单的领域 (健身/羽毛球) 展开为空, 与旧行为逐字节一致。
+    """
     with open(config.KEYWORDS_FILE, "r", encoding="utf-8") as f:
-        return [l.strip() for l in f if l.strip() and not l.startswith("#")]
+        file_kws = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+    return merge_keywords(file_kws, expand_domain_keywords(config.DOMAIN))
 
 
 _yt_idx = 0
@@ -448,6 +455,21 @@ def run_datasets():
 
 # ==================== 入口 ====================
 
+def dump_keywords():
+    """打印当前领域实际生效的完整关键词表 (手写 + 组合展开), 供人工抽查。
+
+    组合词不落盘, 所以看「实际跑的是哪些词」只能问引擎; 这条子命令就是那个入口。
+    """
+    file_count = sum(1 for l in open(config.KEYWORDS_FILE, encoding="utf-8")
+                     if l.strip() and not l.startswith("#"))
+    generated = expand_domain_keywords(config.DOMAIN)
+    merged = _load_keywords()
+    print(f"# domain={config.DOMAIN.name} 手写={file_count} 组合展开={len(generated)} "
+          f"合并去重后={len(merged)}")
+    for kw in merged:
+        print(kw)
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
     config.init_dirs()
@@ -460,10 +482,13 @@ if __name__ == "__main__":
         run_diverse()
     elif cmd == "datasets":
         run_datasets()
+    elif cmd == "dump-keywords":
+        dump_keywords()
     elif cmd == "all":
         run_datasets()
         run_search()
         run_channels()
         run_diverse()
     else:
-        print(f"用法: python3 1_1_crawl.py [search|channels|diverse|datasets|all]")
+        print("用法: python3 1_1_crawl.py "
+              "[search|channels|diverse|datasets|dump-keywords|all]")

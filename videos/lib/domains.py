@@ -42,6 +42,19 @@ class Domain:
     diverse_modifier_sample: int = 3
     diverse_modifier_all_sp: bool = False
     diverse_per_channel_cap: int = 15
+    # --- 关键词组合展开 (赛事型领域; 见 lib/keyword_expansion.py) ---
+    # 声明式配置: 只填名单, 采集时由 keyword_expansion 展开成实际查询词, 不写回
+    # keywords.txt (避免文件与配置漂移)。全部留空 = 不展开, 行为与旧领域完全一致。
+    #   match_rosters:      分组选手名单, 组内两两配对不跨组 (男单只和男单打);
+    #   matchup_templates:  对阵词模板, 用 {a}/{b} 占位, 可多语言并列;
+    #   event_names/years/rounds: 赛事名 / 年份 / 轮次;
+    #   event_templates:    赛事词模板, 用 {event}/{year}/{round} 占位。
+    match_rosters: tuple = ()
+    matchup_templates: tuple = ()
+    event_names: tuple = ()
+    event_years: tuple = ()
+    event_rounds: tuple = ()
+    event_templates: tuple = ()
     # --- VLM 判定 (1/2/3 阶段筛选审核 + 4 阶段 caption) ---
     vlm_system: str = ""
     vlm_prompt: str = ""
@@ -303,6 +316,44 @@ def validate_domain(domain: "Domain", registry: "Optional[dict]" = None) -> None
                 f"领域 {domain.name!r} 的 audit_policy prompt 未声明必填字段: {missing}")
         if policy.strict_gate is None or policy.thumb_gate is None:
             raise ValueError(f"领域 {domain.name!r} 的 audit_policy 缺少 strict_gate/thumb_gate")
+
+    _validate_keyword_expansion(domain)
+
+
+def _validate_keyword_expansion(domain: "Domain") -> None:
+    """校验关键词组合展开配置 (见 lib/keyword_expansion.py)。
+
+    声明了名单却没有可用模板 (或模板缺占位符) 会静默展开出 0 条词 —— 配置看起来
+    生效、实际召回毫无变化, 是最难发现的一类误配, 因此在加载时就失败。
+    全部留空 = 不启用展开, 不做任何校验 (旧领域行为不变)。
+    """
+    if domain.match_rosters:
+        if not domain.matchup_templates:
+            raise ValueError(
+                f"领域 {domain.name!r} 声明了 match_rosters 但 matchup_templates 为空, "
+                "对阵词会静默展开为 0 条")
+        for t in domain.matchup_templates:
+            if "{a}" not in t or "{b}" not in t:
+                raise ValueError(
+                    f"领域 {domain.name!r} 的 matchup_templates 缺少 {{a}}/{{b}} 占位符: {t!r}")
+
+    if domain.event_names:
+        if not domain.event_years:
+            raise ValueError(
+                f"领域 {domain.name!r} 声明了 event_names 但 event_years 为空, "
+                "赛事词会静默展开为 0 条")
+        if not domain.event_rounds:
+            raise ValueError(
+                f"领域 {domain.name!r} 声明了 event_names 但 event_rounds 为空, "
+                "赛事词会静默展开为 0 条")
+        if not domain.event_templates:
+            raise ValueError(
+                f"领域 {domain.name!r} 声明了 event_names 但 event_templates 为空, "
+                "赛事词会静默展开为 0 条")
+        for t in domain.event_templates:
+            if "{event}" not in t or "{year}" not in t:
+                raise ValueError(
+                    f"领域 {domain.name!r} 的 event_templates 缺少 {{event}}/{{year}} 占位符: {t!r}")
 
 
 # 导入时校验: 遍历 _REGISTRY.values() 而非枚举具体领域, 使新领域 (如 tennis) 自动纳入同一检查。
