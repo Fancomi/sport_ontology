@@ -21,6 +21,7 @@ import yt_dlp
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from lib import config
+from lib import topic_filter
 from lib.keyword_expansion import expand_domain_keywords, merge_keywords
 
 logger = config.get_logger(__name__, "crawl.log")
@@ -251,6 +252,19 @@ def run_channels():
     # 候选集 = 出现≥2次的发现频道 ∪ 全部种子频道 (并集, 而非仅用种子做阈值豁免)
     discovered = {ch for ch, cnt in ch_counter.items() if cnt >= 2}
     channels = sorted(ch for ch in (discovered | seed) if _is_valid_channel_name(ch))
+
+    # 话题准入 (见 lib/topic_filter.py): 综合频道的最近 200 个视频基本跑题, 抓回来
+    # 只会白占后续缩略图/真实帧 VLM 的算力; 种子频道无条件放行。未启用的领域全放行。
+    topic_include = topic_filter.build_topic_terms(config.DOMAIN)
+    topic_exclude = getattr(config.DOMAIN, "topic_exclude_terms", ()) or ()
+    topic_required = bool(getattr(config.DOMAIN, "channel_topic_required", False))
+    before_gate = len(channels)
+    channels = [ch for ch in channels
+                if topic_filter.channel_allowed(ch, seed, topic_include, topic_exclude,
+                                                topic_required)]
+    if topic_required and topic_include:
+        logger.info(f"频道话题准入: {before_gate} → {len(channels)} "
+                    f"(跳过 {before_gate - len(channels)} 个跑题/近邻运动频道)")
 
     blacklist = config.load_blacklist()
     seen_ids = {r["video_id"] for r in config.read_jsonl(config.SEARCH_RESULTS)}

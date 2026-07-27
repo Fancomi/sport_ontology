@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from lib import config
+from lib import topic_filter
 
 logger = config.get_logger(__name__, "process.log")
 _lock = threading.Lock()
@@ -141,6 +142,13 @@ def run_clean():
     # 过滤
     stats = Counter()
     clean = []
+    # 话题门控词 (领域未启用时为空 -> 一律放行, 旧领域行为不变)。
+    # 词表在循环外预编译一次: 逐条重新规范化数百个词会把 clean 拖成 O(行数×词数)。
+    topic_include = topic_filter.build_topic_terms(config.DOMAIN)
+    topic_exclude = getattr(config.DOMAIN, "topic_exclude_terms", ()) or ()
+    topic_gate = topic_filter.compile_topic_gate(topic_include, topic_exclude)
+    if topic_gate[0]:
+        logger.info(f"话题门控: 正向词 {len(topic_gate[0])} | 排除词 {len(topic_gate[1])}")
     for vid, item in merged.items():
         if vid in blacklist:
             stats["blacklisted"] += 1
@@ -151,6 +159,10 @@ def run_clean():
             continue
         if any(w in title for w in config.TITLE_BLACKLIST):
             stats["title_blacklist"] += 1
+            continue
+        if not topic_filter.topic_matches_compiled(item.get("title"), item.get("channel"),
+                                                   topic_gate):
+            stats["off_topic"] += 1
             continue
         dur = item.get("duration")
         if dur is not None and (dur < config.MIN_DURATION or dur > config.MAX_DURATION):

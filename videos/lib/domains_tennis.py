@@ -94,6 +94,32 @@ _EVENT_ROUNDS = ("final", "semi final", "quarter final", "round of 16")
 
 _EVENT_TEMPLATES = ("{event} {year} {round}", "{event} {year} full match")
 
+# ── 话题门控 (见 lib/topic_filter.py) ──
+# 实测: 不加门控时 clean 后 66.8 万条里只有 34.3% 标题含网球相关词, 大量乒乓球/
+# 匹克球/羽毛球和综合频道内容混入。正向词 + 近邻运动排除把明显跑题的挡在 GPU 之外;
+# 是否真的是「固定机位真人网球比赛」仍由 1_4/2_2/3_2 的 VLM 结构化审核判定。
+# 选手名与赛事名不必在此重复 —— build_topic_terms 会从 _MATCH_ROSTERS/_EVENT_NAMES 派生。
+_TOPIC_INCLUDE_TERMS = (
+    "tennis", "atp", "wta", "itf", "grand slam", "davis cup", "laver cup",
+    "网球", "テニス", "테니스", "tenis", "tênis", "теннис",
+)
+
+# 近邻运动 / 明显非目标内容: 名字里含 "tennis"/"球" 的近邻必须显式排除,
+# 否则会被正向词命中 (这是 title_blacklist 子串黑名单挡不住的一类)。
+_TOPIC_EXCLUDE_TERMS = (
+    # 近邻球类
+    "table tennis", "ping pong", "pickleball", "padel", "badminton",
+    "squash", "volleyball", "basketball", "football", "soccer", "cricket",
+    "baseball", "handball", "golf", "hockey", "rugby",
+    "乒乓", "乒乒乓乓", "匹克球", "板球", "羽毛球", "壁球", "排球", "篮球",
+    "足球", "棒球", "手球", "高尔夫", "曲棍球", "橄榄球",
+    "卓球", "탁구", "배드민턴",
+    # 电子游戏 / 模拟器 (Tennis Clash / Table Tennis World Tour 这类实况)
+    "tennis clash", "game walkthrough", "gameplay", "fm26", "efootball",
+    # 器材评测 / 鞋测
+    "racket review", "racquet review", "shoe review", "performance review",
+)
+
 # Kinetics 无「固定机位网球比赛」这一细粒度标签, 留空跳过该源
 _KINETICS_LABELS = frozenset()
 
@@ -173,6 +199,10 @@ TENNIS = Domain(
     event_years=_EVENT_YEARS,
     event_rounds=_EVENT_ROUNDS,
     event_templates=_EVENT_TEMPLATES,
+    # 话题门控: clean 阶段正向筛 + 近邻运动排除; channel_crawl 只爬话题相关频道
+    topic_include_terms=_TOPIC_INCLUDE_TERMS,
+    topic_exclude_terms=_TOPIC_EXCLUDE_TERMS,
+    channel_topic_required=True,
     playlist_queries=_PLAYLIST_QUERIES,
     kinetics_labels=_KINETICS_LABELS,
     vlm_system=_VLM_SYSTEM,

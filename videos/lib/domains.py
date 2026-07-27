@@ -55,6 +55,16 @@ class Domain:
     event_years: tuple = ()
     event_rounds: tuple = ()
     event_templates: tuple = ()
+    # --- 话题门控 (阶段一规则层; 见 lib/topic_filter.py) ---
+    # topic_include_terms 为空 = 门控整体关闭 (旧领域行为不变)。启用后:
+    #   clean 阶段要求「标题或频道命中 include 且不命中 exclude」;
+    #   channel_topic_required=True 时 channel_crawl 只爬频道名自身话题相关的频道
+    #   (综合频道的最近 200 个视频基本跑题, 抓回来只是白占后续 VLM 算力)。
+    # exclude 优先于 include: 近邻运动名里就含目标运动词 ("table tennis" 含 "tennis"),
+    # 顺序反了门控就失效。
+    topic_include_terms: tuple = ()
+    topic_exclude_terms: tuple = ()
+    channel_topic_required: bool = False
     # --- VLM 判定 (1/2/3 阶段筛选审核 + 4 阶段 caption) ---
     vlm_system: str = ""
     vlm_prompt: str = ""
@@ -318,6 +328,24 @@ def validate_domain(domain: "Domain", registry: "Optional[dict]" = None) -> None
             raise ValueError(f"领域 {domain.name!r} 的 audit_policy 缺少 strict_gate/thumb_gate")
 
     _validate_keyword_expansion(domain)
+    _validate_topic_gate(domain)
+
+
+def _validate_topic_gate(domain: "Domain") -> None:
+    """校验话题门控配置 (见 lib/topic_filter.py)。
+
+    「只配 exclude 不配 include」或「只要求频道准入却没有话题词」都是半开状态:
+    到底是收紧还是不收紧语义含糊, 且 topic_filter 会因为没有 include 而整体放行,
+    配置看起来生效、实际没有任何效果 —— 加载时就失败, 不留静默误配。
+    """
+    if domain.topic_exclude_terms and not domain.topic_include_terms:
+        raise ValueError(
+            f"领域 {domain.name!r} 配了 topic_exclude_terms 但 topic_include_terms 为空, "
+            "话题门控会整体放行 (排除不会单独生效)")
+    if domain.channel_topic_required and not domain.topic_include_terms:
+        raise ValueError(
+            f"领域 {domain.name!r} 要求 channel_topic_required 但 topic_include_terms 为空, "
+            "频道准入无判据可用")
 
 
 def _validate_keyword_expansion(domain: "Domain") -> None:
