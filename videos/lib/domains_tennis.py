@@ -7,6 +7,7 @@
 """
 from lib.domains import Domain
 from lib.domain_policies import build_court_match_policy
+from lib.thumb_content_policy import TENNIS_THUMB_CONTENT_POLICY
 
 # 反转: 屏蔽讲解/教学/花字/非比赛内容 (仍保留通用垃圾词)
 _TITLE_BLACKLIST = [
@@ -174,6 +175,11 @@ _CAPTION_PROMPT = """\
 40字以内，只输出一句中文描述。"""
 
 _AUDIT_POLICY = build_court_match_policy("tennis", "网球", "网球场", "court-match-tennis-v1")
+# 阶段一缩略图另用一份策略 (GEPA 优化产出): 判「完整球场 + 端线后方俯瞰机位 + 真人比赛」,
+# 并含 is_highlight_reel/is_video_game/is_wheelchair_tennis 等缩略图特有噪声字段。
+# 600 条人工标注实测: 精度 96% / 召回 62%, 而 court-match 的宽松 thumb_gate 精度仅 23%。
+_THUMB_AUDIT_POLICY = TENNIS_THUMB_CONTENT_POLICY
+
 
 TENNIS = Domain(
     name="tennis",
@@ -211,4 +217,5 @@ TENNIS = Domain(
     caption_system=_CAPTION_SYSTEM,
     caption_prompt=_CAPTION_PROMPT,
     audit_policy=_AUDIT_POLICY,
+    thumb_audit_policy=_THUMB_AUDIT_POLICY,
 )

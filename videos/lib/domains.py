@@ -83,6 +83,13 @@ class Domain:
     # 可复用结构化审核策略 (Task 2 的 AuditPolicy); 可选字段, 向后兼容旧领域。
     # 配置了它的领域由 vlm_prompts 优先走 policy.decide, 未配置则回退上面的 audit_v2_prompt/audit_gate。
     audit_policy: "Optional[AuditPolicy]" = None
+    # 阶段一缩略图专用策略 (可选)。为 None 时缩略图沿用 audit_policy 的 thumb_gate。
+    # 为什么要单独一份: 缩略图与真实帧的可判字段不同 —— net_visible/ground_lines_clear
+    # 这类只有真实帧才看得准, 而 is_highlight_reel/is_video_game/is_wheelchair_tennis
+    # 这类缩略图特有噪声在 court-match 字段集里根本没有位置。共用一份 prompt 时,
+    # 缩略图那档宽松门控实测精度只有 23% (不判 sport_type 也不判机位)。
+    thumb_audit_policy: "Optional[AuditPolicy]" = None
+
 
 
 # ═══════════════════════ 健身 (原样搬运, 行为零变化) ═══════════════════════
@@ -326,6 +333,28 @@ def validate_domain(domain: "Domain", registry: "Optional[dict]" = None) -> None
                 f"领域 {domain.name!r} 的 audit_policy prompt 未声明必填字段: {missing}")
         if policy.strict_gate is None or policy.thumb_gate is None:
             raise ValueError(f"领域 {domain.name!r} 的 audit_policy 缺少 strict_gate/thumb_gate")
+
+    thumb_policy = domain.thumb_audit_policy
+    if thumb_policy is not None:
+        # 同 audit_policy 的一致性要求: prompt 没声明的字段, 模型不会输出, 门控必然
+        # 因缺字段全拒 —— 那是「静默零通过」, 比报错难查得多。
+        if not thumb_policy.schema_version or not thumb_policy.policy_version:
+            raise ValueError(
+                f"领域 {domain.name!r} 的 thumb_audit_policy 缺少 schema_version/policy_version")
+        if not thumb_policy.prompt_template:
+            raise ValueError(f"领域 {domain.name!r} 的 thumb_audit_policy.prompt_template 不能为空")
+        missing = sorted(f for f in thumb_policy.required_fields
+                         if f not in thumb_policy.prompt_template)
+        if missing:
+            raise ValueError(
+                f"领域 {domain.name!r} 的 thumb_audit_policy prompt 未声明必填字段: {missing}")
+        if thumb_policy.thumb_gate is None:
+            raise ValueError(f"领域 {domain.name!r} 的 thumb_audit_policy 缺少 thumb_gate")
+        if domain.audit_policy is None:
+            raise ValueError(
+                f"领域 {domain.name!r} 配了 thumb_audit_policy 但没有 audit_policy: "
+                "阶段二/三仍需严格策略, 只配缩略图策略会让真实帧审核无门控可用")
+
 
     _validate_keyword_expansion(domain)
     _validate_topic_gate(domain)

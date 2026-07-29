@@ -14,18 +14,25 @@ settled 字段 (finding 5/checkpoint 再审修复): 显式标记该条记录是�
 import json
 
 
-def policy_identity(domain) -> dict:
+def policy_identity(domain, *, thumb: bool = False) -> dict:
     """返回该领域当前生效的审核策略身份 (domain/schema_version/policy_version)。
+
+    thumb=True 返回缩略图策略 (阶段一) 的身份, 未配置时回退严格策略 —— 身份必须按
+    阶段区分, 否则缩略图策略换代后 lib.checkpoint 会把阶段一的旧进度当作「当前策略
+    已完成」静默跳过, 新策略永远不会重审那些条目。
 
     未挂载 audit_policy 的旧领域 (无 Task 2 结构化策略) 回退 legacy-v1,
     保持向后兼容, 不强制所有领域都配置 audit_policy。
     """
     policy = domain.audit_policy
+    if thumb:
+        policy = getattr(domain, "thumb_audit_policy", None) or policy
     return {
         "domain": domain.name,
         "schema_version": policy.schema_version if policy else "legacy-v1",
         "policy_version": policy.policy_version if policy else "legacy-v1",
     }
+
 
 
 # transient reason code 前缀集合 (与 lib.vlm_prompts.TRANSIENT_REASONS 同值域,
@@ -37,8 +44,10 @@ _TRANSIENT_REASON_CODES = frozenset({
 })
 
 
-def audit_record(domain, item, passed, reason="") -> dict:
+def audit_record(domain, item, passed, reason="", *, thumb: bool = False) -> dict:
     """构造一条单次判定的溯源记录: 判定结果 + 该次判定所用策略身份 + settled 标记。
+
+    thumb=True 记录缩略图策略身份 (阶段一), 见 policy_identity。
 
     settled=False 当且仅当 reason 是已知的 transient 原因码 (VLM 解析失败/抽帧失败/
     端点异常); 其余情况 (包括通过、policy_rejected、duration_rejected、旧领域不带
@@ -46,7 +55,8 @@ def audit_record(domain, item, passed, reason="") -> dict:
     """
     settled = reason not in _TRANSIENT_REASON_CODES
     return {"item": item, "passed": bool(passed), "reason": reason, "settled": settled,
-            **policy_identity(domain)}
+            **policy_identity(domain, thumb=thumb)}
+
 
 
 def append_json_record(path, record):

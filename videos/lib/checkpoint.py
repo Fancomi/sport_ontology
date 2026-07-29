@@ -105,10 +105,16 @@ def load_checkpoint(progress_path: Path, records_path: Path) -> dict:
     return {name: identities.get(name) for name in done_names}
 
 
-def current_identity(domain) -> dict:
+def current_identity(domain, *, thumb: bool = False) -> dict:
     """当前生效身份 (与 lib.policy_records.policy_identity 一致的形状, 避免循环 import
-    强绑定, 这里独立取值: 未挂 audit_policy 的旧领域回退 legacy-v1)。"""
+    强绑定, 这里独立取值: 未挂 audit_policy 的旧领域回退 legacy-v1)。
+
+    thumb=True 取缩略图策略身份 (阶段一)。阶段一写入记录与续跑比对必须用同一维度,
+    否则每条记录都与严格身份不符, 全部落进 stale -> 每次重跑都是全量重审。
+    """
     policy = domain.audit_policy
+    if thumb:
+        policy = getattr(domain, "thumb_audit_policy", None) or policy
     return {
         "domain": domain.name,
         "schema_version": policy.schema_version if policy else "legacy-v1",
@@ -116,16 +122,17 @@ def current_identity(domain) -> dict:
     }
 
 
-def is_current(identity, domain) -> bool:
+
+def is_current(identity, domain, *, thumb: bool = False) -> bool:
     """某条已完成记录的身份是否与当前生效身份一致。identity=None (legacy/unversioned
     进度, 或从未被 policy_records 记录过 settled 结论) 视为不一致 -> 需要显式重新
-    审核/迁移。"""
+    审核/迁移。thumb=True 与缩略图策略身份比对 (阶段一)。"""
     if identity is None:
         return False
-    return identity == current_identity(domain)
+    return identity == current_identity(domain, thumb=thumb)
 
 
-def resolve_todo(all_names, checkpoint: dict, domain) -> dict:
+def resolve_todo(all_names, checkpoint: dict, domain, *, thumb: bool = False) -> dict:
     """按 policy-identity-aware 语义算出续跑分类, 返回:
       {"todo": [...], "current": [...], "stale": [...]}
 
@@ -151,7 +158,7 @@ def resolve_todo(all_names, checkpoint: dict, domain) -> dict:
             todo.append(name)
             continue
         identity = checkpoint[name]
-        if is_current(identity, domain):
+        if is_current(identity, domain, thumb=thumb):
             current.append(name)
         else:
             stale.append(name)

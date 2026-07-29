@@ -1,0 +1,57 @@
+# 任务
+
+判断这张视频缩略图是否为「固定机位拍摄的真人网球比赛」素材的候选。
+
+- 只做客观判断：如实描述看到的画面并抽取属性。下游会用确定性规则依据这些属性决定保留/剔除，所以属性必须与画面事实严格对应。
+- 输入是**单张缩略图**（往往是上传者挑的封面）。只依据画面本身判断，不要推断画面外的信息，不要根据标题/品牌等揣测。
+- 两条最关键的判据是【完整球场可见】(court_full_visible) 与【端线后方高位俯瞰机位】(cam_backcourt_high_wide)。
+- 不要为了让素材"通过"而放松判据；也不要因过度保守而错杀真实比赛素材。严格按画面事实回答。
+
+# 输入格式
+
+输入字段 `thumb` 为一张 base64 编码的 JPEG 缩略图（image_url，data URI）。
+
+# 需要输出的属性
+
+对每张图输出以下字段（布尔字段用 True/False）：
+
+- sport_type：画面运动项目，如 tennis / 其它。
+- scene_type：real_person（真人实拍）/ 动画 / 游戏画面等。
+- has_person：画面中是否有人。
+- on_court：人物是否在网球场上。
+- court_full_visible：是否能看到**完整的球场**（一侧或整片球场的端线、边线、发球区等主要范围基本完整可见，而不是只截取局部）。
+- cam_backcourt_high_wide：机位是否位于**端线后方、较高位置、俯瞰整片球场的广角**。这是标准的比赛录制/转播视角——摄像机架在球场一端端线正后方偏高处，沿球场纵向看下去，能同时看到近端与远端球员和球网。
+- cam_side：机位是否在**球场侧面**（从边线一侧横向拍摄）。
+- cam_close：是否为近景/特写镜头（画面被人物或局部占满，看不到完整球场）。
+- cam_person_closeup：是否为人物特写（聚焦在某个人身上）。
+- is_real_match_play：是否为真实的比赛对打。**业余、俱乐部、非职业的真实对打同样算 True。**
+- is_highlight_reel：是否为集锦剪辑。
+- is_instructional：是否为教学/训练内容（如练习某种击球、使用发球机/Slinger Bag 等训练器材、带大字幕讲解等）。
+- is_talking：画面主体是否在说话/讲解/受访。
+- is_spectator_or_ceremony：是否为观众席/颁奖/仪式场景。
+- is_slide_or_anim：是否为幻灯片/图文/动画画面。
+- is_news_broadcast：是否为新闻/采访/媒体播报画面（如手持话筒采访、台标、品牌背景板等）。
+- is_video_game：是否为电子游戏画面。
+- is_wheelchair_tennis：是否为轮椅网球。
+- heavily_occluded：主要画面是否被大面积遮挡（如大字幕、边框、贴图覆盖）。
+- caption：一句话客观描述画面看到的内容。
+- verdict：keep 或 reject（依据属性给出的最终判断；下游用确定性规则，通常"完整球场 + 端线后方高位俯瞰机位 + 真实比赛对打"才可能 keep）。
+
+# 关键判定要点（易错点，务必遵守）
+
+1. **端线后方高位俯瞰 ≠ 侧面机位。**
+   当画面是从球场一端端线后方偏高处纵向拍摄、能看到整片球场（含球网两侧球员）的广角时，这就是 cam_backcourt_high_wide=True，且 cam_side 应为 False。
+   常见错误是把这种俯瞰纵向视角误判为 cam_side=True 或 cam_backcourt_high_wide=False，从而错杀合格素材。
+
+2. **court_full_visible=True 的真实广角比赛画面，几乎必然满足 cam_backcourt_high_wide。**
+   如果你判定能看到完整球场、且是从端线方向的宽景，就应把 cam_backcourt_high_wide 设为 True。不要在明显是端线后方俯瞰全场时仍填 False。
+
+3. **业余/俱乐部真实对打也是 is_real_match_play=True。**
+   不要因为不是职业赛、没有观众、场地简陋就把真实对打判为 False。只要画面显示两人（或多人）在真实进行比赛/对打，即为 True。
+
+4. **典型 reject 情形（供对照，仍要按画面事实判断）：**
+   - 使用发球机/训练器材、单人练习击球、带大字幕讲解 → is_instructional=True，通常无完整比赛机位 → reject。
+   - 采访/话筒/台标/品牌背景板、人物特写说话 → is_news_broadcast / is_talking / cam_person_closeup=True → reject。
+   - 侧面近景、只见局部球场、被大面积遮挡 → court_full_visible=False 或 cam_backcourt_high_wide=False → reject。
+
+5. 判断顺序建议：先看是否真人网球、人是否在场上；再看是否能看到完整球场；再看机位是端线后方俯瞰还是侧面/近景；再判断是否真实比赛对打；最后据此给出 verdict。

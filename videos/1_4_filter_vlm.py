@@ -263,7 +263,11 @@ def main():
         # lib.checkpoint.resolve_todo (policy-identity-aware), 不再是纯文件名匹配。
         # 旧策略判过的/只有 transient 未决记录的条目会被重新纳入待审。
         checkpoint = load_checkpoint(progress_path, records_path)
-        resolved = resolve_todo(all_ids, checkpoint, config.DOMAIN)
+        # thumb 维度须与写入记录时一致 (audit_record(..., thumb=...)), 否则每条记录都
+        # 与严格身份不符 -> 全部 stale -> 每次重跑都是全量重审。
+        thumb_stage = not args.reaudit
+        resolved = resolve_todo(all_ids, checkpoint, config.DOMAIN, thumb=thumb_stage)
+
         done = set(resolved["current"])
         stale_count = len(resolved["stale"])
         if stale_count:
@@ -349,9 +353,13 @@ def main():
                                 thumb.unlink()
                             rejected += 1
                         if records_path is not None:
+                            # thumb=True: 阶段一按缩略图策略身份记录, 策略换代后
+                            # checkpoint 才会把旧进度判为 stale 去重审 (见 lib/policy_records)
                             append_json_record(records_path, audit_record(
                                 config.DOMAIN, vid, result.passed,
-                                result.reason_code or result.detail))
+                                result.reason_code or result.detail,
+                                thumb=not args.reaudit))
+
                         if not result.is_transient:
                             f_prog.write(vid + "\n")
 

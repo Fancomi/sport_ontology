@@ -36,11 +36,25 @@ PROMPT_TEXT_ONLY = config.DOMAIN.vlm_prompt_text_only
 # _POLICY 非空时优先: prompt/system/门控全部取自 AuditPolicy, 经 judge_attrs 统一校验+裁决;
 # _POLICY 为空则回退领域自带的 audit_gate/audit_gate_thumb 函数 (旧领域行为不变)。
 _POLICY = config.DOMAIN.audit_policy
+# 缩略图专用策略 (阶段一)。缺省回退 _POLICY, 旧领域行为不变。
+# 分成两份的理由见 lib/domains.py 的 thumb_audit_policy 注释与
+# tests/test_thumb_policy_split.py 的实测记录。
+_THUMB_POLICY = getattr(config.DOMAIN, "thumb_audit_policy", None) or _POLICY
 AUDIT_V2_SYSTEM = _POLICY.system_prompt if _POLICY else config.DOMAIN.audit_v2_system
 AUDIT_V2_PROMPT = _POLICY.prompt_template if _POLICY else config.DOMAIN.audit_v2_prompt
 _GATE = _POLICY.strict_gate if _POLICY else config.DOMAIN.audit_gate                          # 严格 (2/3 阶段真实帧)
 _GATE_THUMB = _POLICY.thumb_gate if _POLICY else (config.DOMAIN.audit_gate_thumb or config.DOMAIN.audit_gate)  # 宽松 (1 阶段缩略图)
 USE_V2 = bool(AUDIT_V2_PROMPT) and _GATE is not None
+
+
+def audit_prompt_for(*, thumb: bool) -> tuple:
+    """按阶段取 (prompt, system)。缩略图阶段用缩略图策略的 prompt —— 用严格 prompt
+    去问缩略图, 模型不会输出缩略图策略要求的字段, 门控会因缺字段静默全拒。"""
+    pol = _THUMB_POLICY if thumb else _POLICY
+    if pol is not None:
+        return pol.prompt_template, pol.system_prompt
+    return AUDIT_V2_PROMPT, AUDIT_V2_SYSTEM
+
 
 # ── 结构化拒绝原因码 (finding 5) ──
 # transient_* 是基础设施/解析层失败 (可能下一帧/下一次重试就通过), 调用方应据此避免
@@ -86,17 +100,23 @@ def judge_attrs(attrs: dict, *, thumb: bool = False) -> bool:
 
 
 def judge_attrs_detailed(attrs: dict, *, thumb: bool = False) -> JudgeResult:
-    """judge_attrs 的结构化版本: 区分「字段契约失败」与「门控拒绝」两类原因。"""
-    if _POLICY is not None:
-        if not _POLICY.validate_attrs(attrs):
-            code, detail = _classify_invalid_attrs(_POLICY, attrs)
+    """judge_attrs 的结构化版本: 区分「字段契约失败」与「门控拒绝」两类原因。
+
+    thumb=True 走缩略图策略 (_THUMB_POLICY), 否则走严格策略 (_POLICY); 两者可以是
+    不同的字段集与门控 (见 audit_prompt_for)。
+    """
+    policy = _THUMB_POLICY if thumb else _POLICY
+    if policy is not None:
+        if not policy.validate_attrs(attrs):
+            code, detail = _classify_invalid_attrs(policy, attrs)
             return JudgeResult(False, code, detail)
-        gate = _POLICY.thumb_gate if thumb else _POLICY.strict_gate
+        gate = policy.thumb_gate if thumb else policy.strict_gate
         passed = bool(gate(attrs))
         return JudgeResult(passed, REASON_OK if passed else REASON_POLICY_REJECTED)
     gate = _GATE_THUMB if thumb else _GATE
     passed = bool(gate and gate(attrs))
     return JudgeResult(passed, REASON_OK if passed else REASON_POLICY_REJECTED)
+
 
 
 def _classify_invalid_attrs(policy, attrs: dict) -> tuple[str, str]:
@@ -140,11 +160,12 @@ def judge_frame_detailed(ep, img_b, *, title: str = "", channel: str = "",
     异常由调用方上层按各自策略容错。
     """
     if USE_V2:
+        prompt, system = audit_prompt_for(thumb=thumb)
         last_detail = ""
         for k in range(5):
             try:
-                raw = call_vlm_raw(ep, img_b, AUDIT_V2_PROMPT,
-                                   system=AUDIT_V2_SYSTEM, max_tokens=512)
+                raw = call_vlm_raw(ep, img_b, prompt,
+                                   system=system, max_tokens=512)
                 attrs = parse_json_response(raw)
                 if attrs is not None:
                     return judge_attrs_detailed(attrs, thumb=thumb)
