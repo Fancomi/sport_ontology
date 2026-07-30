@@ -43,31 +43,34 @@ NEIGHBOR_SPORTS = ("badminton", "table_tennis", "pickleball", "padel", "beach_te
 
 
 def build_thumb_content_policy(sport_code: str, sport_name_cn: str, court_name_cn: str,
-                               policy_version: str) -> AuditPolicy:
-    """构造阶段一缩略图策略: 完整球场 + 端线后方俯瞰机位 + 真人比赛内容。"""
+                               policy_version: str, *, geometry_gate: bool = False) -> AuditPolicy:
+    """构造阶段一缩略图策略。
+
+    geometry_gate=False (默认): 只判「是不是目标运动的真人比赛内容」, 不判构图几何
+      (完整球场 / 机位 / 特写)。理由是缩略图是上传者挑的封面 —— 实测 400 条随机样本里
+      84% 的 court_full_visible=False、68% 的 cam_person_closeup=True, 封面构图与整片
+      视频的实际机位几乎无关。构图判定交给阶段二 (整段中值帧) / 阶段三 (切片 3 帧),
+      那里看的是真实帧, 判得准。
+      漏斗代价对比 (400 条随机样本外推 38 万):
+        含构图门控   8.0% -> 3.0 万   (600 条标注上 召回 62% / 精度 96%)
+        仅内容门控  12.2% -> 4.7 万   (600 条标注上 召回 86% / 精度 39%)
+      精度换召回是有意的: 阶段一错杀不可恢复, 而放进来的噪声后面还有两轮真实帧审核。
+    geometry_gate=True: 额外要求完整球场 + 机位 (俯瞰为真或侧面为假) + 非近景/特写,
+      即旧 v4 口径, 保留给「下载带宽紧张、宁可少下」的场景。
+    """
     sport_enum = frozenset({sport_code, *NEIGHBOR_SPORTS, "other_sport", "not_sport"})
     enum_fields = {"sport_type": sport_enum, "scene_type": THUMB_CONTENT_SCENE_ENUM}
     required = frozenset(THUMB_CONTENT_BOOLEAN_FIELDS | set(enum_fields))
 
     def content_gate(attrs):
-        # 机位判据「二选一」: 端线后方俯瞰 与 侧面 是同一件事的正反面, 模型在单张
-        # 缩略图上常只判对一边 (实测人工认可的样本里 cam_side 误报 16/53、
-        # cam_backcourt_high_wide 漏报 14/53)。要求「俯瞰为真 或 侧面为假」保住
-        # 核心判据 (仍必须 court_full_visible), 同时救回被单边误判错杀的素材。
-        camera_ok = (attrs["cam_backcourt_high_wide"] or not attrs["cam_side"])
-        return (
-            # ── 是不是目标运动的真人实拍 ──
+        base = (
+            # ── 是不是目标运动的真人实拍比赛 ──
             attrs["sport_type"] == sport_code
             and attrs["scene_type"] == "real_person"
             and attrs["has_person"]
             and attrs["on_court"]
             and attrs["is_real_match_play"]
-            # ── 核心判据: 完整球场 + 机位 (俯瞰为真 或 侧面为假) ──
-            and attrs["court_full_visible"]
-            and camera_ok
-            and not attrs["cam_close"]
-            and not attrs["cam_person_closeup"]
-            # ── 排除类 ──
+            # ── 排除类 (与构图无关, 是内容性质判定) ──
             and not attrs["is_highlight_reel"]
             and not attrs["is_instructional"]
             and not attrs["is_talking"]
@@ -76,6 +79,17 @@ def build_thumb_content_policy(sport_code: str, sport_name_cn: str, court_name_c
             and not attrs["is_news_broadcast"]
             and not attrs["is_video_game"]
             and not attrs["is_wheelchair_tennis"])
+        if not geometry_gate:
+            return base
+        # 机位判据「二选一」: 端线后方俯瞰 与 侧面 是同一件事的正反面, 模型在单张
+        # 缩略图上常只判对一边 (实测人工认可的样本里 cam_side 误报 16/53、
+        # cam_backcourt_high_wide 漏报 14/53)。
+        camera_ok = (attrs["cam_backcourt_high_wide"] or not attrs["cam_side"])
+        return (base
+                and attrs["court_full_visible"]
+                and camera_ok
+                and not attrs["cam_close"]
+                and not attrs["cam_person_closeup"])
 
 
     prompt = f"""判断这张视频缩略图是否为「固定机位拍摄的真人{sport_name_cn}比赛」素材的候选。只输出 JSON。
@@ -149,5 +163,5 @@ def build_thumb_content_policy(sport_code: str, sport_name_cn: str, court_name_c
 
 
 TENNIS_THUMB_CONTENT_POLICY = build_thumb_content_policy(
-    "tennis", "网球", "网球场", "thumb-content-tennis-v4-loosecam")
+    "tennis", "网球", "网球场", "thumb-content-tennis-v5-content-only")
 

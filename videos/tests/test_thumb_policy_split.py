@@ -141,7 +141,7 @@ def test_tennis_domain_wires_gepa_thumb_policy():
     importlib.reload(domains)
     t = domains.load_domain("tennis")
     assert t.thumb_audit_policy is not None
-    assert t.thumb_audit_policy.policy_version.startswith("thumb-content-tennis-v4")
+    assert t.thumb_audit_policy.policy_version.startswith("thumb-content-tennis-v5")
     assert t.audit_policy.policy_version == "court-match-tennis-v2-loosecam"
     # 缩略图策略必须包含那几个缩略图特有的噪声字段
     for f in ("is_highlight_reel", "is_video_game", "is_wheelchair_tennis",
@@ -197,3 +197,76 @@ def test_resolve_todo_skips_items_already_done_under_thumb_policy():
     strict = checkpoint.resolve_todo(["vid_done"], cp, d)
     assert strict["todo"] == ["vid_done"]
 
+
+
+# ── 8: 阶段一放开构图几何 (geometry_gate 开关) ──
+
+def test_stage1_gate_ignores_composition_geometry_by_default():
+    """默认 geometry_gate=False: 封面构图 (完整球场/机位/特写) 不参与阶段一判定。
+
+    实测 400 条随机样本: 84% 的 court_full_visible=False、68% 的
+    cam_person_closeup=True —— 封面是上传者挑的宣传图, 构图与整片视频的实际机位
+    几乎无关。构图判定交给阶段二/三看真实帧。600 条标注上召回 62% -> 86%。
+    """
+    from lib.thumb_content_policy import build_thumb_content_policy
+    p = build_thumb_content_policy("tennis", "网球", "网球场", "t-content")
+    base = {
+        "sport_type": "tennis", "scene_type": "real_person", "has_person": True,
+        "on_court": True, "is_real_match_play": True,
+        "court_full_visible": False, "cam_backcourt_high_wide": False,
+        "cam_side": True, "cam_close": True, "cam_person_closeup": True,
+        "is_highlight_reel": False, "is_instructional": False, "is_talking": False,
+        "is_spectator_or_ceremony": False, "is_slide_or_anim": False,
+        "is_news_broadcast": False, "is_video_game": False,
+        "is_wheelchair_tennis": False, "heavily_occluded": False,
+    }
+    # 构图全不满足, 但内容是真人网球比赛 -> 应通过 (交给后面模块筛)
+    assert p.decide(base, thumb=True) is True
+    # 内容型条件仍然生效
+    assert p.decide({**base, "sport_type": "beach_tennis"}, thumb=True) is False
+    assert p.decide({**base, "is_wheelchair_tennis": True}, thumb=True) is False
+    assert p.decide({**base, "is_video_game": True}, thumb=True) is False
+    assert p.decide({**base, "is_highlight_reel": True}, thumb=True) is False
+    assert p.decide({**base, "is_real_match_play": False}, thumb=True) is False
+
+
+def test_geometry_gate_opt_in_still_available():
+    """geometry_gate=True 保留旧 v4 口径, 供「下载带宽紧张、宁可少下」时启用。"""
+    from lib.thumb_content_policy import build_thumb_content_policy
+    p = build_thumb_content_policy("tennis", "网球", "网球场", "t-geo", geometry_gate=True)
+    base = {
+        "sport_type": "tennis", "scene_type": "real_person", "has_person": True,
+        "on_court": True, "is_real_match_play": True,
+        "court_full_visible": True, "cam_backcourt_high_wide": True,
+        "cam_side": False, "cam_close": False, "cam_person_closeup": False,
+        "is_highlight_reel": False, "is_instructional": False, "is_talking": False,
+        "is_spectator_or_ceremony": False, "is_slide_or_anim": False,
+        "is_news_broadcast": False, "is_video_game": False,
+        "is_wheelchair_tennis": False, "heavily_occluded": False,
+    }
+    assert p.decide(base, thumb=True) is True
+    assert p.decide({**base, "court_full_visible": False}, thumb=True) is False
+    assert p.decide({**base, "cam_person_closeup": True}, thumb=True) is False
+    # 机位仍是二选一
+    assert p.decide({**base, "cam_side": True}, thumb=True) is True
+    assert p.decide({**base, "cam_backcourt_high_wide": False, "cam_side": True},
+                    thumb=True) is False
+
+
+def test_tennis_stage1_is_content_only():
+    """网球阶段一必须用内容型口径 (放开构图), 这是人工「后面模块再筛」的决定。"""
+    from lib import domains
+    t = domains.load_domain("tennis")
+    attrs = {
+        "sport_type": "tennis", "scene_type": "real_person", "has_person": True,
+        "on_court": True, "is_real_match_play": True,
+        "court_full_visible": False, "cam_backcourt_high_wide": False,
+        "cam_side": True, "cam_close": True, "cam_person_closeup": True,
+        "is_highlight_reel": False, "is_instructional": False, "is_talking": False,
+        "is_spectator_or_ceremony": False, "is_slide_or_anim": False,
+        "is_news_broadcast": False, "is_video_game": False,
+        "is_wheelchair_tennis": False, "heavily_occluded": False,
+    }
+    assert t.thumb_audit_policy.decide(attrs, thumb=True) is True
+    # 阶段二仍然严格判构图 (放开只针对阶段一)
+    assert t.audit_policy.policy_version.endswith("loosecam")
