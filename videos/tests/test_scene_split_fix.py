@@ -352,7 +352,7 @@ def test_audit_one_skips_short_before_frame():
         patch.object(remote_audit.duration_filter, "is_too_short", return_value=True),
         patch.object(
             remote_audit,
-            "triptych_reps_from_video",
+            "representative_frame_from_video",
             side_effect=AssertionError("短切片不应抽帧/调 VLM"),
         ),
     ):

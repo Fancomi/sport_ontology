@@ -29,7 +29,7 @@ from pathlib import Path
 
 import cv2
 from llm_client import call_vlm_raw, frames_to_img_bytes
-from representative_frame import triptych_reps_from_video
+from representative_frame import representative_frame_from_video
 from lib import config
 from lib import duration_filter
 from lib.vlm_prompts import (
@@ -126,25 +126,30 @@ class RemoteAudit:
             list(ex.map(lambda n: self._pull_one(n, shm), files))
         return [f for f in os.listdir(shm) if f.endswith(".mp4")]
 
-    # ── 单文件审核: 时长预闸 → 3段medoid多图 → judge_frame ──
+    # ── 单文件审核: 时长预闸 → 全时长采样的单张 medoid 代表帧 → judge_frame ──
     def audit_one_detailed(self, path: str) -> AuditDecision:
         """结构化版本 (finding 5): 保留时长拒绝/抽帧失败/VLM判定各自的原因码,
-        不再把它们全部塌缩成同一个 False。"""
+        不再把它们全部塌缩成同一个 False。
+
+        抽帧口径 (2026-07-30 人工决定): 单张 medoid, 不再用 3 帧多图。
+        三帧路径实测不稳定 —— 多图输入下模型行为不一致, 且「任一帧不合格即整段否决」
+        让判定对个别帧过于敏感。单 medoid 取自全时长均匀采样 (见
+        tools/representative_frame._sample_frames_evenly), 是整片最具代表性的一帧。
+        历史顺序值得记一笔: 单帧曾有「只采样前 31 秒」的 bug, 当年换三帧确实缓解了
+        症状, 但那是在治表象; 采样修好后单帧才是正确选择。
+        """
         if duration_filter.is_too_long(path):
             return AuditDecision(False, REASON_DURATION_REJECTED, "too_long")
         if duration_filter.is_too_short(path):
             return AuditDecision(False, REASON_DURATION_REJECTED, "too_short")
-        reps = triptych_reps_from_video(path, n_seg=3, fps=1.0, max_side=480)  # 头/中/尾各 medoid
-        if not reps:
-            return AuditDecision(False, REASON_FRAME_DECODE_FAILED, "no representative frames")
-        b64s = []
-        for fr in reps:
-            ok, buf = cv2.imencode(".jpg", fr, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            if ok:
-                b64s.append(base64.b64encode(buf).decode())
-        if not b64s:
+        frame, _idx, _n = representative_frame_from_video(path, fps=1.0, max_side=480)
+        if frame is None:
+            return AuditDecision(False, REASON_FRAME_DECODE_FAILED, "no representative frame")
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if not ok:
             return AuditDecision(False, REASON_FRAME_DECODE_FAILED, "jpeg encode failed")
-        img_b = frames_to_img_bytes(b64s)   # 多图按序 (与喂视频帧同法), 非拼接
+        img_b = frames_to_img_bytes([base64.b64encode(buf).decode()])
+
         i = self.router.pick()
         try:
             result = judge_frame_detailed(self.router.eps[i], img_b)

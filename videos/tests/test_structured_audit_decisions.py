@@ -170,7 +170,8 @@ def test_audit_one_frame_decode_failure_reason_code(monkeypatch):
     engine = RemoteAudit("host", "/remote/dir", "/dev/shm/x", router)
     monkeypatch.setattr("lib.remote_audit.duration_filter.is_too_long", lambda path: False)
     monkeypatch.setattr("lib.remote_audit.duration_filter.is_too_short", lambda path: False)
-    monkeypatch.setattr("lib.remote_audit.triptych_reps_from_video", lambda *a, **kw: [])
+    monkeypatch.setattr("lib.remote_audit.representative_frame_from_video",
+                        lambda *a, **kw: (None, -1, 0))
     decision = engine.audit_one_detailed("/tmp/whatever.mp4")
     assert decision.passed is False
     assert decision.reason_code == V.REASON_FRAME_DECODE_FAILED
@@ -199,8 +200,8 @@ def test_audit_one_endpoint_exception_marked_transient_and_not_passed(monkeypatc
     engine = RemoteAudit("host", "/remote/dir", "/dev/shm/x", router)
     monkeypatch.setattr("lib.remote_audit.duration_filter.is_too_long", lambda path: False)
     monkeypatch.setattr("lib.remote_audit.duration_filter.is_too_short", lambda path: False)
-    monkeypatch.setattr("lib.remote_audit.triptych_reps_from_video",
-                        lambda *a, **kw: [object()])  # 非空, 走到 VLM 调用步骤
+    monkeypatch.setattr("lib.remote_audit.representative_frame_from_video",
+                        lambda *a, **kw: (object(), 0, 1))  # 非空, 走到 VLM 调用步骤
     import cv2
     monkeypatch.setattr(cv2, "imencode", lambda *a, **kw: (True, b"fakejpegbytes"))
 
@@ -223,8 +224,8 @@ def test_audit_one_endpoint_exception_releases_router_slot(monkeypatch):
     engine = RemoteAudit("host", "/remote/dir", "/dev/shm/x", router)
     monkeypatch.setattr("lib.remote_audit.duration_filter.is_too_long", lambda path: False)
     monkeypatch.setattr("lib.remote_audit.duration_filter.is_too_short", lambda path: False)
-    monkeypatch.setattr("lib.remote_audit.triptych_reps_from_video",
-                        lambda *a, **kw: [object()])
+    monkeypatch.setattr("lib.remote_audit.representative_frame_from_video",
+                        lambda *a, **kw: (object(), 0, 1))
     import cv2
     monkeypatch.setattr(cv2, "imencode", lambda *a, **kw: (True, b"fakejpegbytes"))
     monkeypatch.setattr("lib.remote_audit.judge_frame_detailed",
