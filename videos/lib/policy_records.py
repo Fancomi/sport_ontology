@@ -41,6 +41,7 @@ def policy_identity(domain, *, thumb: bool = False) -> dict:
 # tests/test_policy_records.py 的一致性测试守住不漂移)。
 _TRANSIENT_REASON_CODES = frozenset({
     "vlm_parse_failed", "frame_decode_failed", "endpoint_error",
+    "thumb_missing",   # 缩略图不在盘上: 补跑 1_3_fetch_thumbs 即可, 不是内容结论
 })
 
 

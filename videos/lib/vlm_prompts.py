@@ -68,11 +68,21 @@ REASON_POLICY_REJECTED = "policy_rejected"            # 字段契约通过, 门�
 REASON_DURATION_REJECTED = "duration_rejected"        # 时长预闸判否 (超长/过短)
 REASON_FRAME_DECODE_FAILED = "frame_decode_failed"    # 抽帧/编码失败 (无法产出送审图像)
 REASON_ENDPOINT_ERROR = "endpoint_error"              # VLM 端点请求异常 (超时/连接失败/HTTP错误)
+REASON_THUMB_MISSING = "thumb_missing"                # 缩略图文件不在盘上 (从未下载/被清理)
 
 # 传输/基础设施层失败 (非内容性拒绝): 调用方应避免据此做不可逆的远端删除。
+#
+# thumb_missing 归入此集合的理由 (实测教训): 阶段一对缺图条目原先返回
+# policy_rejected —— 即「确定性内容拒绝」, 于是落进度、写 rejected.jsonl、写溯源记录,
+# 与真正的门控拒绝混在一起分不出来。当 blacklist 误杀导致 380,923 张缩略图被
+# run_cleanup 删到只剩 25,568 张后, 一次重跑把 35.5 万条缺图条目全部「判否」并固化,
+# 速度飙到 413/s (根本没调用 VLM) —— 补回缩略图也不会被重审, 数据永久丢失。
+# 缺图是数据完整性问题, 重跑一次 1_3_fetch_thumbs 即可解决, 绝不该永久定性。
 TRANSIENT_REASONS = frozenset({
     REASON_VLM_PARSE_FAILED, REASON_FRAME_DECODE_FAILED, REASON_ENDPOINT_ERROR,
+    REASON_THUMB_MISSING,
 })
+
 
 
 @dataclass(frozen=True)

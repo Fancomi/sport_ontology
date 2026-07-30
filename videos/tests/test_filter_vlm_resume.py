@@ -56,9 +56,15 @@ def test_judge_one_image_mode_returns_judge_result_with_reason_code(tmp_path, mo
     assert result.is_transient is False
 
 
-def test_judge_one_image_mode_missing_thumb_is_non_transient_rejection(tmp_path, monkeypatch):
-    """no_thumb is a data-integrity issue, not something a retry fixes -- must NOT
-    be transient (would otherwise loop forever in the todo queue)."""
+def test_judge_one_image_mode_missing_thumb_is_transient(tmp_path, monkeypatch):
+    """缺缩略图必须是 transient —— 它是数据完整性问题, 不是对内容的判定。
+
+    此前的口径是「非 transient 的确定性拒绝」, 理由是「重试也不会让图出现」。
+    实测证明该理由站不住: blacklist 误杀导致 run_cleanup 把 380,923 张缩略图删到
+    25,568 张后, 一次重跑把 35.5 万条缺图条目全部判否并固化进 checkpoint (速度飙到
+    413/s, 根本没调 VLM), 补跑 1_3_fetch_thumbs 也不会重审 —— 数据永久丢失。
+    正确做法: 归 transient, 不落进度不进 rejected, 补图后自然重新排队。
+    """
     m = _load_filter_vlm()
     monkeypatch.setattr(m.config, "THUMBS_DIR", tmp_path)  # empty dir, no thumb for "abc"
     item = {"video_id": "abc", "title": "t", "channel": "c"}
@@ -66,8 +72,10 @@ def test_judge_one_image_mode_missing_thumb_is_non_transient_rejection(tmp_path,
                               release_ep=lambda i: None, text_only=False)
     assert vid == "abc"
     assert result.passed is False
-    assert result.is_transient is False
+    assert result.is_transient is True
+    assert result.reason_code == "thumb_missing"
     assert result.detail == "no_thumb"
+
 
 
 def test_judge_one_text_only_exception_is_transient():
@@ -261,3 +269,43 @@ def test_main_normal_pass_settles_content_rejection_normally(tmp_path, monkeypat
     assert blacklisted == ["rejected_vid"], "genuine content rejection must still be blacklisted"
     progress_content = m.config.FILTER_PROGRESS.read_text()
     assert "rejected_vid" in progress_content, "genuine rejection must be marked complete"
+
+
+def test_missing_thumb_never_blacklists_or_records_progress(tmp_path, monkeypatch):
+    """main(): thumb_missing 既不进黑名单、不写进度、也不进 rejected.jsonl。
+
+    这三条任一破功都会让「补图后重审」失效 —— 黑名单会让 run_cleanup 再删一遍图,
+    进度会让续跑跳过, rejected 会污染统计口径。
+    """
+    m = _load_filter_vlm()
+    monkeypatch.setattr(m.config, "THUMBS_DIR", tmp_path / "thumbs")
+    (tmp_path / "thumbs").mkdir()
+    meta = tmp_path / "meta.jsonl"
+    _write_jsonl(meta, [{"video_id": "havethumb"}, {"video_id": "nothumb"}])
+    (tmp_path / "thumbs" / "havethumb.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"x" * 4000)
+
+    monkeypatch.setattr(m.config, "META_FILE", meta)
+    monkeypatch.setattr(m.config, "FILTERED", tmp_path / "filtered.jsonl")
+    monkeypatch.setattr(m.config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(m.config, "FILTER_PROGRESS", tmp_path / "prog.txt")
+    monkeypatch.setattr(m.config, "load_blacklist", lambda: set())
+    monkeypatch.setattr(m, "AUDIT_RECORDS", tmp_path / "records.jsonl")
+
+    blacklisted = []
+    monkeypatch.setattr(m.config, "append_blacklist", lambda v: blacklisted.append(v))
+    monkeypatch.setattr(m, "judge_frame_detailed",
+                        lambda *a, **kw: m.JudgeResult(True, ""))
+    monkeypatch.setattr(m, "build_vlm_endpoints", lambda *a, **kw: ["ep0"])
+    monkeypatch.setattr(m, "LLMClient", lambda **kw: None)
+    monkeypatch.setattr(sys, "argv",
+                        ["1_4_filter_vlm.py", "--port", "8001", "--batch-size", "10"])
+    m.main()
+
+    assert blacklisted == [], "缺图条目被拉黑, 会让 run_cleanup 再删一遍缩略图"
+    prog = (tmp_path / "prog.txt")
+    done = prog.read_text().split() if prog.exists() else []
+    assert "nothumb" not in done, "缺图条目落了进度, 补图后不会重审"
+    assert "havethumb" in done
+    rej = tmp_path / "rejected.jsonl"
+    if rej.exists():
+        assert "nothumb" not in rej.read_text()

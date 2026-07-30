@@ -133,7 +133,8 @@ def judge_one(item, client, eps, pick_ep, release_ep, text_only=False) -> tuple:
     转发其 JudgeResult (含 vlm_parse_failed/missing_fields/invalid_enum/
     invalid_boolean_type/policy_rejected 等具体原因, 再审修复 #4)。
     """
-    from lib.vlm_prompts import REASON_POLICY_REJECTED, REASON_VLM_PARSE_FAILED
+    from lib.vlm_prompts import (REASON_POLICY_REJECTED, REASON_VLM_PARSE_FAILED,
+                                 REASON_THUMB_MISSING)
     vid = item["video_id"]
 
     if text_only:
@@ -151,13 +152,14 @@ def judge_one(item, client, eps, pick_ep, release_ep, text_only=False) -> tuple:
 
     img_b64 = encode_thumb(vid)
     if not img_b64:
-        # 缩略图缺失是数据完整性问题, 不是 VLM 判定失败, 但既不是内容拒绝也不是
-        # 可重试的 transient 失败 (换个时间点重跑, 缩略图依然不存在) —— 与
-        # policy_rejected 一起划入「不可重试的确定性拒绝」更合适: 不阻塞续跑,
-        # 不应无限期占用 todo 队列。使用 REASON_POLICY_REJECTED 以外的独立标签
-        # 更准确, 但为避免引入未在 vlm_prompts 里定义的新常量, 复用现有
-        # REASON_POLICY_REJECTED 语义 (确定性拒绝, 非 transient)。
-        return vid, JudgeResult(False, REASON_POLICY_REJECTED, "no_thumb")
+        # 缺缩略图是**数据完整性问题**, 不是对内容的判定 —— 必须归 transient:
+        # 不落进度、不写黑名单、不进 rejected, 补跑 1_3_fetch_thumbs 后自然重审。
+        # 早期实现返回 policy_rejected (确定性拒绝), 实测后果: blacklist 误杀导致
+        # run_cleanup 把 38 万张缩略图删到 2.5 万张后, 一次重跑将 35.5 万条缺图条目
+        # 全部「判否」并固化进 checkpoint, 补图也不会重审 (见 lib/vlm_prompts 里
+        # REASON_THUMB_MISSING 的注释)。
+        return vid, JudgeResult(False, REASON_THUMB_MISSING, "no_thumb")
+
     img_b = frames_to_img_bytes([img_b64])
     i = pick_ep()
     try:
