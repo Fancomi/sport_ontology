@@ -49,8 +49,19 @@ class AuditPolicy:
 
 
 def build_court_match_policy(sport_code: str, sport_name_cn: str, court_name_cn: str,
-                              policy_version: str) -> AuditPolicy:
-    """构造「固定机位真人场地比赛」审核策略 (网球/羽毛球等共用同一套字段与门控形状)。"""
+                              policy_version: str, *, loose_camera: bool = False) -> AuditPolicy:
+    """构造「固定机位真人场地比赛」审核策略 (网球/羽毛球等共用同一套字段与门控形状)。
+
+    loose_camera=False (默认, 羽毛球等既有领域): 机位要求 cam_backcourt_high_wide 为真
+      **且** cam_side 为假, 两条都必须满足。
+    loose_camera=True (网球): 两者二选一即可 —— 实测 53 条人工认可的整段中值帧里,
+      cam_side 被误报 16 次 (模型把端线后方俯瞰的纵向广角当成侧面拍), 而
+      cam_backcourt_high_wide 漏报 14 次; 两者是同一件事的正反面, 模型在 480p 中值帧
+      上常只判对一边。要求「俯瞰为真 或 侧面为假」既保住核心判据 (仍必须是完整球场),
+      又救回被单边误判错杀的素材 (全 AND 通过 47% -> 二选一 55%, 人工认为这批基本全合格)。
+      默认关闭是为了不动羽毛球既有口径 —— 它已按严格门控产出过 196 万切片。
+    """
+
     enum_fields = {
         "sport_type": frozenset({sport_code, "other_sport", "not_sport"}),
         "scene_type": COURT_MATCH_SCENE_ENUM,
@@ -58,6 +69,11 @@ def build_court_match_policy(sport_code: str, sport_name_cn: str, court_name_cn:
     required = frozenset(COURT_MATCH_BOOLEAN_FIELDS | set(enum_fields))
 
     def strict_gate(attrs):
+        # 机位判据: loose_camera 时「俯瞰为真 或 侧面为假」二选一, 否则两条都必须满足。
+        # 理由见 build_court_match_policy 的 docstring (模型在单帧上常只判对一边)。
+        camera_ok = ((attrs["cam_backcourt_high_wide"] or not attrs["cam_side"])
+                     if loose_camera
+                     else (attrs["cam_backcourt_high_wide"] and not attrs["cam_side"]))
         return (
             attrs["sport_type"] == sport_code
             and attrs["scene_type"] == "real_person"
@@ -67,11 +83,13 @@ def build_court_match_policy(sport_code: str, sport_name_cn: str, court_name_cn:
             and attrs["single_court"]
             and attrs["net_visible"]
             and attrs["ground_lines_clear"]
-            and attrs["cam_backcourt_high_wide"]
+            and camera_ok
             and not any(attrs[key] for key in (
-                "cam_low_or_upward", "cam_side", "cam_close", "cam_person_closeup",
+                "cam_low_or_upward", "cam_close", "cam_person_closeup",
                 "is_talking", "is_spectator_or_ceremony", "is_slide_or_anim",
                 "heavily_occluded")))
+
+
 
     def thumb_gate(attrs):
         return (attrs["scene_type"] == "real_person"

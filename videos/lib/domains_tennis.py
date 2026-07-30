@@ -174,7 +174,8 @@ _CAPTION_PROMPT = """\
 击球方场上站位（底线/中场/网前）与是否上网/网前截击。
 40字以内，只输出一句中文描述。"""
 
-_AUDIT_POLICY = build_court_match_policy("tennis", "网球", "网球场", "court-match-tennis-v1")
+_AUDIT_POLICY = build_court_match_policy("tennis", "网球", "网球场", "court-match-tennis-v2-loosecam",
+                                       loose_camera=True)
 # 阶段一缩略图另用一份策略 (GEPA 优化产出): 判「完整球场 + 端线后方俯瞰机位 + 真人比赛」,
 # 并含 is_highlight_reel/is_video_game/is_wheelchair_tennis 等缩略图特有噪声字段。
 # 600 条人工标注实测: 精度 96% / 召回 62%, 而 court-match 的宽松 thumb_gate 精度仅 23%。

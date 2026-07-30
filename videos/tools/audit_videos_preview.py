@@ -23,32 +23,56 @@ from lib.remote_audit import EndpointRouter, RemoteAudit
 
 OUT_DIR = config.STATE_DIR / "audit_videos_preview"
 
+# 严格门控里「必须为真」/「必须为假」的字段 (与 domain_policies.build_court_match_policy
+# 的 strict_gate 同构)。逐条列出否决原因, 才能看出「过严」到底是哪一维在杀。
+_MUST_TRUE = ("has_person", "is_real_match_play", "court_full_visible", "single_court",
+              "net_visible", "ground_lines_clear", "cam_backcourt_high_wide")
+_MUST_FALSE = ("cam_low_or_upward", "cam_side", "cam_close", "cam_person_closeup",
+               "is_talking", "is_spectator_or_ceremony", "is_slide_or_anim",
+               "heavily_occluded")
+
+
+def _blockers(a):
+    """列出当前属性下否决 strict_gate 的具体条件 (空 = 通过)。"""
+    if not a:
+        return ["no_attrs"]
+    out = []
+    if a.get("sport_type") != "tennis":
+        out.append(f"sport_type={a.get('sport_type')}")
+    if a.get("scene_type") != "real_person":
+        out.append(f"scene_type={a.get('scene_type')}")
+    out += [f"{k}=False" for k in _MUST_TRUE if not a.get(k)]
+    out += [f"{k}=True" for k in _MUST_FALSE if a.get(k)]
+    return out
+
 
 def judge_and_frame(path, ep):
-    """抽中值帧 → 存 jpg + V2 属性 + 严/宽双门控结果。返回 dict 或 None。"""
+    """抽中值帧 → 存 jpg + V2 属性 + 严格门控结果 + 否决原因。返回 dict 或 None。"""
     frame, idx, n = representative_frame_from_video(path, fps=1.0, max_side=480)
     if frame is None:
         return None
     _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
     jpg = buf.tobytes()
     img_b = frames_to_img_bytes([base64.b64encode(buf).decode()])
+    # 阶段二看真实帧, 用严格策略的 prompt (thumb=False); 缩略图策略字段集不同, 混用会全拒
+    prompt, system = V.audit_prompt_for(thumb=False)
     try:
-        raw = call_vlm_raw(ep, img_b, V.AUDIT_V2_PROMPT, system=V.AUDIT_V2_SYSTEM, max_tokens=512)
+        raw = call_vlm_raw(ep, img_b, prompt, system=system, max_tokens=512)
         attrs = parse_json_response(raw)
-    except Exception as e:
+    except Exception:
         attrs = None
     return {"jpg": jpg, "attrs": attrs, "medoid_idx": idx, "n_frames": n,
-            "strict": V._GATE(attrs) if attrs else None,
-            "loose": V._GATE_THUMB(attrs) if attrs else None}
+            "strict": V.judge_attrs_detailed(attrs, thumb=False).passed if attrs else None,
+            "blockers": _blockers(attrs)}
+
 
 
 def render(rows):
     def card(r):
         a = r["attrs"] or {}
-        s, l = r["strict"], r["loose"]
-        tag = "PASS严" if s else ("PASS宽" if l else "REJECT")
-        color = "#1a7f37" if s else ("#9a6700" if l else "#cf222e")
-        # 展示全部布尔/枚举属性 (除 caption/reject_reason), True 高亮
+        s = r["strict"]
+        tag = "PASS" if s else "REJECT"
+        color = "#1a7f37" if s else "#cf222e"
         skip = {"caption", "reject_reason"}
         parts = []
         for k, v in a.items():
@@ -58,27 +82,53 @@ def render(rows):
             parts.append(f'<span style="{hl}">{k}={v}</span>')
         attr = " · ".join(parts)
         cap = html.escape((a.get("caption") or "")[:100])
-        return f"""<div class="card" data-v="{'strict' if s else 'loose' if l else 'rej'}">
+        # 否决原因单独一行: 这是判断「过严」的直接依据 —— 若集中在 net_visible /
+        # ground_lines_clear 这类 480p 中值帧上难判准的字段, 说明是模型判不准而非内容不合格
+        blk = html.escape(" ".join(r.get("blockers") or []))
+        blk_line = f'<div class="blk">否决: {blk}</div>' if blk else ""
+        n_blk = len(r.get("blockers") or [])
+        return f"""<div class="card" data-v="{'pass' if s else 'rej'}" data-nblk="{n_blk}">
   <img src="frames/{r['vid']}.jpg" loading="lazy">
   <div class="m"><span class="b" style="background:{color}">{tag}</span>
-  <div class="t">{r['vid']} · medoid {r['medoid_idx']}/{r['n_frames']}帧</div>
-  <div class="a">{attr}</div><div class="c">{cap}</div></div></div>"""
-    ns = sum(1 for r in rows if r["strict"]); nl = sum(1 for r in rows if r["loose"] and not r["strict"])
-    nr = len(rows) - ns - nl
+  <label class="hm"><input type="checkbox" class="ok" data-vid="{r['vid']}"> 人工:合格</label>
+  <div class="t"><a href="https://www.youtube.com/watch?v={r['vid']}" target="_blank">{r['vid']}</a>
+       · medoid {r['medoid_idx']}/{r['n_frames']}帧</div>
+  {blk_line}<div class="a">{attr}</div><div class="c">{cap}</div></div></div>"""
+    ns = sum(1 for r in rows if r["strict"])
+    nr = len(rows) - ns
+    # 只差 1 条就能通过的那批最能说明「是否过严」
+    near = sum(1 for r in rows if not r["strict"] and len(r.get("blockers") or []) == 1)
+    from collections import Counter
+    blk_freq = Counter(b for r in rows if not r["strict"] for b in (r.get("blockers") or []))
+    freq_html = " · ".join(f"{k} <b>{v}</b>" for k, v in blk_freq.most_common(12))
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>2_2 audit preview ({config.DOMAIN.name})</title>
 <style>body{{font-family:Arial;margin:16px;background:#f6f8fa}}.stat{{margin:8px 0;color:#57606a}}
 .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}}
 .card{{background:#fff;border:1px solid #d0d7de;border-radius:8px;overflow:hidden}}
 .card img{{width:100%;height:180px;object-fit:cover;background:#eaeef2}}
-.m{{padding:8px}}.b{{color:#fff;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600}}
-.t{{font-size:12px;font-weight:600;margin:5px 0}}.a{{font-size:11px;color:#8250df;font-family:monospace}}
-.c{{font-size:12px;color:#0969da;margin-top:4px}}button{{margin-right:6px;padding:4px 10px;cursor:pointer}}</style></head><body>
-<h2>2_2 整段视频中值帧审核预览 — {config.DOMAIN.name}</h2>
-<div class="stat">Total <b>{len(rows)}</b> · PASS严 <b style="color:#1a7f37">{ns}</b> · 仅PASS宽 <b style="color:#9a6700">{nl}</b> · REJECT <b style="color:#cf222e">{nr}</b></div>
-<div><button onclick="f('all')">全部</button><button onclick="f('strict')">PASS严</button><button onclick="f('loose')">仅宽通过</button><button onclick="f('rej')">REJECT</button></div>
+.m{{padding:8px}}.b{{color:#fff;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;margin-right:4px}}
+.hm{{font-size:11px;color:#57606a;cursor:pointer}}
+.t{{font-size:12px;font-weight:600;margin:5px 0}}.a{{font-size:11px;color:#8250df;font-family:monospace;word-break:break-all}}
+.blk{{font-size:11px;color:#cf222e;font-family:monospace;margin:3px 0;word-break:break-all}}
+.c{{font-size:12px;color:#0969da;margin-top:4px}}button{{margin-right:6px;padding:4px 10px;cursor:pointer}}
+.freq{{font-size:12px;color:#57606a;margin:8px 0;line-height:1.7}}</style></head><body>
+<h2>2_2 整段视频中值帧审核预览 — {config.DOMAIN.name} · 策略 {getattr(config.DOMAIN.audit_policy, 'policy_version', '-')}</h2>
+<div class="stat">共 <b>{len(rows)}</b> · 严格通过 <b style="color:#1a7f37">{ns}</b>
+  · 拒绝 <b style="color:#cf222e">{nr}</b> · 其中只差 1 个条件的 <b>{near}</b></div>
+<div class="freq">拒绝项各条件否决次数: {freq_html}</div>
+<div><button onclick="f('all')">全部</button><button onclick="f('pass')">严格通过</button>
+<button onclick="f('rej')">拒绝</button><button onclick="fn(1)">只差1个条件</button>
+<button onclick="dump()">导出人工勾选</button></div>
 <div class="grid" id="g">{''.join(card(r) for r in rows)}</div>
-<script>function f(v){{document.querySelectorAll('.card').forEach(c=>c.style.display=(v=='all'||c.dataset.v==v)?'':'none')}}</script>
+<script>
+function f(v){{document.querySelectorAll('.card').forEach(c=>c.style.display=(v=='all'||c.dataset.v==v)?'':'none')}}
+function fn(n){{document.querySelectorAll('.card').forEach(c=>c.style.display=(c.dataset.v=='rej'&&c.dataset.nblk==n)?'':'none')}}
+function dump(){{const ok=[...document.querySelectorAll('.ok:checked')].map(x=>x.dataset.vid);
+const b=document.createElement('textarea');b.value=ok.join('\\n');b.style.width='100%';b.style.height='120px';
+document.body.insertBefore(b,document.getElementById('g'));b.focus();b.select();}}
+</script>
 </body></html>"""
+
 
 
 def main():
@@ -123,11 +173,18 @@ def main():
             if r:
                 (fdir / f"{r['vid']}.jpg").write_bytes(r.pop("jpg"))
                 rows.append(r)
-    rows.sort(key=lambda r: (0 if r["strict"] else 1 if r["loose"] else 2))
+    # 拒绝项排前 (最需要人工核对), 且「只差 1 个条件」的最靠前
+    rows.sort(key=lambda r: (0 if not r["strict"] else 1, len(r.get("blockers") or [])))
     (OUT_DIR / "index.html").write_text(render(rows), encoding="utf-8")
     shutil.rmtree(shm, ignore_errors=True)
-    ns = sum(1 for r in rows if r["strict"]); nl = sum(1 for r in rows if r["loose"])
-    print(f"完成: {len(rows)} 帧 | PASS严 {ns} | PASS宽 {nl}")
+    ns = sum(1 for r in rows if r["strict"])
+    near = sum(1 for r in rows if not r["strict"] and len(r.get("blockers") or []) == 1)
+    print(f"完成: {len(rows)} 帧 | 严格通过 {ns} ({100.0*ns/max(1,len(rows)):.0f}%) | 只差1条件 {near}")
+    with open(OUT_DIR / "verdicts.jsonl", "w", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps({"video_id": r["vid"], "strict": r["strict"],
+                                "blockers": r.get("blockers"), "attrs": r["attrs"]},
+                               ensure_ascii=False) + "\n")
     print(f"预览: {OUT_DIR/'index.html'}")
 
 

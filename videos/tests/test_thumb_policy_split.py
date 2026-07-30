@@ -141,8 +141,8 @@ def test_tennis_domain_wires_gepa_thumb_policy():
     importlib.reload(domains)
     t = domains.load_domain("tennis")
     assert t.thumb_audit_policy is not None
-    assert t.thumb_audit_policy.policy_version.startswith("thumb-content-tennis-v3")
-    assert t.audit_policy.policy_version == "court-match-tennis-v1"
+    assert t.thumb_audit_policy.policy_version.startswith("thumb-content-tennis-v4")
+    assert t.audit_policy.policy_version == "court-match-tennis-v2-loosecam"
     # 缩略图策略必须包含那几个缩略图特有的噪声字段
     for f in ("is_highlight_reel", "is_video_game", "is_wheelchair_tennis",
               "cam_backcourt_high_wide", "court_full_visible"):

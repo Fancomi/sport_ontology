@@ -168,3 +168,39 @@ def test_reproduction_from_finding_report_is_rejected():
     assert p.validate_attrs(a) is True
     assert p.decide(a, thumb=False) is False
     assert p.decide(a, thumb=True) is False
+
+
+# ── loose_camera: 网球放宽机位判据 (人工确认后的口径调整) ──
+
+def test_loose_camera_accepts_single_sided_camera_misjudgement():
+    """loose_camera=True 时「俯瞰为真 或 侧面为假」二选一即可。
+
+    背景: 实测 53 条人工认可的整段中值帧里, cam_side 被误报 16 次、
+    cam_backcourt_high_wide 漏报 14 次 —— 两者是同一件事的正反面, 模型在 480p
+    中值帧上常只判对一边, 全 AND 会把这批错杀。
+    """
+    from lib.domain_policies import build_court_match_policy
+    loose = build_court_match_policy("tennis", "网球", "网球场", "t-loose", loose_camera=True)
+    base = {**BADMINTON_BASE, "sport_type": "tennis"}
+    # 只判对一边的两种情形都应通过
+    assert loose.decide({**base, "cam_backcourt_high_wide": True, "cam_side": True},
+                        thumb=False) is True
+    assert loose.decide({**base, "cam_backcourt_high_wide": False, "cam_side": False},
+                        thumb=False) is True
+    # 两边都不满足仍必须拒 (核心判据没有被放弃)
+    assert loose.decide({**base, "cam_backcourt_high_wide": False, "cam_side": True},
+                        thumb=False) is False
+    # 完整球场等其余硬条件不受放宽影响
+    assert loose.decide({**base, "court_full_visible": False}, thumb=False) is False
+
+
+def test_strict_camera_remains_default_for_existing_domains():
+    """默认 loose_camera=False: 羽毛球既有口径不受影响 (它已按严格门控产出 196 万切片)。"""
+    from lib.domain_policies import build_court_match_policy
+    from lib.domains import BADMINTON
+    strict = build_court_match_policy("badminton", "羽毛球", "羽毛球场", "b-strict")
+    assert strict.decide({**BADMINTON_BASE, "cam_side": True}, thumb=False) is False
+    assert strict.decide({**BADMINTON_BASE, "cam_backcourt_high_wide": False},
+                         thumb=False) is False
+    assert BADMINTON.audit_policy.decide({**BADMINTON_BASE, "cam_side": True},
+                                         thumb=False) is False
