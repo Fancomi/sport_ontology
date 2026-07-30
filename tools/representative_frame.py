@@ -77,38 +77,61 @@ def _resize(frame, max_side):
     return frame if scale >= 1.0 else cv2.resize(frame, (int(w * scale), int(h * scale)))
 
 
-def representative_frame_from_video(video_path, fps=1.0, max_side=480,
-                                    max_frames=32, method="median"):
-    """解码 1fps 帧 (已按 max_side 缩放) -> medoid。
-    返回 (frame_bgr, idx, n_frames); 空/损坏 -> (None,-1,0)。
-    抑制 ffmpeg fd=2 噪音 (不动 fd=1)。"""
-    null = None; saved = None
+def _sample_frames_evenly(video_path, fps=1.0, max_side=480, max_frames=32):
+    """在**全时长**上均匀取至多 max_frames 帧 (已按 max_side 缩放), 返回帧列表。
+
+    为什么是「均匀铺满全长」而不是「按 fps 逐帧走」:
+    原实现取帧位置为 `i * (src_fps / fps)`, 即真的按 fps 从头连续取, 配合
+    max_frames=32 的上限, 最远只能取到第 31 秒 —— 采样覆盖率 600s 视频 5.2%、
+    3600s 视频 0.9%。而视频开头通常是片头/标题卡/赛前介绍, medoid 因此完全代表
+    不了整片内容, 这正是阶段二判定「不稳定」的根因。
+
+    现在的口径: 目标帧数 = min(max_frames, 时长×fps) (短视频仍等价于逐秒取),
+    取帧位置按总帧数等距铺开, 保证首尾都被覆盖。
+    抑制 ffmpeg fd=2 噪音 (不动 fd=1)。
+    """
+    null = None
+    saved = None
+    frames = []
     try:
-        null = os.open(os.devnull, os.O_WRONLY); saved = os.dup(2); os.dup2(null, 2)
+        null = os.open(os.devnull, os.O_WRONLY)
+        saved = os.dup(2)
+        os.dup2(null, 2)
         cap = cv2.VideoCapture(str(video_path))
         src_fps = cap.get(cv2.CAP_PROP_FPS) or 0
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        frames = []
         if total > 0 and src_fps > 0 and fps > 0:
             dur = total / src_fps
-            step = src_fps / fps                       # 每 step 源帧取一帧 (即 fps 帧/秒)
-            n = min(max_frames, max(1, int(dur * fps)))
+            n = min(max_frames, max(1, int(round(dur * fps))))
             for i in range(n):
-                cap.set(cv2.CAP_PROP_POS_FRAMES, min(total - 1, int(i * step)))
+                # 等距铺满 [0, total): 首帧 0, 末帧接近 total-1
+                pos = int(i * total / n) if n > 1 else 0
+                cap.set(cv2.CAP_PROP_POS_FRAMES, min(total - 1, pos))
                 ret, fr = cap.read()
                 if ret:
                     frames.append(_resize(fr, max_side))
         cap.release()
     finally:
         if saved is not None:
-            os.dup2(saved, 2); os.close(saved)
+            os.dup2(saved, 2)
+            os.close(saved)
         if null is not None:
             os.close(null)
+    return frames
+
+
+def representative_frame_from_video(video_path, fps=1.0, max_side=480,
+                                    max_frames=32, method="median"):
+    """全时长均匀采样 (见 _sample_frames_evenly) -> medoid 代表帧。
+    返回 (frame_bgr, idx, n_frames); 空/损坏 -> (None,-1,0)。"""
+    frames = _sample_frames_evenly(video_path, fps=fps, max_side=max_side,
+                                   max_frames=max_frames)
     if not frames:
         return None, -1, 0
     stack = np.stack(frames, axis=0)   # 同一视频同尺寸, 可堆叠
     frame, idx = representative_frame_from_stack(stack, method=method)
     return frame, idx, len(frames)
+
 
 
 def triptych_reps_from_video(video_path, n_seg=3, fps=1.0, max_side=480, method="median"):
