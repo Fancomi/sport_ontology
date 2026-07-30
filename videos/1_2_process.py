@@ -11,7 +11,8 @@ import json
 import urllib.request
 import urllib.error
 import threading
-from collections import Counter
+import time
+from collections import Counter, namedtuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pathlib import Path
@@ -24,26 +25,62 @@ _lock = threading.Lock()
 
 OEMBED_URL = "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={vid}&format=json"
 
+# oEmbed 取 meta 的三态结果。为什么必须区分 GONE 与 TRANSIENT:
+# 原实现是 `except Exception: return None`, 调用方对 None 一律 append_blacklist ——
+# 「视频确实不存在」和「代理挂了/超时/响应体损坏」被压成同一个返回值, 一次代理抖动
+# 就会把整批候选永久拉黑。blacklist 是跨阶段共享名单, 且 2_1_download.run_cleanup
+# 会据它连缩略图一起删除, 损失不可恢复。
+# 同类事故本项目已发生两次 (1_3_fetch_thumbs 误拉黑 13.2 万条、2_1_download 误拉黑
+# 23,391 条), 见 tests/test_enrich_failure_classification.py。
+OEMBED_OK = "ok"
+OEMBED_GONE = "gone"            # 明确的「这个视频没了」: 404 / 401 / 410
+OEMBED_TRANSIENT = "transient"  # 超时/连接失败/5xx/429/响应体损坏 -> 下轮重试
 
-# ==================== Meta 补全 ====================
+OembedResult = namedtuple("OembedResult", "status meta")
+
+# 明确指向内容不可达的 HTTP 状态码 (可安全拉黑); 其余状态码一律 transient。
+_GONE_HTTP_CODES = frozenset({401, 403, 404, 410})
+_OEMBED_ATTEMPTS = 3
+_OEMBED_TIMEOUT = 20
+
 
 def _fetch_oembed(video_id):
-    """oEmbed API 获取 title + channel (不触发反爬)"""
-    proxy = config.PROXY_POOL[0]
-    handler = urllib.request.ProxyHandler({"http": proxy, "https": proxy}) if proxy else None
-    opener = urllib.request.build_opener(handler) if handler else urllib.request.build_opener()
-    try:
-        req = urllib.request.Request(OEMBED_URL.format(vid=video_id),
-                                    headers={"User-Agent": "Mozilla/5.0"})
-        with opener.open(req, timeout=10) as resp:
-            data = json.loads(resp.read())
-            return {"video_id": video_id, "title": data.get("title", ""),
-                    "channel": data.get("author_name", ""),
-                    "channel_url": data.get("author_url", ""),
-                    "thumbnail": data.get("thumbnail_url", ""),
-                    "is_valid": True}
-    except Exception:
-        return None
+    """oEmbed API 获取 title + channel, 返回 OembedResult (三态, 见上方常量)。
+
+    重试要换代理: 原实现固定用 PROXY_POOL[0], 单节点故障时重试毫无意义。
+    """
+    pool = config.PROXY_POOL or [None]
+    attempts = min(_OEMBED_ATTEMPTS, len(pool)) or 1
+    for n in range(attempts):
+        proxy = pool[(hash(video_id) + n) % len(pool)]
+        handler = (urllib.request.ProxyHandler({"http": proxy, "https": proxy})
+                   if proxy else None)
+        opener = (urllib.request.build_opener(handler) if handler
+                  else urllib.request.build_opener())
+        try:
+            req = urllib.request.Request(OEMBED_URL.format(vid=video_id),
+                                         headers={"User-Agent": "Mozilla/5.0"})
+            with opener.open(req, timeout=_OEMBED_TIMEOUT) as resp:
+                data = json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            if e.code in _GONE_HTTP_CODES:
+                return OembedResult(OEMBED_GONE, None)   # 确定性结论, 不重试
+            if n + 1 < attempts:
+                time.sleep(0.5 * (n + 1))
+            continue
+        except Exception:
+            # 超时/连接失败/代理故障/JSON 解析失败 —— 全都是「没拿到答案」
+            if n + 1 < attempts:
+                time.sleep(0.5 * (n + 1))
+            continue
+        return OembedResult(OEMBED_OK, {
+            "video_id": video_id, "title": data.get("title", ""),
+            "channel": data.get("author_name", ""),
+            "channel_url": data.get("author_url", ""),
+            "thumbnail": data.get("thumbnail_url", ""),
+            "is_valid": True})
+    return OembedResult(OEMBED_TRANSIENT, None)
+
 
 
 def run_enrich():
@@ -63,27 +100,39 @@ def run_enrich():
     if not pending:
         return
 
-    valid, invalid = 0, 0
+    valid, gone, transient = 0, 0, 0
     with ThreadPoolExecutor(max_workers=config.ENRICH_WORKERS) as pool:
         futs = {pool.submit(_fetch_oembed, r["video_id"]): r for r in pending}
         for i, fut in enumerate(as_completed(futs), 1):
             orig = futs[fut]
             vid = orig["video_id"]
-            meta = fut.result()
-            if meta:
+            result = fut.result()
+            if result.status == OEMBED_OK:
+                meta = result.meta
                 meta["source"] = orig.get("source", "")
                 meta["label"] = orig.get("label", "")
                 meta["duration"] = orig.get("duration")
                 meta["view_count"] = orig.get("view_count")
                 config.append_jsonl(config.ENRICHED, [meta])
                 valid += 1
-            else:
+            elif result.status == OEMBED_GONE:
                 config.append_blacklist(vid)
-                invalid += 1
+                gone += 1
+            else:
+                # 「没拿到答案」≠「拿到了否定答案」: 不拉黑、不落进度, 下轮重试
+                transient += 1
+                continue
             config.append_line(config.ENRICH_PROGRESS, vid)
             if i % 1000 == 0:
-                logger.info(f"补全 [{i}/{len(pending)}] 有效: {valid} 无效: {invalid}")
-    logger.info(f"补全完成! 有效: {valid} 无效: {invalid} 有效率: {valid/(valid+invalid)*100:.1f}%")
+                logger.info(f"补全 [{i}/{len(pending)}] 有效: {valid} 已失效: {gone} "
+                            f"瞬时失败(待重试): {transient}")
+    settled = valid + gone
+    rate = (valid / settled * 100) if settled else 0.0
+    logger.info(f"补全完成! 有效: {valid} 已失效: {gone} 瞬时失败(待重试): {transient} "
+                f"(有效率 {rate:.1f}%)")
+    if transient:
+        logger.info(f"提示: {transient} 条为瞬时网络失败, 未拉黑未记进度; 重跑 enrich 即可补齐")
+
 
 
 # ==================== 合并 ====================
