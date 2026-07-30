@@ -26,14 +26,20 @@ logger = config.get_logger(__name__, "pipeline.log")
 # === 二阶段 cookies (一阶段已完成，两个账号都可用于下载) ===
 import tempfile
 _COOKIE_DIR = Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer")
-# 仅启用含 LOGIN_INFO 的强鉴权号 (弱号会撞 bot 墙拖垮流程); 其余重登后再放开。
+# 顺序即代理绑定顺序 (见下方 _COOKIE_PROXY): 强号排前, 绑最挑剔的代理。
+# 实测账号×代理可用性矩阵 (2026-07-30):
+#   Cocoonconcoction070 (15K, 含 LOGIN_INFO): cmc / baidu8188 / baidu8891 全部 ok
+#   Resxuilpazcuoe      (896B, 无 LOGIN_INFO): cmc 撞 bot 墙, baidu8188/8891 ok
+# 故强号必须排 index 0 (绑 cmc), 弱号排 index 1 (绑 baidu8188)。顺序写反时弱号会被
+# 绑到 cmc 上, 该账号的全部任务集体撞 "Sign in to confirm you're not a bot"。
 _COOKIE_ORIGINS = [
-    _COOKIE_DIR / "cookies_Resxuilpazcuoe_origin.txt",
     _COOKIE_DIR / "cookies_Cocoonconcoction070_origin.txt",
+    _COOKIE_DIR / "cookies_Resxuilpazcuoe_origin.txt",
     # _COOKIE_DIR / "cookies_Henrypower8652_ori.txt",   # 缺 LOGIN_INFO, 待重登
     # _COOKIE_DIR / "cookies_Pinchnuncio927_ori.txt",   # 缺 LOGIN_INFO, 待重登
     # _COOKIE_DIR / "cookies_Tgrhhgr18_ori.txt",        # 缺 LOGIN_INFO, 待重登
 ]
+
 _COOKIE_COPIES = []
 for i, src in enumerate(_COOKIE_ORIGINS):
     if src.exists():
@@ -178,8 +184,23 @@ def download_one(item, out_dir):
             config.cooldown_proxy(proxy)
             reason = "blocked_403"
         elif any(k in msg for k in ("unavailable", "removed", "private", "not exist")):
-            config.append_blacklist(vid)
-            reason = "invalid_video"
+            # 只有明确指向「这个视频没了」才永久拉黑。yt-dlp 在代理/网络故障时也会
+            # 输出含 unavailable 的文本 (如 "service unavailable"、"temporarily
+            # unavailable"、"HTTP Error 503"), 早期实现照子串匹配全部拉黑, 实测把
+            # 23,391 条正常视频永久排除 (抽样复验 100% 可正常取回) —— 且 blacklist
+            # 是跨阶段共享名单, run_cleanup 会据它连缩略图一起删掉。
+            # 故先排除掉这些明显属于基础设施故障的措辞。
+            transient_markers = (
+                "service unavailable", "temporarily unavailable", "try again",
+                "503", "502", "504", "timed out", "timeout", "connection",
+                "proxy", "tunnel", "reset by peer", "network",
+            )
+            if any(t in msg for t in transient_markers):
+                reason = "other"          # 不拉黑, 下轮重试
+            else:
+                config.append_blacklist(vid)
+                reason = "invalid_video"
+
         elif "timed out" in msg or "timeout" in msg:
             reason = "timeout"
         else:
