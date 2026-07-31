@@ -174,8 +174,14 @@ _CAPTION_PROMPT = """\
 击球方场上站位（底线/中场/网前）与是否上网/网前截击。
 40字以内，只输出一句中文描述。"""
 
-_AUDIT_POLICY = build_court_match_policy("tennis", "网球", "网球场", "court-match-tennis-v2-loosecam",
-                                       loose_camera=True)
+# 阶段二/三 (真实帧) 策略。人工标注 107 条长视频后的口径:
+#   - 机位严格 (端线后方俯瞰 且 非侧面): 挡住人工点名的九条斜镜头;
+#   - is_real_match_play / is_spectator_or_ceremony / single_court 移出门控:
+#     三者是错杀主因 (合计 68/59 次否决), 判的都不是「素材能否使用」。
+# 实测: 召回 36% -> 87%, 精度维持 100%。详见 tests/test_stage2_gate_tuning.py。
+_AUDIT_POLICY = build_court_match_policy("tennis", "网球", "网球场",
+                                        "court-match-tennis-v3-humanlabeled",
+                                        drop_soft_fields=True)
 # 阶段一缩略图另用一份策略 (GEPA 优化产出): 判「完整球场 + 端线后方俯瞰机位 + 真人比赛」,
 # 并含 is_highlight_reel/is_video_game/is_wheelchair_tennis 等缩略图特有噪声字段。
 # 600 条人工标注实测: 精度 96% / 召回 62%, 而 court-match 的宽松 thumb_gate 精度仅 23%。

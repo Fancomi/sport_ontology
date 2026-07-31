@@ -16,7 +16,7 @@ BASE = {
     "single_court": True,
     "net_visible": True,
     "ground_lines_clear": True,
-    "cam_backcourt_high_wide": True,
+    "cam_backcourt_high_wide": True, "cam_faces_net": True,
     "cam_low_or_upward": False,
     "cam_side": False,
     "cam_close": False,
@@ -185,10 +185,12 @@ def test_loose_camera_accepts_single_sided_camera_misjudgement():
     # 只判对一边的两种情形都应通过
     assert loose.decide({**base, "cam_backcourt_high_wide": True, "cam_side": True},
                         thumb=False) is True
-    assert loose.decide({**base, "cam_backcourt_high_wide": False, "cam_side": False},
+    assert loose.decide({**base, "cam_backcourt_high_wide": False,
+                         "cam_faces_net": False, "cam_side": False},
                         thumb=False) is True
     # 两边都不满足仍必须拒 (核心判据没有被放弃)
-    assert loose.decide({**base, "cam_backcourt_high_wide": False, "cam_side": True},
+    assert loose.decide({**base, "cam_backcourt_high_wide": False,
+                         "cam_faces_net": False, "cam_side": True},
                         thumb=False) is False
     # 完整球场等其余硬条件不受放宽影响
     assert loose.decide({**base, "court_full_visible": False}, thumb=False) is False
@@ -200,7 +202,7 @@ def test_strict_camera_remains_default_for_existing_domains():
     from lib.domains import BADMINTON
     strict = build_court_match_policy("badminton", "羽毛球", "羽毛球场", "b-strict")
     assert strict.decide({**BADMINTON_BASE, "cam_side": True}, thumb=False) is False
-    assert strict.decide({**BADMINTON_BASE, "cam_backcourt_high_wide": False},
-                         thumb=False) is False
+    assert strict.decide({**BADMINTON_BASE, "cam_backcourt_high_wide": False,
+                          "cam_faces_net": False}, thumb=False) is False
     assert BADMINTON.audit_policy.decide({**BADMINTON_BASE, "cam_side": True},
                                          thumb=False) is False

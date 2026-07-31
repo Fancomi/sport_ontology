@@ -11,7 +11,7 @@ def test_policy_identity_is_stable():
     assert identity == {
         "domain": "tennis",
         "schema_version": "court-match-v1",
-        "policy_version": "court-match-tennis-v2-loosecam",
+        "policy_version": "court-match-tennis-v3-humanlabeled",
     }
 
 
@@ -24,7 +24,7 @@ def test_audit_record_contains_result_and_provenance():
         "settled": True,
         "domain": "tennis",
         "schema_version": "court-match-v1",
-        "policy_version": "court-match-tennis-v2-loosecam",
+        "policy_version": "court-match-tennis-v3-humanlabeled",
     }
 
 

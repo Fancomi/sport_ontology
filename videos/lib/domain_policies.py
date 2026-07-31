@@ -11,6 +11,10 @@ from typing import Callable, Mapping
 COURT_MATCH_BOOLEAN_FIELDS = frozenset({
     "has_person", "is_real_match_play", "court_full_visible", "single_court",
     "net_visible", "ground_lines_clear", "cam_backcourt_high_wide",
+    # 「相机是否正对球网」—— 人工提出的更直接表述。cam_side 是双重否定 (要求模型判
+    # 「不是侧面」), 实测在斜镜头上判不准 (错杀里 71% 卡在机位); 正向问「是否正对球网」
+    # 更贴近人的判断方式, 与 cam_backcourt_high_wide 互为补充。
+    "cam_faces_net",
     "cam_low_or_upward", "cam_side", "cam_close", "cam_person_closeup",
     "is_talking", "is_spectator_or_ceremony", "is_slide_or_anim",
     "heavily_occluded",
@@ -49,17 +53,24 @@ class AuditPolicy:
 
 
 def build_court_match_policy(sport_code: str, sport_name_cn: str, court_name_cn: str,
-                              policy_version: str, *, loose_camera: bool = False) -> AuditPolicy:
+                              policy_version: str, *, loose_camera: bool = False,
+                              drop_soft_fields: bool = False) -> AuditPolicy:
     """构造「固定机位真人场地比赛」审核策略 (网球/羽毛球等共用同一套字段与门控形状)。
 
-    loose_camera=False (默认, 羽毛球等既有领域): 机位要求 cam_backcourt_high_wide 为真
-      **且** cam_side 为假, 两条都必须满足。
-    loose_camera=True (网球): 两者二选一即可 —— 实测 53 条人工认可的整段中值帧里,
-      cam_side 被误报 16 次 (模型把端线后方俯瞰的纵向广角当成侧面拍), 而
-      cam_backcourt_high_wide 漏报 14 次; 两者是同一件事的正反面, 模型在 480p 中值帧
-      上常只判对一边。要求「俯瞰为真 或 侧面为假」既保住核心判据 (仍必须是完整球场),
-      又救回被单边误判错杀的素材 (全 AND 通过 47% -> 二选一 55%, 人工认为这批基本全合格)。
-      默认关闭是为了不动羽毛球既有口径 —— 它已按严格门控产出过 196 万切片。
+    loose_camera=False (默认): 机位要求 cam_backcourt_high_wide 为真 **且** cam_side
+      为假, 两条都必须满足。loose_camera=True 时改为二选一。
+      网球实测 (107 条长视频人工标注 keep 91 / reject 16): 严格 87% / 二选一 88% 召回,
+      精度都是 100% —— 差 1 个点, 但严格口径能挡住人工点名的九条斜镜头, 故网球也用严格。
+
+    drop_soft_fields=True (网球, 人工标注后确定): 把 is_real_match_play /
+      is_spectator_or_ceremony / single_court 三个字段移出门控 (仍要求模型输出, 只是
+      不参与判定)。它们是错杀主因且判的都不是「素材能否使用」:
+        is_spectator_or_ceremony 错杀 29/59 —— 完整录像里换发球/局间常切观众席,
+          medoid 落在观众席不代表整片不可用; 观众席是切片级问题, 交给阶段三逐切片审;
+        single_court 错杀 18/59 —— 多球场场馆远景不影响素材可用性;
+        is_real_match_play 错杀 21/59 —— 人工明确要求删除该槽位。
+      去掉后召回 36% -> 87%, 精度仍 100%。默认关闭: 羽毛球已按 17 字段严格门控产出
+      196 万切片, 口径不能被网球的调整带走。
     """
 
     enum_fields = {
@@ -67,29 +78,27 @@ def build_court_match_policy(sport_code: str, sport_name_cn: str, court_name_cn:
         "scene_type": COURT_MATCH_SCENE_ENUM,
     }
     required = frozenset(COURT_MATCH_BOOLEAN_FIELDS | set(enum_fields))
+    # 门控里「必须为真」/「必须为假」的字段; drop_soft_fields 时剔掉那三个软字段。
+    must_true = ("has_person", "court_full_visible", "net_visible", "ground_lines_clear")
+    must_false = ("cam_low_or_upward", "cam_close", "cam_person_closeup",
+                  "is_talking", "is_slide_or_anim", "heavily_occluded")
+    if not drop_soft_fields:
+        must_true += ("is_real_match_play", "single_court")
+        must_false += ("is_spectator_or_ceremony",)
 
     def strict_gate(attrs):
-        # 机位判据: loose_camera 时「俯瞰为真 或 侧面为假」二选一, 否则两条都必须满足。
-        # 理由见 build_court_match_policy 的 docstring (模型在单帧上常只判对一边)。
-        camera_ok = ((attrs["cam_backcourt_high_wide"] or not attrs["cam_side"])
-                     if loose_camera
-                     else (attrs["cam_backcourt_high_wide"] and not attrs["cam_side"]))
+        # 机位: 「端线后方俯瞰」与「正对球网」是同一件事的两种问法, 任一为真即认可
+        # (模型对单一表述常判不准), 但一旦判成侧面/斜侧就必须拒 —— 人工点名的九条
+        # 斜镜头正是靠 cam_side 挡住的。
+        faces = attrs["cam_backcourt_high_wide"] or attrs.get("cam_faces_net", False)
+        camera_ok = (faces or not attrs["cam_side"]) if loose_camera \
+            else (faces and not attrs["cam_side"])
         return (
             attrs["sport_type"] == sport_code
             and attrs["scene_type"] == "real_person"
-            and attrs["has_person"]
-            and attrs["is_real_match_play"]
-            and attrs["court_full_visible"]
-            and attrs["single_court"]
-            and attrs["net_visible"]
-            and attrs["ground_lines_clear"]
             and camera_ok
-            and not any(attrs[key] for key in (
-                "cam_low_or_upward", "cam_close", "cam_person_closeup",
-                "is_talking", "is_spectator_or_ceremony", "is_slide_or_anim",
-                "heavily_occluded")))
-
-
+            and all(attrs[k] for k in must_true)
+            and not any(attrs[k] for k in must_false))
 
     def thumb_gate(attrs):
         return (attrs["scene_type"] == "real_person"
@@ -111,6 +120,8 @@ def build_court_match_policy(sport_code: str, sport_name_cn: str, court_name_cn:
 
 【机位】
 - cam_backcourt_high_wide: 是否为球场端线正后方、高位、广角、稳定主机位;
+- cam_faces_net: 相机是否正对球网 (镜头朝向与球场纵轴大致一致, 球网横向铺在画面中,
+  两侧边线对称收拢; 这是标准转播/录制视角。若镜头明显从斜角或边线一侧看过去则为 false);
 - cam_low_or_upward: 是否平视、低机位或仰视;
 - cam_side: 是否侧面或斜侧面;
 - cam_close: 是否近景;

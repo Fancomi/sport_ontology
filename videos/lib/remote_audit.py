@@ -31,10 +31,11 @@ import cv2
 from llm_client import call_vlm_raw, frames_to_img_bytes
 from representative_frame import representative_frame_from_video
 from lib import config
+from lib import aspect_filter
 from lib import duration_filter
 from lib.vlm_prompts import (
     judge_frame_detailed, REASON_OK, REASON_DURATION_REJECTED,
-    REASON_FRAME_DECODE_FAILED, TRANSIENT_REASONS,
+    REASON_FRAME_DECODE_FAILED, REASON_ASPECT_REJECTED, TRANSIENT_REASONS,
 )
 
 SSH_OPTS = config.SSH_OPTS   # 复用 config 统一定义 (2_3/3_1/remote_audit 一致)
@@ -142,6 +143,12 @@ class RemoteAudit:
             return AuditDecision(False, REASON_DURATION_REJECTED, "too_long")
         if duration_filter.is_too_short(path):
             return AuditDecision(False, REASON_DURATION_REJECTED, "too_short")
+        # 比例预闸: 只保留 16:9 (人工要求)。放在抽帧/VLM 之前, 省算力;
+        # 读不出宽高时 aspect_filter 返回 False (不拒), 交给抽帧失败那条 transient 路径。
+        if aspect_filter.is_wrong_aspect(path):
+            size = aspect_filter.frame_size(path)
+            return AuditDecision(False, REASON_ASPECT_REJECTED,
+                                 "not_16_9:%sx%s" % (size or ("?", "?")))
         frame, _idx, _n = representative_frame_from_video(path, fps=1.0, max_side=480)
         if frame is None:
             return AuditDecision(False, REASON_FRAME_DECODE_FAILED, "no representative frame")

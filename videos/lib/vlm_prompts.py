@@ -69,6 +69,7 @@ REASON_DURATION_REJECTED = "duration_rejected"        # 时长预闸判否 (超�
 REASON_FRAME_DECODE_FAILED = "frame_decode_failed"    # 抽帧/编码失败 (无法产出送审图像)
 REASON_ENDPOINT_ERROR = "endpoint_error"              # VLM 端点请求异常 (超时/连接失败/HTTP错误)
 REASON_THUMB_MISSING = "thumb_missing"                # 缩略图文件不在盘上 (从未下载/被清理)
+REASON_ASPECT_REJECTED = "aspect_rejected"            # 画面比例不合格 (非 16:9), 确定性拒绝
 
 # 传输/基础设施层失败 (非内容性拒绝): 调用方应避免据此做不可逆的远端删除。
 #

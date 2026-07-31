@@ -142,7 +142,7 @@ def test_tennis_domain_wires_gepa_thumb_policy():
     t = domains.load_domain("tennis")
     assert t.thumb_audit_policy is not None
     assert t.thumb_audit_policy.policy_version.startswith("thumb-content-tennis-v5")
-    assert t.audit_policy.policy_version == "court-match-tennis-v2-loosecam"
+    assert t.audit_policy.policy_version == "court-match-tennis-v3-humanlabeled"
     # 缩略图策略必须包含那几个缩略图特有的噪声字段
     for f in ("is_highlight_reel", "is_video_game", "is_wheelchair_tennis",
               "cam_backcourt_high_wide", "court_full_visible"):
@@ -268,5 +268,6 @@ def test_tennis_stage1_is_content_only():
         "is_wheelchair_tennis": False, "heavily_occluded": False,
     }
     assert t.thumb_audit_policy.decide(attrs, thumb=True) is True
-    # 阶段二仍然严格判构图 (放开只针对阶段一)
-    assert t.audit_policy.policy_version.endswith("loosecam")
+    # 阶段二仍然严格判构图 (放开只针对阶段一): 同一组属性在阶段二必须被拒
+    assert t.audit_policy.decide({**attrs, "single_court": True,
+                                  "cam_low_or_upward": False}, thumb=False) is False

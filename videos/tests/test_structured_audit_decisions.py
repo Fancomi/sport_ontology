@@ -15,6 +15,7 @@ VALID = {
     "sport_type": "tennis", "has_person": True, "is_real_match_play": True,
     "scene_type": "real_person", "court_full_visible": True, "single_court": True,
     "net_visible": True, "ground_lines_clear": True, "cam_backcourt_high_wide": True,
+    "cam_faces_net": True,
     "cam_low_or_upward": False, "cam_side": False, "cam_close": False,
     "cam_person_closeup": False, "is_talking": False,
     "is_spectator_or_ceremony": False, "is_slide_or_anim": False,
