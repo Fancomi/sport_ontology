@@ -77,8 +77,8 @@ def _resize(frame, max_side):
     return frame if scale >= 1.0 else cv2.resize(frame, (int(w * scale), int(h * scale)))
 
 
-def _sample_frames_evenly(video_path, fps=1.0, max_side=480, max_frames=32):
-    """在**全时长**上均匀取至多 max_frames 帧 (已按 max_side 缩放), 返回帧列表。
+def _sample_frames_cv2(video_path, fps=1.0, max_side=480, max_frames=32):
+    """cv2 路径: 在**全时长**上均匀取至多 max_frames 帧 (已按 max_side 缩放)。
 
     为什么是「均匀铺满全长」而不是「按 fps 逐帧走」:
     原实现取帧位置为 `i * (src_fps / fps)`, 即真的按 fps 从头连续取, 配合
@@ -118,6 +118,70 @@ def _sample_frames_evenly(video_path, fps=1.0, max_side=480, max_frames=32):
         if null is not None:
             os.close(null)
     return frames
+
+
+def _sample_frames_pyav(video_path, fps=1.0, max_side=480, max_frames=32):
+    """PyAV 路径 (AV1 等 cv2 解不了的编码): 顺序解码 + 按时间戳取样。
+
+    为什么需要它: opencv-python 自带的 FFmpeg 构建缺 AV1 软解, 遇到 libdav1d 流时
+    容器信息读得出 (帧数/fps/宽高都对) 但一帧也解不出。实测 20 个远端样本
+    cv2 成功 0/20、PyAV 成功 20/20。这批文件在阶段二会永远返回 frame_decode_failed
+    (transient), 配合 --recheck 形成无限重试。
+
+    这里刻意用「顺序解码 + 命中目标时间点就留」而不是 seek: AV1 的 seek 代价高且
+    对某些流不可靠, 而阶段二本来就要读全片, 顺序解一遍反而稳。
+    """
+    import av    # 局部导入: 只有 cv2 失败时才需要, 避免给所有调用方引入硬依赖
+
+    frames = []
+    with av.open(str(video_path)) as container:
+        if not container.streams.video:
+            return []
+        stream = container.streams.video[0]
+        stream.thread_type = "AUTO"          # 多线程解码, AV1 软解很吃 CPU
+        dur = float(container.duration / 1_000_000) if container.duration else 0.0
+        if dur <= 0 and stream.duration and stream.time_base:
+            dur = float(stream.duration * stream.time_base)
+        n = min(max_frames, max(1, int(round(dur * fps)))) if dur > 0 else max_frames
+        # 目标时间点 (秒): 与 cv2 路径同口径, 等距铺满全长
+        targets = [i * dur / n for i in range(n)] if dur > 0 else None
+        nxt = 0
+        for frame in container.decode(video=0):
+            if targets is None:
+                frames.append(_resize(frame.to_ndarray(format="bgr24"), max_side))
+                if len(frames) >= max_frames:
+                    break
+                continue
+            if nxt >= len(targets):
+                break
+            ts = float(frame.pts * stream.time_base) if frame.pts is not None else None
+            if ts is None or ts >= targets[nxt]:
+                frames.append(_resize(frame.to_ndarray(format="bgr24"), max_side))
+                nxt += 1
+                # 跳过已被这一帧覆盖的后续目标点 (低帧率视频可能一帧跨多个目标)
+                while nxt < len(targets) and ts is not None and ts >= targets[nxt]:
+                    nxt += 1
+    return frames
+
+
+def _sample_frames_evenly(video_path, fps=1.0, max_side=480, max_frames=32):
+    """全时长均匀采样, cv2 优先、PyAV 兜底 (见两个 _sample_frames_* 的说明)。
+
+    两个解码器都拿不到帧时返回空列表 —— 调用方据此归 transient (frame_decode_failed),
+    绝不能当成「内容不合格」去做不可逆删除。
+    """
+    frames = _sample_frames_cv2(video_path, fps=fps, max_side=max_side,
+                                max_frames=max_frames)
+    if frames:
+        return frames
+    try:
+        return _sample_frames_pyav(video_path, fps=fps, max_side=max_side,
+                                   max_frames=max_frames)
+    except Exception:
+        # PyAV 也失败 (真损坏/不支持): 交给调用方按 transient 处理, 不让单条坏文件
+        # 把整批审核炸掉。
+        return []
+
 
 
 def representative_frame_from_video(video_path, fps=1.0, max_side=480,

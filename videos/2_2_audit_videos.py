@@ -57,6 +57,51 @@ def _append(path: Path, names):
             f.writelines(n + "\n" for n in names)
 
 
+# transient 失败重试上限。实测事故 (2026-08-01): 1,477 个 AV1 文件 cv2 解不出帧,
+# 正确地归为 transient「留待重试」, 但 --recheck 每 10 分钟重新枚举一次, 这批永远
+# 失败、永远重新入队 —— 17 小时 / 624 轮里写了 815,494 行 frame_decode_failed 记录
+# (每条平均重试 550 次), 算力几乎全在空转。
+# 达到上限只是「本进程内暂不再排队」, **绝不升级为删除或拉黑**: 它们仍是未决状态,
+# 修好解码器/网络后删掉记录文件即可让它们重新排队。
+MAX_TRANSIENT_RETRIES = 8
+
+
+def transient_failure_counts(records_path: Path) -> dict:
+    """从溯源记录统计每个条目的 transient 失败次数 {item: n}。
+
+    只数 settled=False 的记录 —— 确定性结论 (通过/内容性拒绝) 不该计入重试次数。
+    """
+    counts = {}
+    if not records_path or not Path(records_path).exists():
+        return counts
+    with open(records_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if rec.get("settled"):
+                continue
+            item = rec.get("item")
+            if item:
+                counts[item] = counts.get(item, 0) + 1
+    return counts
+
+
+def apply_retry_cap(todo, counts: dict, cap: int = MAX_TRANSIENT_RETRIES):
+    """把 todo 分成 (仍要审的, 已达重试上限暂缓的)。纯函数, 不碰远端/黑名单。"""
+    kept, deferred = [], []
+    for name in todo:
+        if counts.get(name, 0) >= cap:
+            deferred.append(name)
+        else:
+            kept.append(name)
+    return kept, deferred
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -95,9 +140,14 @@ def main():
         remote_not_blacklisted = [n for n in remote if n[:-4] not in blacklist]
         resolved = resolve_todo(remote_not_blacklisted, checkpoint, config.DOMAIN)
         todo = resolved["todo"]
+        # 重试上限: 挡住「永远解不出帧」的文件把 --recheck 循环变成死循环 (见
+        # MAX_TRANSIENT_RETRIES 的注释)。deferred 既不删也不拉黑, 只是本轮不排队。
+        todo, deferred = apply_retry_cap(todo, transient_failure_counts(AUDIT_RECORDS))
         print(f"[轮 {round_no}] 远端 {len(remote)} | 当前策略已完成 {len(resolved['current'])} | "
               f"旧策略/未记录身份需重审 {len(resolved['stale'])} | 黑名单 {len(blacklist)} | "
-              f"待审 {len(todo)}", flush=True)
+              f"待审 {len(todo)}"
+              + (f" | 达重试上限暂缓 {len(deferred)}" if deferred else ""), flush=True)
+
         if not todo:
             if not args.recheck:
                 break

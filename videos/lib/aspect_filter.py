@@ -23,7 +23,7 @@ ASPECT_TOLERANCE = 0.03    # |w/h - 16/9| <= 0.03 视为 16:9 (覆盖 1.75~1.81)
 _CV2_LOCK = threading.Lock()   # cv2.VideoCapture 非线程安全, 与 duration_filter 同
 
 
-def frame_size(video_path) -> tuple | None:
+def _frame_size_cv2(video_path) -> tuple | None:
     """cv2 读 (宽, 高); 读不出返回 None。抑制 cv2 stderr。"""
     with _CV2_LOCK:
         null = os.open(os.devnull, os.O_WRONLY)
@@ -45,6 +45,30 @@ def frame_size(video_path) -> tuple | None:
     if w <= 0 or h <= 0:
         return None
     return w, h
+
+
+def _frame_size_pyav(video_path) -> tuple | None:
+    """PyAV 读 (宽, 高)。AV1 (libdav1d) 流 cv2 读不出, 需要它兜底 —— 否则这批会被
+    当成「读不出」而整体放过比例检查 (见 representative_frame._sample_frames_pyav)。"""
+    import av
+    with av.open(str(video_path)) as container:
+        if not container.streams.video:
+            return None
+        cc = container.streams.video[0].codec_context
+        if not cc.width or not cc.height:
+            return None
+        return cc.width, cc.height
+
+
+def frame_size(video_path) -> tuple | None:
+    """读 (宽, 高): cv2 优先, PyAV 兜底; 都读不出返回 None。"""
+    size = _frame_size_cv2(video_path)
+    if size:
+        return size
+    try:
+        return _frame_size_pyav(video_path)
+    except Exception:
+        return None
 
 
 def is_target_aspect(size, tolerance: float = ASPECT_TOLERANCE) -> bool:
