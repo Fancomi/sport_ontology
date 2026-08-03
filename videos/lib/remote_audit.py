@@ -33,9 +33,11 @@ from representative_frame import representative_frame_from_video
 from lib import config
 from lib import aspect_filter
 from lib import duration_filter
+from lib import fps_filter
 from lib.vlm_prompts import (
     judge_frame_detailed, REASON_OK, REASON_DURATION_REJECTED,
-    REASON_FRAME_DECODE_FAILED, REASON_ASPECT_REJECTED, TRANSIENT_REASONS,
+    REASON_FRAME_DECODE_FAILED, REASON_ASPECT_REJECTED, REASON_FPS_REJECTED,
+    TRANSIENT_REASONS,
 )
 
 SSH_OPTS = config.SSH_OPTS   # 复用 config 统一定义 (2_3/3_1/remote_audit 一致)
@@ -149,6 +151,10 @@ class RemoteAudit:
             size = aspect_filter.frame_size(path)
             return AuditDecision(False, REASON_ASPECT_REJECTED,
                                  "not_16_9:%sx%s" % (size or ("?", "?")))
+        # 帧率预闸: 删除 24fps 以下 (人工要求)。同为纯计算预闸, 读不出时不拒。
+        if fps_filter.is_low_fps(path):
+            return AuditDecision(False, REASON_FPS_REJECTED,
+                                 "low_fps:%s" % fps_filter.frame_rate(path))
         frame, _idx, _n = representative_frame_from_video(path, fps=1.0, max_side=480)
         if frame is None:
             return AuditDecision(False, REASON_FRAME_DECODE_FAILED, "no representative frame")
