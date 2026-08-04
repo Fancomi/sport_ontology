@@ -25,8 +25,12 @@ echo "视频源: ${REMOTE_HOST}:${REMOTE_VIDEOS}"
 echo "输出:   ${REMOTE_HOST}:${REMOTE_VIDEOS}_split"
 echo ""
 
+# 注意: 不要在这里传 --scene-threshold。模块默认 0.05 是羽毛球人工标注 95 例后调出来的
+# (0.3 漏切混合场景), 而本脚本此前固定传 0.3, 把那次调优整体覆盖掉了。需要试不同阈值时
+# 用 tools/cut_threshold_lab.py, 或临时在命令行显式追加。
+# --poll: 常驻模式, 扫空后等待再重扫 (吃阶段二审核放行/新同步上来的视频)。
 python3 3_1_scene_split.py \
     --batch-size 200 \
     --workers-pull 16 \
     --workers-split 32 \
-    --scene-threshold 0.3
+    --poll "${SPLIT_POLL:-600}"
