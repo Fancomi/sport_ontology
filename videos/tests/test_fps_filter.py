@@ -1,4 +1,7 @@
-"""lib/fps_filter 回归测试 —— 删除 24fps 以下的视频 (人工要求 2026-08-03)。
+"""lib/fps_filter 回归测试 —— 删除 15fps 及以下的视频 (人工口径 2026-08-04)。
+
+口径演进: 先按「24fps 以下删除」实现, 人工复核后确认 23.976 (NTSC 电影帧率) 属于
+可用素材, 改为「小于等于 15 全删」, 即保留 fps > 15。边界是**排他**的 (15.0 本身删)。
 
 实测分布 (远端 300 条随机抽样): 29.97/30 占 80.7%, 25 占 12.7%, 24 占 4.3%,
 15-23.9 占 1.0%; fps < 24 的约 4.3%, 分辨率高度集中在 640x360。
@@ -22,21 +25,29 @@ from lib import fps_filter as ff  # noqa: E402
 
 
 def test_mainstream_frame_rates_accepted():
-    """主流帧率必须全部保留 (抽样里占 94.7%)。"""
+    """主流帧率必须全部保留。"""
     for fps in (24.0, 25.0, 29.97, 30.0, 30.001, 50.0, 59.94, 60.0, 120.0):
         assert ff.is_acceptable_fps(fps) is True, fps
 
 
-def test_below_24_rejected():
-    """低于 24 判否 —— 含 23.976 (NTSC 电影帧率, 严格小于 24)。"""
-    for fps in (23.976, 23.9, 20.256, 15.0, 12.0, 5.0, 1.0):
+def test_cinema_frame_rate_is_kept():
+    """23.976 (NTSC 电影帧率) 人工确认可用, 必须保留 —— 这是本次口径调整的核心。"""
+    assert ff.is_acceptable_fps(23.976) is True
+    assert ff.is_acceptable_fps(23.9) is True
+    assert ff.is_acceptable_fps(20.256) is True
+    assert ff.is_acceptable_fps(16.0) is True
+
+
+def test_15_and_below_rejected():
+    """<= 15 判否 (人工口径: 小于等于 15 全删)。"""
+    for fps in (15.0, 14.999, 12.0, 10.0, 5.0, 1.0):
         assert ff.is_acceptable_fps(fps) is False, fps
 
 
-def test_boundary_is_inclusive_at_24():
-    """24 本身保留 (人工口径: 24 不含以下删除, 即 >= 24 留)。"""
-    assert ff.is_acceptable_fps(24.0) is True
-    assert ff.is_acceptable_fps(23.999) is False
+def test_boundary_is_exclusive_at_15():
+    """15.0 本身要删, 略高于 15 的保留。"""
+    assert ff.is_acceptable_fps(15.0) is False
+    assert ff.is_acceptable_fps(15.001) is True
 
 
 def test_unreadable_fps_is_not_a_rejection():
@@ -50,8 +61,13 @@ def test_is_low_fps_returns_false_when_unreadable(monkeypatch):
     assert ff.is_low_fps("/nonexistent.mp4") is False
 
 
-def test_is_low_fps_flags_23_976(monkeypatch):
+def test_is_low_fps_keeps_23_976(monkeypatch):
     monkeypatch.setattr(ff, "frame_rate", lambda p: 23.976)
+    assert ff.is_low_fps("/x.mp4") is False
+
+
+def test_is_low_fps_flags_15(monkeypatch):
+    monkeypatch.setattr(ff, "frame_rate", lambda p: 15.0)
     assert ff.is_low_fps("/x.mp4") is True
 
 
@@ -64,8 +80,8 @@ def test_frame_rate_falls_back_to_pyav(monkeypatch):
     """AV1 (libdav1d) 流 cv2 读不出, 必须用 PyAV 兜底 —— 否则这批会被当成
     「读不出」而整体放过帧率检查。"""
     monkeypatch.setattr(ff, "_fps_cv2", lambda p: None)
-    monkeypatch.setattr(ff, "_fps_pyav", lambda p: 23.976)
-    assert ff.frame_rate("/x.mp4") == 23.976
+    monkeypatch.setattr(ff, "_fps_pyav", lambda p: 12.0)
+    assert ff.frame_rate("/x.mp4") == 12.0
     assert ff.is_low_fps("/x.mp4") is True
 
 

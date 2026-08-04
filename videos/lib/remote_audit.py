@@ -151,7 +151,7 @@ class RemoteAudit:
             size = aspect_filter.frame_size(path)
             return AuditDecision(False, REASON_ASPECT_REJECTED,
                                  "not_16_9:%sx%s" % (size or ("?", "?")))
-        # 帧率预闸: 删除 24fps 以下 (人工要求)。同为纯计算预闸, 读不出时不拒。
+        # 帧率预闸: 删除 <=15fps (人工要求)。同为纯计算预闸, 读不出时不拒。
         if fps_filter.is_low_fps(path):
             return AuditDecision(False, REASON_FPS_REJECTED,
                                  "low_fps:%s" % fps_filter.frame_rate(path))

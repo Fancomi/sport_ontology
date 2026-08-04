@@ -1,6 +1,8 @@
 """帧率审核 (零 VLM 依赖) —— 剔除低帧率素材。
 
-人工要求 (2026-08-03): 删除 24fps 以下 (不含 24) 的视频。
+人工口径 (2026-08-04): **小于等于 15fps 全删**, 即保留 fps > 15。
+先前按「24fps 以下删除」实现过一版, 人工复核后确认 23.976 (NTSC 电影帧率) 属于可用
+素材 —— 低帧率那批的精确值几乎全是 23.976, 按 24 为界会把它们全部误删。
 
 为什么单列一个模块: 与 duration_filter / aspect_filter 同构 —— 帧率是文件的客观属性
 (cv2 或 PyAV 读容器即得), 不需要模型判断, 也不该占 VLM 算力。
@@ -14,16 +16,15 @@
   fps < 24 的约 4.3% (外推 ~920 条), 且分辨率高度集中在 640x360 ——
   低帧率与低分辨率相关, 多为压缩过的转录版本。
 
-关于 23.976: 它是 NTSC 电影帧率 (24000/1001), 习惯上被称作「24fps」。按人工给的
-「24 不含以下」口径, 23.976 < 24 -> 判否。若要保留这批 (占低帧率里的绝大多数),
-把 MIN_FPS 调成 23.9 即可, 不需要改判定逻辑。
+关于 23.976: 它是 NTSC 电影帧率 (24000/1001), 习惯上被称作「24fps」, 人工确认可用。
+现行阈值 15 只挡真正的低帧率素材 (幻灯片式录像、极度压缩的转录版)。
 """
 import os
 import threading
 
 import cv2
 
-MIN_FPS = 24.0        # 保留 fps >= MIN_FPS; 严格小于则判否 (人工口径: 24 不含以下删除)
+MIN_FPS = 15.0        # 保留 fps > MIN_FPS; 小于等于则判否 (人工口径: <=15 全删, 边界排他)
 
 _CV2_LOCK = threading.Lock()   # cv2.VideoCapture 非线程安全, 与 duration/aspect 同
 
@@ -80,14 +81,14 @@ def frame_rate(video_path) -> float | None:
 
 
 def is_acceptable_fps(fps, minimum: float = MIN_FPS) -> bool:
-    """纯函数: 帧率是否合格 (>= minimum)。fps=None (读不出) -> False。"""
+    """纯函数: 帧率是否合格 (> minimum, 边界排他)。fps=None (读不出) -> False。"""
     if fps is None or fps <= 0:
         return False
-    return fps >= minimum
+    return fps > minimum
 
 
 def is_low_fps(video_path, minimum: float = MIN_FPS) -> bool:
-    """读文件并判定「帧率不合格」(< minimum)。
+    """读文件并判定「帧率不合格」(<= minimum)。
 
     读不出帧率 -> False (不误删), 与 duration_filter / aspect_filter 的保守口径一致:
     读不出是数据完整性问题, 该由抽帧失败那条 transient 路径重试, 不能在这里被判成
