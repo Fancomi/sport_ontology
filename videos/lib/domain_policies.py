@@ -17,6 +17,11 @@ COURT_MATCH_BOOLEAN_FIELDS = frozenset({
     "cam_faces_net",
     "cam_low_or_upward", "cam_side", "cam_close", "cam_person_closeup",
     "is_talking", "is_spectator_or_ceremony", "is_slide_or_anim",
+    # 录屏/转录: 画面本身是电脑或手机屏幕 (浏览器窗口、播放器控件、页面边框、多窗口
+    # 并列)。人工点名的 1vs0RIWc2Ps_502 把 15 个字段全判对了 —— 因为窗口**里面**的
+    # 比赛画面确实满足所有条件, 只有 caption 点出了「两个浏览器窗口的电脑屏幕截图」。
+    # 没有这个字段就无法表达「不是直接拍摄」这件事。
+    "is_screen_recording",
     "heavily_occluded",
 })
 COURT_MATCH_SCENE_ENUM = frozenset({"real_person", "text_slide", "animation", "landscape", "other"})
@@ -81,7 +86,8 @@ def build_court_match_policy(sport_code: str, sport_name_cn: str, court_name_cn:
     # 门控里「必须为真」/「必须为假」的字段; drop_soft_fields 时剔掉那三个软字段。
     must_true = ("has_person", "court_full_visible", "net_visible", "ground_lines_clear")
     must_false = ("cam_low_or_upward", "cam_close", "cam_person_closeup",
-                  "is_talking", "is_slide_or_anim", "heavily_occluded")
+                  "is_talking", "is_slide_or_anim", "is_screen_recording",
+                  "heavily_occluded")
     if not drop_soft_fields:
         must_true += ("is_real_match_play", "single_court")
         must_false += ("is_spectator_or_ceremony",)
@@ -131,6 +137,10 @@ def build_court_match_policy(sport_code: str, sport_name_cn: str, court_name_cn:
 - is_talking: 是否说话/讲解为主体;
 - is_spectator_or_ceremony: 是否观众席、颁奖或仪式;
 - is_slide_or_anim: 是否幻灯片、PPT、动画或合成图;
+- is_screen_recording: 画面是否是「拍/录电脑或手机屏幕」而非直接拍摄现场。判据是画面里
+  出现了屏幕本身的元素: 浏览器窗口与地址栏、网页边框、视频播放器控件与进度条、多个窗口
+  并列、桌面任务栏、鼠标指针。注意: 若整幅画面就是干净的比赛画面 (哪怕带台标、比分条或
+  数据叠层), 那是正常转播画面, 此项应为 false;
 - heavily_occluded: 是否被文字或遮挡物大面积遮挡。
 
 必须包含字段：{sorted(required)}，并可选输出 match_format、court_surface、indoor_outdoor、racket_visible、caption。布尔字段必须输出 true 或 false。"""

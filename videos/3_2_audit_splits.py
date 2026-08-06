@@ -29,6 +29,7 @@ from lib.vlm_prompts import USE_V2
 from lib.remote_audit import EndpointRouter, RemoteAudit, SSH_OPTS
 from lib.policy_records import audit_record, append_json_record
 from lib.checkpoint import load_checkpoint, resolve_todo, current_identity
+from lib.retry_cap import MAX_TRANSIENT_RETRIES, apply_retry_cap, transient_failure_counts
 
 # ═══════════════════════════ 配置 ═══════════════════════════
 
@@ -132,7 +133,16 @@ def run(args):
             if name not in logged_stale:
                 logged_stale.add(name)
                 print(f"[legacy] {name} 的最近判定身份非当前策略, 重新纳入待审", flush=True)
-        return list(dict.fromkeys(batch + resolved["stale"]))[:args.batch_size]
+        merged = list(dict.fromkeys(batch + resolved["stale"]))
+        # 重试上限: 挡住「永远失败」的切片把 --poll 循环变成死循环。实测事故:
+        # 5,029 个批次里 3,722 个 (74%) 是同一批 55 个切片的 `pass=0 reject=55`,
+        # 反复审了三千多次。达上限只是暂不排队, 不删不拉黑 (仍是未决状态)。
+        kept, deferred = apply_retry_cap(merged, transient_failure_counts(AUDIT_RECORDS))
+        if deferred and not getattr(next_files, "_warned", False):
+            next_files._warned = True
+            print(f"[info] {len(deferred)} 个切片已达 transient 重试上限, 暂缓 (未删未拉黑)",
+                  flush=True)
+        return kept[:args.batch_size]
 
     def on_results(res: dict):
         # res: dict{name: AuditDecision} (finding 5 结构化决策)

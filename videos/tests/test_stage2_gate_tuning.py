@@ -42,7 +42,7 @@ BASE = {
     "cam_backcourt_high_wide": True, "cam_faces_net": True, "cam_low_or_upward": False,
     "cam_side": False, "cam_close": False, "cam_person_closeup": False,
     "is_talking": False, "is_spectator_or_ceremony": False,
-    "is_slide_or_anim": False, "heavily_occluded": False,
+    "is_slide_or_anim": False, "is_screen_recording": False, "heavily_occluded": False,
 }
 
 
@@ -164,3 +164,37 @@ def test_missing_cam_faces_net_falls_back_gracefully():
     assert p.decide(old, thumb=False) is False   # validate_attrs 因缺字段保守拒
     # 但 gate 本身不能崩
     assert p.strict_gate({**old, "cam_backcourt_high_wide": True}) is True
+
+
+# ── is_screen_recording: 录屏/转录画面 (人工点名 1vs0RIWc2Ps_502) ──
+
+def test_screen_recording_is_rejected():
+    """录屏画面必须拒。
+
+    背景: 人工点名的 1vs0RIWc2Ps_502 把 15 个字段全判对了 —— sport_type=tennis、
+    完整球场、球网可见、机位正确, 因为浏览器窗口**里面**的比赛画面确实满足所有条件。
+    只有 caption 点出「两个浏览器窗口的电脑屏幕截图」。没有专门字段就表达不了
+    「这不是直接拍摄」。
+    """
+    p = _tennis()
+    assert p.decide({**BASE, "is_screen_recording": True}, thumb=False) is False
+    # 羽毛球等既有领域同样纳入 (该字段是内容性质判定, 与领域无关)
+    b = _badminton()
+    assert b.decide({**BASE, "sport_type": "badminton",
+                     "is_screen_recording": True}, thumb=False) is False
+
+
+def test_normal_broadcast_overlay_still_passes():
+    """带台标/比分条/数据叠层的正常转播画面不是录屏, 必须仍通过 —— 否则会误杀
+    大量正常素材 (预览抽样里 283 个 KEEP 有 4 条 caption 提到叠层, 只 1 条是真录屏)。"""
+    p = _tennis()
+    assert p.decide({**BASE, "is_screen_recording": False}, thumb=False) is True
+
+
+def test_screen_recording_declared_in_prompt_and_fields():
+    p = _tennis()
+    assert "is_screen_recording" in p.required_fields
+    assert "is_screen_recording" in p.boolean_fields
+    assert "is_screen_recording" in p.prompt_template
+    missing = sorted(f for f in p.required_fields if f not in p.prompt_template)
+    assert missing == [], missing

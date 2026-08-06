@@ -180,7 +180,7 @@ _CAPTION_PROMPT = """\
 #     三者是错杀主因 (合计 68/59 次否决), 判的都不是「素材能否使用」。
 # 实测: 召回 36% -> 87%, 精度维持 100%。详见 tests/test_stage2_gate_tuning.py。
 _AUDIT_POLICY = build_court_match_policy("tennis", "网球", "网球场",
-                                        "court-match-tennis-v3-humanlabeled",
+                                        "court-match-tennis-v4-screenrec",
                                         drop_soft_fields=True)
 # 阶段一缩略图另用一份策略 (GEPA 优化产出): 判「完整球场 + 端线后方俯瞰机位 + 真人比赛」,
 # 并含 is_highlight_reel/is_video_game/is_wheelchair_tennis 等缩略图特有噪声字段。

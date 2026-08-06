@@ -23,7 +23,7 @@ BASE = {
     "cam_person_closeup": False,
     "is_talking": False,
     "is_spectator_or_ceremony": False,
-    "is_slide_or_anim": False,
+    "is_slide_or_anim": False, "is_screen_recording": False,
     "heavily_occluded": False,
 }
 

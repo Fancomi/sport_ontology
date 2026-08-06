@@ -100,3 +100,24 @@ def test_no_records_file_means_no_cap(tmp_path):
     counts = m.transient_failure_counts(tmp_path / "missing.jsonl")
     kept, deferred = m.apply_retry_cap(["a.mp4", "b.mp4"], counts)
     assert kept == ["a.mp4", "b.mp4"] and deferred == []
+
+
+# ── 阶段三也必须有重试上限 (2026-08-06 事故) ──
+
+def test_split_audit_applies_retry_cap():
+    """3_2_audit_splits 的 next_files 必须过 apply_retry_cap。
+
+    实测事故: 5,029 个批次里 3,722 个 (74%) 是同一批 55 个切片的 pass=0 reject=55,
+    反复审了三千多次, 日志「累计 54 万」全是重复计数。阶段二加过上限, 阶段三漏了。
+    """
+    src = (VIDEOS / "3_2_audit_splits.py").read_text(encoding="utf-8")
+    assert "apply_retry_cap" in src
+    assert "transient_failure_counts" in src
+
+
+def test_both_stages_share_one_retry_cap_module():
+    """两个阶段必须共用 lib/retry_cap, 不各写一份 (防止阈值/语义漂移)。"""
+    for f in ("2_2_audit_videos.py", "3_2_audit_splits.py"):
+        src = (VIDEOS / f).read_text(encoding="utf-8")
+        assert "from lib.retry_cap import" in src, f
+        assert "def apply_retry_cap" not in src, f"{f} 自己又定义了一份"

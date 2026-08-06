@@ -15,7 +15,7 @@ def test_tennis_is_registered_and_isolated():
     assert domain.name == "tennis"
     assert domain.local_data_dir.endswith("tennis_videos")
     assert domain.remote_videos.endswith("tennis_videos")
-    assert domain.audit_policy.policy_version == "court-match-tennis-v3-humanlabeled"
+    assert domain.audit_policy.policy_version == "court-match-tennis-v4-screenrec"
 
 
 def test_tennis_collection_config_has_high_recall_inputs():

@@ -12,7 +12,7 @@ from lib.domains import load_domain
 TENNIS = load_domain("tennis")
 TENNIS_IDENTITY = {
     "domain": "tennis", "schema_version": "court-match-v1",
-    "policy_version": "court-match-tennis-v3-humanlabeled",
+    "policy_version": "court-match-tennis-v4-screenrec",
 }
 
 
@@ -27,15 +27,15 @@ def test_load_latest_identities_reads_last_record_per_item(tmp_path):
         '{"item":"a.mp4","passed":true,"reason":"","domain":"tennis",'
         '"schema_version":"court-match-v1","policy_version":"court-match-tennis-vOLD"}\n'
         '{"item":"a.mp4","passed":true,"reason":"","domain":"tennis",'
-        '"schema_version":"court-match-v1","policy_version":"court-match-tennis-v3-humanlabeled"}\n'
+        '"schema_version":"court-match-v1","policy_version":"court-match-tennis-v4-screenrec"}\n'
         '{"item":"b.mp4","passed":false,"reason":"","domain":"tennis",'
-        '"schema_version":"court-match-v1","policy_version":"court-match-tennis-v3-humanlabeled"}\n',
+        '"schema_version":"court-match-v1","policy_version":"court-match-tennis-v4-screenrec"}\n',
         encoding="utf-8",
     )
     identities = load_latest_identities(records)
     # a.mp4 出现两次, 必须取最后一条 (新策略), 不是第一条 (旧策略)
-    assert identities["a.mp4"]["policy_version"] == "court-match-tennis-v3-humanlabeled"
-    assert identities["b.mp4"]["policy_version"] == "court-match-tennis-v3-humanlabeled"
+    assert identities["a.mp4"]["policy_version"] == "court-match-tennis-v4-screenrec"
+    assert identities["b.mp4"]["policy_version"] == "court-match-tennis-v4-screenrec"
 
 
 def test_load_latest_identities_ignores_malformed_lines(tmp_path):
@@ -53,13 +53,13 @@ def test_load_latest_identities_skips_explicit_settled_false_records(tmp_path):
     records = tmp_path / "records.jsonl"
     records.write_text(
         '{"item":"a.mp4","domain":"tennis","schema_version":"court-match-v1",'
-        '"policy_version":"court-match-tennis-v3-humanlabeled","settled":true}\n'
+        '"policy_version":"court-match-tennis-v4-screenrec","settled":true}\n'
         '{"item":"a.mp4","domain":"tennis","schema_version":"court-match-v1",'
-        '"policy_version":"court-match-tennis-v3-humanlabeled","reason":"endpoint_error","settled":false}\n',
+        '"policy_version":"court-match-tennis-v4-screenrec","reason":"endpoint_error","settled":false}\n',
         encoding="utf-8",
     )
     identities = load_latest_identities(records)
-    assert identities["a.mp4"]["policy_version"] == "court-match-tennis-v3-humanlabeled", (
+    assert identities["a.mp4"]["policy_version"] == "court-match-tennis-v4-screenrec", (
         "the settled=True record must still be surfaced; the trailing "
         "settled=False record must be ignored, not overwrite it"
     )
@@ -71,9 +71,9 @@ def test_load_latest_identities_item_with_only_transient_records_has_no_identity
     records = tmp_path / "records.jsonl"
     records.write_text(
         '{"item":"b.mp4","domain":"tennis","schema_version":"court-match-v1",'
-        '"policy_version":"court-match-tennis-v3-humanlabeled","reason":"vlm_parse_failed","settled":false}\n'
+        '"policy_version":"court-match-tennis-v4-screenrec","reason":"vlm_parse_failed","settled":false}\n'
         '{"item":"b.mp4","domain":"tennis","schema_version":"court-match-v1",'
-        '"policy_version":"court-match-tennis-v3-humanlabeled","reason":"endpoint_error","settled":false}\n',
+        '"policy_version":"court-match-tennis-v4-screenrec","reason":"endpoint_error","settled":false}\n',
         encoding="utf-8",
     )
     identities = load_latest_identities(records)
@@ -87,13 +87,13 @@ def test_load_latest_identities_falls_back_to_reason_code_when_settled_field_abs
     records = tmp_path / "records.jsonl"
     records.write_text(
         '{"item":"a.mp4","domain":"tennis","schema_version":"court-match-v1",'
-        '"policy_version":"court-match-tennis-v3-humanlabeled","reason":""}\n'
+        '"policy_version":"court-match-tennis-v4-screenrec","reason":""}\n'
         '{"item":"a.mp4","domain":"tennis","schema_version":"court-match-v1",'
-        '"policy_version":"court-match-tennis-v3-humanlabeled","reason":"endpoint_error"}\n',
+        '"policy_version":"court-match-tennis-v4-screenrec","reason":"endpoint_error"}\n',
         encoding="utf-8",
     )
     identities = load_latest_identities(records)
-    assert identities["a.mp4"]["policy_version"] == "court-match-tennis-v3-humanlabeled", (
+    assert identities["a.mp4"]["policy_version"] == "court-match-tennis-v4-screenrec", (
         "legacy record with reason='' (settled) must still be surfaced despite "
         "the trailing legacy record with reason='endpoint_error' (unsettled)"
     )
@@ -109,7 +109,7 @@ def test_load_checkpoint_merges_progress_names_with_record_identities(tmp_path):
     records = tmp_path / "records.jsonl"
     records.write_text(
         '{"item":"a.mp4","domain":"tennis","schema_version":"court-match-v1",'
-        '"policy_version":"court-match-tennis-v3-humanlabeled"}\n'
+        '"policy_version":"court-match-tennis-v4-screenrec"}\n'
         '{"item":"b.mp4","domain":"tennis","schema_version":"court-match-v1",'
         '"policy_version":"court-match-tennis-v0-old"}\n',
         encoding="utf-8",
@@ -117,7 +117,7 @@ def test_load_checkpoint_merges_progress_names_with_record_identities(tmp_path):
     checkpoint = load_checkpoint(progress, records)
     assert checkpoint == {
         "a.mp4": {"domain": "tennis", "schema_version": "court-match-v1",
-                  "policy_version": "court-match-tennis-v3-humanlabeled"},
+                  "policy_version": "court-match-tennis-v4-screenrec"},
         "b.mp4": {"domain": "tennis", "schema_version": "court-match-v1",
                   "policy_version": "court-match-tennis-v0-old"},
         "c.mp4": None,   # c.mp4 在 progress 里但从未被 records 记录过 (legacy/unversioned)
@@ -145,7 +145,7 @@ def test_is_current_rejects_none_legacy_unversioned():
 
 def test_resolve_todo_reproduction_from_finding_report():
     """finding 3 复现: x.mp4 在旧版 (纯文件名) progress 里, 从未被 policy_records 记录过
-    身份 (记录写入功能是本分支才加的)。按当前生效策略 (court-match-tennis-v3-humanlabeled),
+    身份 (记录写入功能是本分支才加的)。按当前生效策略 (court-match-tennis-v4-screenrec),
     x.mp4 必须落在 todo (需要重新审核), 不能被当成 current 直接跳过。"""
     checkpoint = {"x.mp4": None}
     result = resolve_todo(["x.mp4", "y.mp4"], checkpoint, TENNIS)
