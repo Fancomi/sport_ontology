@@ -40,6 +40,11 @@ SSH_OPTS = config.SSH_OPTS   # 复用 config 统一 ssh 选项 (与 2_3/2_2/3_2 
 
 DATA = config.DATA_ROOT   # 按领域分隔的 data/<domain>/
 PROGRESS_FILE = config.STATE_DIR / "3_scene_split_progress.txt"
+# 切割失败次数台账 (stem -> 次数)。error 视频刻意不记进度以便重试, 但「永远失败」的那批
+# 会在 --poll 循环里被无限重切: 实测同一批 57 个视频反复切了几十轮, 每轮 segs=0
+# errors=57, 纯烧 CPU。达上限后不再入队 (不删不拉黑, 仍是未决 —— 与 lib/retry_cap 同口径)。
+SPLIT_FAIL_FILE = config.STATE_DIR / "3_scene_split_failures.txt"
+MAX_SPLIT_RETRIES = 5
 REPLACE_PROGRESS = config.STATE_DIR / "3_replace_progress.txt"
 SCENE_THRESHOLD = 0.05    # 场景切点阈值 (实测: 0.3 漏切混合场景; 0.05 能切开又不过度碎片化)
 MIN_SEGMENT_SEC = 5.0     # 段长下限: <5s 直接丢弃 (只留够长的完整回合段)
@@ -65,6 +70,38 @@ def save_progress(stems: list[str]):
             f.write(s + "\n")
 
 
+def load_split_failures() -> dict:
+    """读切割失败台账 {stem: 次数}。文件不存在 -> 空 (首跑不拦任何视频)。"""
+    counts: dict = {}
+    if not SPLIT_FAIL_FILE.exists():
+        return counts
+    for line in SPLIT_FAIL_FILE.read_text().splitlines():
+        line = line.strip()
+        if line:
+            counts[line] = counts.get(line, 0) + 1
+    return counts
+
+
+def _bump_split_failures(stems: list[str]):
+    """追加一次失败记录 (每行一个 stem, 出现次数即失败次数)。"""
+    if not stems:
+        return
+    with open(SPLIT_FAIL_FILE, "a") as f:
+        for s in stems:
+            f.write(s + "\n")
+
+
+def exclude_exhausted(stems, counts: dict, cap: int = MAX_SPLIT_RETRIES):
+    """把达到重试上限的 stem 分出来 (纯函数, 不删不拉黑, 只是本轮不排队)。"""
+    kept, deferred = [], []
+    for s in stems:
+        if counts.get(s, 0) >= cap:
+            deferred.append(s)
+        else:
+            kept.append(s)
+    return kept, deferred
+
+
 # ═══════════════════════════ Pull ═══════════════════════════
 
 _remote_file_cache: list[str] | None = None
@@ -83,6 +120,19 @@ def list_remote_videos(done: set[str], batch_size: int, refresh: bool = False) -
                               if f.strip().endswith('.mp4')]
         print(f"[info] 远端共 {len(_remote_file_cache)} 个视频", flush=True)
     pending = [f for f in _remote_file_cache if os.path.splitext(f)[0] not in done]
+    # 重试上限: 挡住「永远切不出段」的视频把 --poll 循环变成死循环 (实测同一批 57 个
+    # 反复切了几十轮, 每轮 segs=0 errors=57)。deferred 不删不拉黑, 只是本轮不排队。
+    counts = load_split_failures()
+    if counts:
+        stems = [os.path.splitext(f)[0] for f in pending]
+        _, dead = exclude_exhausted(stems, counts)
+        if dead:
+            dead_set = set(dead)
+            before = len(pending)
+            pending = [f for f in pending if os.path.splitext(f)[0] not in dead_set]
+            if before != len(pending):
+                print(f"[info] {before - len(pending)} 个视频已达切割重试上限, 暂缓 "
+                      f"(未删未拉黑)", flush=True)
     return pending[:batch_size]
 
 
@@ -648,9 +698,12 @@ def run_pipeline(args):
             # 记录进度: 仅记切割未报错的 (error 视频不记 -> 下轮续跑重试, 避免永久漏切;
             # no_cut/split/too_short 均属正常完成, 照记)。
             ok_stems = [os.path.splitext(r[0])[0] for r in results if not r[2].startswith("error")]
+            err_stems = [os.path.splitext(r[0])[0] for r in results if r[2].startswith("error")]
             if not args.dry_run:
                 save_progress(ok_stems)
                 done.update(ok_stems)
+                if err_stems:
+                    _bump_split_failures(err_stems)
 
             total_done += len(ok_stems)
             elapsed = time.time() - t_start

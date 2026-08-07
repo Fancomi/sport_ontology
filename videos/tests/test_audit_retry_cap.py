@@ -121,3 +121,49 @@ def test_both_stages_share_one_retry_cap_module():
         src = (VIDEOS / f).read_text(encoding="utf-8")
         assert "from lib.retry_cap import" in src, f
         assert "def apply_retry_cap" not in src, f"{f} 自己又定义了一份"
+
+
+# ── 阶段三切割也要有重试上限 (2026-08-07 事故) ──
+
+def _load_split():
+    spec = importlib.util.spec_from_file_location(
+        "scene_split_under_test", str(VIDEOS / "3_1_scene_split.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_split_failure_ledger_counts_occurrences(tmp_path, monkeypatch):
+    """失败台账按行出现次数计数。"""
+    m = _load_split()
+    f = tmp_path / "fail.txt"
+    f.write_text("a\na\nb\na\n", encoding="utf-8")
+    monkeypatch.setattr(m, "SPLIT_FAIL_FILE", f)
+    counts = m.load_split_failures()
+    assert counts == {"a": 3, "b": 1}
+
+
+def test_split_exhausted_videos_are_deferred(tmp_path, monkeypatch):
+    """达上限的视频不再入队 —— 这是止住「同一批 57 个反复切几十轮」的关键。"""
+    m = _load_split()
+    counts = {"stuck": m.MAX_SPLIT_RETRIES, "flaky": 1}
+    kept, deferred = m.exclude_exhausted(["stuck", "flaky", "fresh"], counts)
+    assert kept == ["flaky", "fresh"]
+    assert deferred == ["stuck"]
+
+
+def test_split_deferral_never_deletes(tmp_path):
+    """达上限只是暂缓, 绝不删远端/不拉黑 (未决 != 判否)。"""
+    m = _load_split()
+    import inspect
+    src = inspect.getsource(m.exclude_exhausted)
+    assert "rm " not in src and "blacklist" not in src and "unlink" not in src
+
+
+def test_no_ledger_means_no_deferral(tmp_path, monkeypatch):
+    """首跑 (无台账) 不拦任何视频。"""
+    m = _load_split()
+    monkeypatch.setattr(m, "SPLIT_FAIL_FILE", tmp_path / "missing.txt")
+    assert m.load_split_failures() == {}
+    kept, deferred = m.exclude_exhausted(["a", "b"], {})
+    assert kept == ["a", "b"] and deferred == []

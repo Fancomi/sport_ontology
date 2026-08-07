@@ -106,6 +106,29 @@ class RemoteAudit:
             self._ssh(f"cd '{self.remote_dir}' && rm -f -- " + " ".join(f"'./{f}'" for f in chunk))
 
     # ── 拉取 (线程池 + 指数退避重试, 收口"边删边新增"的瞬时失败) ──
+    def exists_remote(self, names: list[str], timeout=120) -> set:
+        """批量确认哪些文件还在远端 (一次 ssh)。
+
+        为什么必须先探: _pull_one 对不存在的文件也会重试 5 次 (退避 1+2+3+4s),
+        单个耗时约 60s。实测事故 —— 队列头部堆了 25,848 个已被审核删除的切片名
+        (队列只追加, 删除时没摘), 一批 1000 个里 998 个不存在, 24 并发跑完要 41 分钟
+        才捞出 2 个能审的, 审核速率从 8 clips/s 掉到 0.5。
+        """
+        alive = set()
+        for i in range(0, len(names), 2000):
+            chunk = names[i:i + 2000]
+            script = "cd '%s' && ls -1U -- %s 2>/dev/null" % (
+                self.remote_dir, " ".join("'./%s'" % n for n in chunk))
+            try:
+                r = self._ssh(script, timeout=timeout)
+            except Exception:
+                # 探测失败时保守认为都还在 (交给 _pull_one 重试), 不误跳过
+                alive.update(chunk)
+                continue
+            alive.update(os.path.basename(l.strip()) for l in r.stdout.splitlines()
+                         if l.strip().endswith(".mp4"))
+        return alive
+
     def _pull_one(self, name: str, shm: str, retries=5) -> bool:
         cmd = (f"sshpass -e rsync -aW --inplace --timeout=30 "
                f"-e 'ssh {SSH_OPTS}' '{self.remote}:{self.remote_dir}/{name}' '{shm}/{name}'")
@@ -121,9 +144,21 @@ class RemoteAudit:
                 time.sleep(attempt + 1)
         return False
 
-    def pull_batch(self, files: list[str], shm: str, workers=24) -> list[str]:
+    def pull_batch(self, files: list[str], shm: str, workers=24,
+                   probe_missing=True) -> list[str]:
         if not files:
             return []
+        if probe_missing and len(files) > 1:
+            # 先一次 ssh 批量确认存在性, 跳过已删的 —— 否则每个不存在的文件要白等
+            # 5 次 rsync 重试 (约 60s), 见 exists_remote 的注释。
+            alive = self.exists_remote(files)
+            skipped = len(files) - len(alive)
+            files = [f for f in files if f in alive]
+            if skipped:
+                print("[pull] 跳过远端已不存在的 %d 个 (队列陈旧), 实拉 %d"
+                      % (skipped, len(files)), flush=True)
+            if not files:
+                return []
         os.makedirs(shm, exist_ok=True)
         with ThreadPoolExecutor(max_workers=workers) as ex:
             list(ex.map(lambda n: self._pull_one(n, shm), files))
