@@ -12,9 +12,9 @@ not exist 就 `config.append_blacklist(vid)` 永久拉黑。而 yt-dlp 在代理
 另锁定 cookie×代理 的粘性绑定顺序: 实测强号 (含 LOGIN_INFO) 三个代理全可用, 弱号
 在 cmc 代理上必撞 bot 墙, 故强号必须排在 index 0 (绑 cmc)。顺序写反 -> 弱号全灭。
 
-引擎已抽到 lib/yt_download (2_1_download 与 tools/channel_dump 共用), 故绑定顺序的
-断言指向该模块; 失败分类仍经 2_1_download.download_one 走一遍, 确保阶段二的处置
-(拉黑/时长剔除) 与分类结果正确衔接。
+引擎已抽到 lib/yt_download (2_1_download 与 tools/channel_dump 共用): cookie×代理绑定、
+一次性 jar、代理标签脱敏等引擎自身的不变量由 tests/test_yt_download.py 守; 本模块只守
+阶段二特有的处置 —— 分类结果如何转成「拉黑 / 不拉黑」。
 """
 import importlib.util
 import os
@@ -113,34 +113,3 @@ def test_connection_reset_is_not_blacklisted(tmp_path, monkeypatch):
     reason, bl = _classify(m, monkeypatch, "Connection reset by peer while fetching page", tmp_path)
     assert bl is False
     assert reason != "invalid_video"
-
-
-# ── cookie × 代理 粘性绑定顺序 ──
-
-def test_strong_cookie_is_bound_to_the_pickiest_proxy():
-    """强号 (含 LOGIN_INFO) 必须排 index 0 绑 cmc 代理。
-
-    实测: 弱号在 cmc 上必撞 "Sign in to confirm you're not a bot", 而强号三个代理
-    全可用。顺序写反 -> 弱号的全部任务集体失败 (那一轮 801/25552 成功就是此因)。
-    """
-    from lib import yt_download as dl
-    if len(dl.COOKIE_COPIES) < 2:
-        import pytest
-        pytest.skip("环境只有一个 cookie 文件, 顺序无从校验")
-    assert "Cocoonconcoction070" in str(dl.COOKIE_ORIGINS[0])
-    assert dl.COOKIE_PROXY[0] == dl.STICKY_PROXIES[0]
-    # 每个 cookie 都必须绑到互不相同的代理 (同 IP 多账号仍会触发会话异常)
-    assert len(set(dl.COOKIE_PROXY)) == len(dl.COOKIE_PROXY)
-
-
-def test_每个_cookie_都有绑定代理():
-    """COOKIE_PROXY 与 COOKIE_COPIES 必须等长 —— 否则 download_one 索引越界。"""
-    from lib import yt_download as dl
-    assert len(dl.COOKIE_PROXY) == len(dl.COOKIE_COPIES)
-
-
-def test_proxy_label_strips_credentials():
-    """日志里不能出现代理密码 (cmc 代理带 user:pass@)。"""
-    from lib import yt_download as dl
-    assert dl.proxy_label("http://cmcproxy:secret@10.251.112.50:8128") == "10.251.112.50:8128"
-    assert dl.proxy_label("http://agent.baidu.com:8188") == "agent.baidu.com:8188"

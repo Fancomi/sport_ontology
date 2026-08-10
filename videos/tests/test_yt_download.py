@@ -21,6 +21,10 @@ sys.path.insert(0, str(VIDEOS.parent / "tools"))
 
 from lib import yt_download as dl  # noqa: E402
 
+# 一份「带完整登录态」的最小 cookie jar (Netscape 格式只需字段名可被检出即可)
+_AUTH_NAMES = ("LOGIN_INFO", "__Secure-1PSID", "SAPISID")
+_AUTHED_JAR = "".join(f"{n}\tv\n" for n in _AUTH_NAMES)
+
 
 # ── 失败分类: 纯函数, 无副作用 ──
 
@@ -66,7 +70,7 @@ def test_classify_is_case_insensitive_and_pure():
 
 def test_strong_cookie_bound_to_pickiest_proxy():
     """强号 (含 LOGIN_INFO) 必须 index 0 绑 cmc; 写反则弱号全灭。"""
-    if len(dl.COOKIE_COPIES) < 2:
+    if len(dl.COOKIE_ORIGINS) < 2:
         import pytest
         pytest.skip("环境只有一个 cookie 文件")
     assert "Cocoonconcoction070" in str(dl.COOKIE_ORIGINS[0])
@@ -76,7 +80,82 @@ def test_strong_cookie_bound_to_pickiest_proxy():
 
 def test_cookie_proxy_lengths_match():
     """等长, 否则 download_one 按 cookie 索引取代理时越界。"""
-    assert len(dl.COOKIE_PROXY) == len(dl.COOKIE_COPIES)
+    assert len(dl.COOKIE_PROXY) == len(dl.COOKIE_ORIGINS)
+
+
+# ── cookie 回写防护 (2026-08-11 事故) ──
+
+def test_source_cookies_are_authed():
+    """源 cookie 必须带完整登录态 —— 缺 LOGIN_INFO 会让长视频集体撞 bot 墙。"""
+    assert dl.COOKIE_ORIGINS, "未找到任何 cookie 源文件"
+    for src in dl.COOKIE_ORIGINS:
+        assert dl.cookie_is_authed(src), f"{src} 缺认证 cookie (需重新登录导出)"
+
+
+def test_cookie_jar_is_ephemeral_and_isolated():
+    """每次取到的都是新的一次性副本, 内容等同源文件, 且退出后删除。"""
+    src = dl.COOKIE_ORIGINS[0]
+    with dl._ephemeral_cookie(0) as jar1:
+        assert jar1 != str(src), "不能直接把源文件交给 yt-dlp"
+        assert Path(jar1).read_bytes() == src.read_bytes()
+        with dl._ephemeral_cookie(0) as jar2:
+            assert jar2 != jar1, "并发下两次取到同一路径会产生写竞争"
+        assert not Path(jar2).exists()
+    assert not Path(jar1).exists(), "一次性 jar 用完必须删除"
+
+
+def test_yt_dlp_writeback_cannot_degrade_source(tmp_path, monkeypatch):
+    """模拟 yt-dlp 限流回写 (抹掉 LOGIN_INFO): 源文件与后续请求都不受污染。
+
+    这是事故的核心 —— 旧实现用长期副本, 一次回写就把登录态永久写残,
+    该路后续全部降级为未登录会话 (实测失败率 36%)。
+    """
+    src = tmp_path / "cookies_fake_origin.txt"
+    src.write_text(_AUTHED_JAR, encoding="utf-8")
+    monkeypatch.setattr(dl, "COOKIE_ORIGINS", [src])
+    monkeypatch.setattr(dl, "COOKIE_PROXY", [dl.STICKY_PROXIES[0]])
+
+    seen = []
+
+    class Degrading:
+        """每次都把传入的 jar 写残 (yt-dlp 被限流时的真实行为)。"""
+        def __init__(self, opts):
+            self.jar = opts.get("cookiefile")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def download(self, urls):
+            seen.append(Path(self.jar).read_text())
+            Path(self.jar).write_text("YSC\tanonymous\n", encoding="utf-8")
+            return 0
+
+    monkeypatch.setattr(dl.yt_dlp, "YoutubeDL", Degrading)
+    monkeypatch.setattr(dl.config, "acquire_proxy_slot", lambda p: True)
+    monkeypatch.setattr(dl.config, "release_proxy", lambda p: None)
+    monkeypatch.setattr(dl, "downloaded_file", lambda d, v: tmp_path / f"{v}.mp4")
+
+    for vid in ("aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc"):
+        dl.download_one(vid, tmp_path)
+
+    assert dl.cookie_is_authed(src), "源 cookie 被 yt-dlp 回写污染了"
+    for text in seen:
+        assert "LOGIN_INFO" in text, "后续请求读到了被写残的 jar (降级跨请求传播)"
+
+
+def test_cookie_is_authed_detects_missing_fields(tmp_path):
+    full = tmp_path / "full.txt"
+    full.write_text(_AUTHED_JAR, encoding="utf-8")
+    assert dl.cookie_is_authed(full) is True
+    for drop in _AUTH_NAMES:
+        partial = tmp_path / f"no_{drop}.txt"
+        partial.write_text("\n".join(f"{k}\tv" for k in _AUTH_NAMES if k != drop),
+                           encoding="utf-8")
+        assert dl.cookie_is_authed(partial) is False, drop
+    assert dl.cookie_is_authed(tmp_path / "missing.txt") is False
 
 
 def test_proxy_label_hides_credentials():
@@ -165,10 +244,10 @@ def test_blocked_cools_down_proxy_and_releases_slot(tmp_path, monkeypatch):
 
 def test_same_id_always_picks_same_cookie(tmp_path):
     """同一 video_id 必须稳定落在同一 cookie/代理 —— 跨 IP 跳跃会触发会话异常。"""
-    if len(dl.COOKIE_COPIES) < 2:
+    if len(dl.COOKIE_ORIGINS) < 2:
         import pytest
         pytest.skip("环境只有一个 cookie 文件")
-    picks = {dl.config.stable_mod("someVideoId", len(dl.COOKIE_COPIES)) for _ in range(20)}
+    picks = {dl.config.stable_mod("someVideoId", len(dl.COOKIE_ORIGINS)) for _ in range(20)}
     assert len(picks) == 1
 
 

@@ -11,6 +11,7 @@ import os
 import shutil
 import tempfile
 import time
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import NamedTuple
 
@@ -21,17 +22,20 @@ from lib import config
 # 480p 上限 (与阶段二同一档, 换档会让新老数据分辨率不一致)
 FORMAT_480P = "bv*[height<=480]+ba/b[height<=480]/18/b"
 
-_COOKIE_DIR = Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer")
+# cookie 源目录 (只读, 绝不被 yt-dlp 写)。人工重登后覆盖这里的文件即可。
+COOKIE_DIR = Path(os.environ.get(
+    "YT_COOKIE_DIR", "/root/paddlejob/workspace/env_run/penghaotian/datas/cookies"))
 # 顺序即代理绑定顺序 (见 STICKY_PROXIES): 强号排前, 绑最挑剔的代理。
 # 实测账号×代理可用性矩阵 (2026-07-30):
 #   Cocoonconcoction070 (含 LOGIN_INFO): cmc / baidu8188 / baidu8891 全部 ok
 #   Resxuilpazcuoe      (无 LOGIN_INFO): cmc 撞 bot 墙, baidu8188/8891 ok
 # 顺序写反时弱号会被绑到 cmc 上, 该账号的全部任务集体撞
 # "Sign in to confirm you're not a bot" (实测成功率从 99% 掉到 3%)。
-COOKIE_ORIGINS = [
-    _COOKIE_DIR / "cookies_Cocoonconcoction070_origin.txt",
-    _COOKIE_DIR / "cookies_Resxuilpazcuoe_origin.txt",
+COOKIE_NAMES = [
+    "cookies_Cocoonconcoction070_origin.txt",
+    "cookies_Resxuilpazcuoe_origin.txt",
 ]
+COOKIE_ORIGINS = [COOKIE_DIR / n for n in COOKIE_NAMES if (COOKIE_DIR / n).exists()]
 
 # cookie ↔ 代理 粘性绑定 (sticky session): YouTube 关联「账号在哪个 IP 活动」, 同一
 # cookie 从多个代理 IP 发请求会被判会话异常。故一账号始终从同一 IP 出, 且两账号用
@@ -40,16 +44,42 @@ STICKY_PROXIES = [
     "http://cmcproxy:WvUBhef4bQ@10.251.112.50:8128",
     "http://agent.baidu.com:8188",
 ]
+COOKIE_PROXY = [STICKY_PROXIES[i % len(STICKY_PROXIES)] for i in range(len(COOKIE_ORIGINS))]
 
-# 进程级只读副本: 防 yt-dlp 回写源文件导致多进程竞争损坏
-COOKIE_COPIES = []
-for _i, _src in enumerate(COOKIE_ORIGINS):
-    if _src.exists():
-        _dst = Path(tempfile.gettempdir()) / f"yt_dl_cookies_{_i}_{os.getpid()}.txt"
-        shutil.copy2(_src, _dst)
-        COOKIE_COPIES.append(_dst)
+# 认证必备 cookie: 缺其一即视为「未登录会话」, 拉长视频/受限视频会撞 bot 墙。
+_AUTH_COOKIES = ("LOGIN_INFO", "__Secure-1PSID", "SAPISID")
 
-COOKIE_PROXY = [STICKY_PROXIES[i % len(STICKY_PROXIES)] for i in range(len(COOKIE_COPIES))]
+
+def cookie_is_authed(path) -> bool:
+    """该 cookie 文件是否仍带完整登录态。"""
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return all(name in text for name in _AUTH_COOKIES)
+
+
+@contextmanager
+def _ephemeral_cookie(index: int):
+    """从源文件拷一份**一次性** cookie jar, 用完即删。
+
+    为什么必须每次新拷 (实测事故 2026-08-11):
+    `cookiefile` 会让 yt-dlp 在每次请求后把 cookie jar 回写该文件。请求被限流时服务端
+    返回的 Set-Cookie 不含认证态, yt-dlp 就把残缺 jar 写回去 —— 下一次请求读到的就是
+    残缺版, 形成死亡螺旋。实测弱号副本被写到 11,878B/70 行 -> 7,175B/52 行,
+    LOGIN_INFO 整条消失, 该路失败率 36% (强号同期 0.4%)。
+    旧实现只在进程启动时拷一份长期副本: 它保护了源文件, 却没保护运行时真正使用的凭据。
+    一次性 jar 让降级无法跨请求传播, 也顺带消除了多线程共享同一文件的写竞争。
+    """
+    src = COOKIE_ORIGINS[index]
+    fd, tmp = tempfile.mkstemp(prefix=f"ytck{index}_", suffix=".txt")
+    os.close(fd)
+    try:
+        shutil.copy2(src, tmp)
+        yield tmp
+    finally:
+        os.unlink(tmp) if os.path.exists(tmp) else None
+
 
 # 「视频没了」的措辞, 但这些词也会出现在基础设施故障里 —— 故需 TRANSIENT_MARKERS 二次排除。
 _GONE_MARKERS = ("unavailable", "removed", "private", "not exist")
@@ -124,14 +154,14 @@ def download_one(vid: str, out_dir: Path, *, fmt: str = FORMAT_480P) -> DLResult
         return DLResult(True, "exists")
 
     t0 = time.time()
-    if COOKIE_COPIES:
-        idx = config.stable_mod(vid, len(COOKIE_COPIES))
-        cookiefile = str(COOKIE_COPIES[idx])
+    if COOKIE_ORIGINS:
+        idx = config.stable_mod(vid, len(COOKIE_ORIGINS))
         cookie_name = f"cookie{idx}"
         proxy = COOKIE_PROXY[idx]                    # 固定绑定, 不经 pick_proxy 轮询
         acquired = config.acquire_proxy_slot(proxy)  # 仅占并发槽 (不改选择)
+        jar_ctx = _ephemeral_cookie(idx)             # 一次性 jar, 见其 docstring
     else:
-        cookiefile, cookie_name = None, "none"
+        cookie_name, jar_ctx = "none", nullcontext(None)
         proxy = config.pick_proxy(vid)
         acquired = True
 
@@ -144,13 +174,14 @@ def download_one(vid: str, out_dir: Path, *, fmt: str = FORMAT_480P) -> DLResult
         "concurrent_fragment_downloads": 1,
         "remote_components": ["ejs:github"],   # YouTube 2026 解签 (需 deno)
     }
-    if cookiefile:
-        opts["cookiefile"] = cookiefile
 
     label = proxy_label(proxy)
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([f"https://www.youtube.com/watch?v={vid}"])
+        with jar_ctx as cookiefile:
+            if cookiefile:
+                opts["cookiefile"] = cookiefile
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([f"https://www.youtube.com/watch?v={vid}"])
         if not downloaded_file(out_dir, vid):
             return DLResult(False, "missing_after_download", label, time.time() - t0, cookie_name)
         return DLResult(True, REASON_OK, label, time.time() - t0, cookie_name)
