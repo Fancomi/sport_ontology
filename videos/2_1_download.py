@@ -20,44 +20,9 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 from lib import config
 from lib import duration_filter
+from lib import yt_download as dl
 
 logger = config.get_logger(__name__, "pipeline.log")
-
-# === 二阶段 cookies (一阶段已完成，两个账号都可用于下载) ===
-import tempfile
-_COOKIE_DIR = Path("/root/paddlejob/workspace/env_run/penghaotian/llm_infer")
-# 顺序即代理绑定顺序 (见下方 _COOKIE_PROXY): 强号排前, 绑最挑剔的代理。
-# 实测账号×代理可用性矩阵 (2026-07-30):
-#   Cocoonconcoction070 (15K, 含 LOGIN_INFO): cmc / baidu8188 / baidu8891 全部 ok
-#   Resxuilpazcuoe      (896B, 无 LOGIN_INFO): cmc 撞 bot 墙, baidu8188/8891 ok
-# 故强号必须排 index 0 (绑 cmc), 弱号排 index 1 (绑 baidu8188)。顺序写反时弱号会被
-# 绑到 cmc 上, 该账号的全部任务集体撞 "Sign in to confirm you're not a bot"。
-_COOKIE_ORIGINS = [
-    _COOKIE_DIR / "cookies_Cocoonconcoction070_origin.txt",
-    _COOKIE_DIR / "cookies_Resxuilpazcuoe_origin.txt",
-    # _COOKIE_DIR / "cookies_Henrypower8652_ori.txt",   # 缺 LOGIN_INFO, 待重登
-    # _COOKIE_DIR / "cookies_Pinchnuncio927_ori.txt",   # 缺 LOGIN_INFO, 待重登
-    # _COOKIE_DIR / "cookies_Tgrhhgr18_ori.txt",        # 缺 LOGIN_INFO, 待重登
-]
-
-_COOKIE_COPIES = []
-for i, src in enumerate(_COOKIE_ORIGINS):
-    if src.exists():
-        dst = Path(tempfile.gettempdir()) / f"yt_dl_cookies_{i}_{os.getpid()}.txt"
-        shutil.copy2(src, dst)
-        _COOKIE_COPIES.append(dst)
-
-# === cookie ↔ 代理 粘性绑定 (sticky session) ===
-# YouTube 关联"账号 cookie 在哪个 IP 活动": 同一 cookie 从多个代理 IP 发请求会被判会话异常
-# → "Sign in to confirm you're not a bot" / 集体 403。故每个 cookie 固定绑定一个代理,
-# 一账号始终从同一 IP 出。选两个来源不同的干净快代理: cmc(外部认证, ~5s) + baidu8188(~17s),
-# 最大化两账号的 IP 来源差异, 互不干扰。
-_STICKY_PROXIES = [
-    "http://cmcproxy:WvUBhef4bQ@10.251.112.50:8128",
-    "http://agent.baidu.com:8188",
-]
-_COOKIE_PROXY = [_STICKY_PROXIES[i % len(_STICKY_PROXIES)]
-                 for i in range(len(_COOKIE_COPIES))] if _COOKIE_COPIES else []
 
 # === 路径 ===
 DATA_DIR = config.DATA_DIR
@@ -103,17 +68,6 @@ def sync_from_peers():
 
 # ==================== 下载 ====================
 
-def _pname(proxy):
-    # 只取 host:port, 剥离可能的 user:pass@ 认证段, 避免密码写入日志
-    hostport = proxy.split('//', 1)[-1].split('/')[0]
-    return hostport.rsplit('@', 1)[-1]
-
-
-def downloaded_file(out_dir: Path, vid: str) -> Path | None:
-    files = [p for p in out_dir.glob(f"{vid}.*") if ".part" not in p.name]
-    return files[0] if files else None
-
-
 def reject_if_too_long(video_path: Path, vid: str) -> tuple[bool, str]:
     duration = duration_filter.actual_duration(video_path)
     if duration is None or duration <= duration_filter.MAX_DURATION_SEC:
@@ -124,91 +78,34 @@ def reject_if_too_long(video_path: Path, vid: str) -> tuple[bool, str]:
 
 
 def download_one(item, out_dir):
-    """下载单个视频，使用 config 统一代理管理"""
+    """阶段二下载: 引擎交给 lib.yt_download, 本函数只加阶段二特有的处置。
+
+    处置差异 (引擎刻意不管这些, 见 lib/yt_download 的边界说明):
+      - 超时长的下载后即删并拉黑 (阶段二有 purge_max_duration 口径);
+      - invalid_video 已由引擎分类, 拉黑动作在此显式执行, 便于审计。
+    返回保持既有 5 元组契约 (调用方/测试依赖)。
+    """
     vid = item["video_id"]
-    existing = downloaded_file(out_dir, vid)
+    existing = dl.downloaded_file(out_dir, vid)
     if existing:
         rejected, reason = reject_if_too_long(existing, vid)
+        return (False, reason, "local", 0.0, "local") if rejected else \
+               (True, "exists", "local", 0.0, "local")
+
+    res = dl.download_one(vid, out_dir)
+    if res.ok:
+        path = dl.downloaded_file(out_dir, vid)
+        if not path:
+            return False, "missing_after_download", res.proxy, res.seconds, res.cookie
+        rejected, reason = reject_if_too_long(path, vid)
         if rejected:
-            return False, reason, "local", 0.0, "local"
-        return True, "exists", "local", 0.0, "local"
-
-    t0 = time.time()
-    # cookie ↔ 代理 粘性绑定: 先按 video_id 稳定选 cookie, 该 cookie 固定用其绑定的代理
-    # (避免同一账号跨 IP 跳跃触发 YouTube 会话异常风控)。无 cookie 时回退代理轮询。
-    cookie_name = "none"
-    if _COOKIE_COPIES:
-        idx = config.stable_mod(vid, len(_COOKIE_COPIES))
-        cookiefile = str(_COOKIE_COPIES[idx])
-        cookie_name = f"cookie{idx}"
-        proxy = _COOKIE_PROXY[idx]                 # 固定绑定, 不经 pick_proxy 轮询
-        acquired = config.acquire_proxy_slot(proxy) # 仅占并发槽 (不改选择)
-    else:
-        cookiefile = None
-        proxy = config.pick_proxy(vid)
-        acquired = True
-    opts = {
-        "proxy": proxy, "quiet": True, "no_warnings": True,
-        "retries": 3, "socket_timeout": 30,
-        "format": "bv*[height<=480]+ba/b[height<=480]/18/b",
-        "merge_output_format": "mp4",
-        "outtmpl": str(out_dir / f"{vid}.%(ext)s"),
-        "noprogress": True,
-        "ratelimit": None,
-        "throttledratelimit": 50 * 1024,
-        "extractor_retries": 3,
-        "fragment_retries": 3,
-        "concurrent_fragment_downloads": 1,
-        "remote_components": ["ejs:github"],
-    }
-    if cookiefile:
-        opts["cookiefile"] = cookiefile
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([f"https://www.youtube.com/watch?v={vid}"])
-            video_path = downloaded_file(out_dir, vid)
-            if not video_path:
-                return False, "missing_after_download", _pname(proxy), time.time() - t0, cookie_name
-            rejected, reason = reject_if_too_long(video_path, vid)
-            if rejected:
-                return False, reason, _pname(proxy), time.time() - t0, cookie_name
-            return True, "ok", _pname(proxy), time.time() - t0, cookie_name
-    except Exception as e:
-        msg = str(e).lower()
-        if "signature" in msg or "n challenge" in msg:
-            reason = "deno_signature"
-        elif "requested format is not available" in msg:
-            logger.warning(f"[失败样例] {vid}: {str(e)[:300]}")
-            reason = "format_unavailable"
-        elif "bot" in msg or "sign in" in msg or "403" in msg:
-            config.cooldown_proxy(proxy)
-            reason = "blocked_403"
-        elif any(k in msg for k in ("unavailable", "removed", "private", "not exist")):
-            # 只有明确指向「这个视频没了」才永久拉黑。yt-dlp 在代理/网络故障时也会
-            # 输出含 unavailable 的文本 (如 "service unavailable"、"temporarily
-            # unavailable"、"HTTP Error 503"), 早期实现照子串匹配全部拉黑, 实测把
-            # 23,391 条正常视频永久排除 (抽样复验 100% 可正常取回) —— 且 blacklist
-            # 是跨阶段共享名单, run_cleanup 会据它连缩略图一起删掉。
-            # 故先排除掉这些明显属于基础设施故障的措辞。
-            transient_markers = (
-                "service unavailable", "temporarily unavailable", "try again",
-                "503", "502", "504", "timed out", "timeout", "connection",
-                "proxy", "tunnel", "reset by peer", "network",
-            )
-            if any(t in msg for t in transient_markers):
-                reason = "other"          # 不拉黑, 下轮重试
-            else:
-                config.append_blacklist(vid)
-                reason = "invalid_video"
-
-        elif "timed out" in msg or "timeout" in msg:
-            reason = "timeout"
-        else:
-            reason = "other"
-        return False, reason, _pname(proxy), time.time() - t0, cookie_name
-    finally:
-        if acquired:
-            config.release_proxy(proxy)
+            return False, reason, res.proxy, res.seconds, res.cookie
+        return True, "ok", res.proxy, res.seconds, res.cookie
+    if res.reason == dl.REASON_GONE:
+        config.append_blacklist(vid)
+    elif res.reason == "format_unavailable":
+        logger.warning(f"[失败样例] {vid}: format 不可用")
+    return False, res.reason, res.proxy, res.seconds, res.cookie
 
 
 def run_download(workers, total_shards, shard_id):
@@ -229,7 +126,7 @@ def run_download(workers, total_shards, shard_id):
         logger.info("[下载] 无待下载任务")
         return
 
-    logger.info(f"[环境] deno={shutil.which('deno') or 'NOT_FOUND'} cookies={len(_COOKIE_COPIES)}")
+    logger.info(f"[环境] deno={shutil.which('deno') or 'NOT_FOUND'} cookies={len(dl.COOKIE_COPIES)}")
     from collections import Counter, defaultdict
     ok, fail = 0, 0
     reasons = Counter()
@@ -238,7 +135,7 @@ def run_download(workers, total_shards, shard_id):
     BATCH = 50
 
     for batch_start in range(0, len(pending), BATCH):
-        if disk_free_gb() < DISK_LIMIT_GB:
+        if dl.free_gb(DATA_DIR) < DISK_LIMIT_GB:
             logger.warning(f"[下载] 磁盘不足 {DISK_LIMIT_GB}GB, 停止")
             break
         if config.alive_proxy_count() == 0:
@@ -273,14 +170,9 @@ def run_download(workers, total_shards, shard_id):
             cookie_brief = ",".join(f"{k}:ok{v['ok']}/fail{v['fail']}" for k, v in sorted(cookie_stats.items()))
             logger.info(f"[下载] [{batch_start+len(batch)}/{len(pending)}] "
                         f"成功:{ok} 失败:{fail} 代理:{config.alive_proxy_count()}/{len(config.PROXY_POOL)} "
-                        f"磁盘:{disk_free_gb():.0f}GB 原因:{top_reason} cookies:{cookie_brief} | {' ; '.join(proxy_brief[:5])}")
+                        f"磁盘:{dl.free_gb(DATA_DIR):.0f}GB 原因:{top_reason} cookies:{cookie_brief} | {' ; '.join(proxy_brief[:5])}")
 
     logger.info(f"[下载] 完成! 成功:{ok} 失败:{fail}")
-
-
-def disk_free_gb():
-    st = os.statvfs(str(DATA_DIR))
-    return st.f_bavail * st.f_frsize / (1024**3)
 
 
 # ==================== 清理 ====================
