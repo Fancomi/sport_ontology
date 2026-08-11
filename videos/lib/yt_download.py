@@ -59,6 +59,27 @@ def cookie_is_authed(path) -> bool:
     return all(name in text for name in _AUTH_COOKIES)
 
 
+_JAR_PREFIX = "ytck"
+
+
+def sweep_stale_jars(max_age_sec: int = 3600) -> int:
+    """清掉被 kill 的进程残留的一次性 jar (finally 没跑到)。返回清理数量。
+
+    正常路径下 jar 用完即删; 但进程被 SIGKILL/SIGTERM 打断时会留下。单个仅 12KB,
+    不过长期反复中断会在 /tmp 堆积, 故每次启动扫一遍。
+    """
+    now = time.time()
+    n = 0
+    for jar in Path(tempfile.gettempdir()).glob(f"{_JAR_PREFIX}*.txt"):
+        try:
+            if now - jar.stat().st_mtime > max_age_sec:
+                jar.unlink()
+                n += 1
+        except OSError:
+            pass
+    return n
+
+
 @contextmanager
 def _ephemeral_cookie(index: int):
     """从源文件拷一份**一次性** cookie jar, 用完即删。
@@ -72,7 +93,7 @@ def _ephemeral_cookie(index: int):
     一次性 jar 让降级无法跨请求传播, 也顺带消除了多线程共享同一文件的写竞争。
     """
     src = COOKIE_ORIGINS[index]
-    fd, tmp = tempfile.mkstemp(prefix=f"ytck{index}_", suffix=".txt")
+    fd, tmp = tempfile.mkstemp(prefix=f"{_JAR_PREFIX}{index}_", suffix=".txt")
     os.close(fd)
     try:
         shutil.copy2(src, tmp)
@@ -94,6 +115,7 @@ TRANSIENT_MARKERS = (
 REASON_OK = "ok"
 REASON_GONE = "invalid_video"      # 唯一可安全拉黑的原因
 REASON_BLOCKED = "blocked_403"     # 触发代理冷却
+REASON_COOLING = "proxy_cooling"   # 绑定代理正在冷却, 本次不发请求 (transient)
 
 
 class DLResult(NamedTuple):
@@ -158,6 +180,11 @@ def download_one(vid: str, out_dir: Path, *, fmt: str = FORMAT_480P) -> DLResult
         idx = config.stable_mod(vid, len(COOKIE_ORIGINS))
         cookie_name = f"cookie{idx}"
         proxy = COOKIE_PROXY[idx]                    # 固定绑定, 不经 pick_proxy 轮询
+        # 粘性绑定必须自己尊重冷却: cooldown_proxy 只作用于 pick_proxy 的选择逻辑,
+        # 对固定绑定毫无影响 —— 实测撞 bot 墙后同一账号继续原速打同一 IP, 一轮 244 次
+        # 全灭。换 IP 会破坏 sticky session (账号跨 IP 跳跃本身就触发风控), 只能等。
+        if config.proxy_cooldown_remaining(proxy) > 0:
+            return DLResult(False, REASON_COOLING, proxy_label(proxy), 0.0, cookie_name)
         acquired = config.acquire_proxy_slot(proxy)  # 仅占并发槽 (不改选择)
         jar_ctx = _ephemeral_cookie(idx)             # 一次性 jar, 见其 docstring
     else:

@@ -126,7 +126,7 @@ def run_download(workers, total_shards, shard_id):
         logger.info("[下载] 无待下载任务")
         return
 
-    logger.info(f"[环境] deno={shutil.which('deno') or 'NOT_FOUND'} cookies={len(dl.COOKIE_COPIES)}")
+    logger.info(f"[环境] deno={shutil.which('deno') or 'NOT_FOUND'} cookies={len(dl.COOKIE_ORIGINS)}")
     from collections import Counter, defaultdict
     ok, fail = 0, 0
     reasons = Counter()

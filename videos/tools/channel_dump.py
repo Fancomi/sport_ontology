@@ -129,8 +129,14 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"═══ 整频道下载 (domain={config.DOMAIN.name}) ═══")
     print(f"输出: {out_dir}")
-    print(f"引擎: cookies={len(dl.COOKIE_COPIES)} deno={shutil.which('deno') or 'NOT_FOUND'}",
-          flush=True)
+    swept = dl.sweep_stale_jars()
+    authed = sum(1 for c in dl.COOKIE_ORIGINS if dl.cookie_is_authed(c))
+    print(f"引擎: cookies={len(dl.COOKIE_ORIGINS)} (带登录态 {authed}) "
+          f"deno={shutil.which('deno') or 'NOT_FOUND'}"
+          + (f" | 清理残留 jar {swept}" if swept else ""), flush=True)
+    if authed < len(dl.COOKIE_ORIGINS):
+        print("[warn] 有 cookie 缺登录态 (LOGIN_INFO/1PSID/SAPISID), 该路会撞 bot 墙",
+              flush=True)
 
     ids = load_ids(out_dir, args.channel, args.refresh)
     if not ids:

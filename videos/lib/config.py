@@ -167,6 +167,17 @@ def cooldown_proxy(proxy: str, seconds=300):
         _proxy_cooldown[proxy] = time.time() + seconds
 
 
+def proxy_cooldown_remaining(proxy: str) -> float:
+    """该代理剩余冷却秒数 (未冷却返回 0)。
+
+    粘性绑定路径 (acquire_proxy_slot) 不做代理选择, 因此 cooldown_proxy 对它本来毫无
+    影响 —— 实测撞 bot 墙后同一 cookie 仍以原速继续打同一 IP, 一轮 244 次全灭。
+    调用方需据此主动退避 (换 IP 会破坏 sticky session 的语义, 只能等)。
+    """
+    with _proxy_lock:
+        return max(0.0, _proxy_cooldown.get(proxy, 0) - time.time())
+
+
 def alive_proxy_count() -> int:
     """当前可用代理数"""
     now = time.time()

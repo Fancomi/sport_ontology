@@ -340,3 +340,60 @@ def test_dump_stops_on_low_disk(tmp_path, monkeypatch):
         raise AssertionError("磁盘不足时不应继续下载")
     monkeypatch.setattr(m.dl, "download_one", boom)
     m.run(["a", "b"], tmp_path, workers=2, batch=10)
+
+
+def test_callers_do_not_reference_removed_symbols():
+    """调用方不得再引用已删除的 COOKIE_COPIES —— 那是长期副本时代的遗物。
+
+    实测: 改名后 channel_dump 的启动日志行仍用旧名, 直接 AttributeError 崩在入口。
+    源码级断言比等下一次真跑更早发现。
+    """
+    for rel in ("2_1_download.py", "tools/channel_dump.py"):
+        src = (VIDEOS / rel).read_text(encoding="utf-8")
+        assert "COOKIE_COPIES" not in src, rel
+
+
+def test_sweep_stale_jars_removes_only_old_ones(tmp_path, monkeypatch):
+    """被 kill 的进程会留下一次性 jar (finally 没跑到); 启动时清掉陈旧的, 保留在用的。"""
+    monkeypatch.setattr(dl.tempfile, "gettempdir", lambda: str(tmp_path))
+    fresh = tmp_path / f"{dl._JAR_PREFIX}0_fresh.txt"
+    stale = tmp_path / f"{dl._JAR_PREFIX}1_stale.txt"
+    other = tmp_path / "unrelated.txt"
+    for f in (fresh, stale, other):
+        f.write_text("x")
+    import os as _os
+    old = dl.time.time() - 7200
+    _os.utime(stale, (old, old))
+    _os.utime(other, (old, old))
+    assert dl.sweep_stale_jars(max_age_sec=3600) == 1
+    assert fresh.exists() and other.exists(), "不该动在用的 jar 与无关文件"
+    assert not stale.exists()
+
+
+# ── 粘性绑定必须尊重代理冷却 (2026-08-11 事故第二段) ──
+
+def test_sticky_binding_skips_cooling_proxy(tmp_path, monkeypatch):
+    """绑定代理在冷却期内直接返回, 不发请求。
+
+    实测: cooldown_proxy 只影响 pick_proxy 的选择逻辑, 对固定绑定毫无作用 —— 撞 bot 墙
+    后同一账号继续原速打同一 IP, 一轮 244 次全灭。换 IP 会破坏 sticky session
+    (账号跨 IP 跳跃本身触发风控), 所以只能等。
+    """
+    monkeypatch.setattr(dl.config, "proxy_cooldown_remaining", lambda p: 120.0)
+
+    def boom(*a, **kw):
+        raise AssertionError("冷却期内不应发起请求")
+    monkeypatch.setattr(dl.yt_dlp, "YoutubeDL", boom)
+    res = dl.download_one("coolingvid", tmp_path)
+    assert not res.ok and res.reason == dl.REASON_COOLING
+
+
+def test_cooling_is_transient_not_a_verdict(tmp_path, monkeypatch):
+    """proxy_cooling 是「这次没问出结果」, 绝不能被当成视频失效。"""
+    assert dl.classify_failure("whatever") != dl.REASON_COOLING
+    assert dl.REASON_COOLING != dl.REASON_GONE
+
+
+def test_cooldown_remaining_reports_zero_when_not_cooling():
+    from lib import config as cfg
+    assert cfg.proxy_cooldown_remaining("http://never-cooled.example:1") == 0.0
