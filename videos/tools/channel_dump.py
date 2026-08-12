@@ -70,7 +70,8 @@ def load_ids(out_dir: Path, channel: str, refresh: bool) -> list[str]:
     return ids
 
 
-def run(ids: list[str], out_dir: Path, workers: int, batch: int) -> Counter:
+def run(ids: list[str], out_dir: Path, workers: int, batch: int,
+        use_cookies: bool = True) -> Counter:
     """并发下载, 逐批落进度。已下载/已确认失效的跳过, 可随时中断续跑。"""
     prog_file, gone_file = out_dir / "_progress.txt", out_dir / "_gone.txt"
     done = config.read_lines(prog_file) | config.read_lines(gone_file)
@@ -88,7 +89,7 @@ def run(ids: list[str], out_dir: Path, workers: int, batch: int) -> Counter:
             break
         chunk = pending[start:start + batch]
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futs = {pool.submit(dl.download_one, v, out_dir): v for v in chunk}
+            futs = {pool.submit(dl.download_one, v, out_dir, use_cookies=use_cookies): v for v in chunk}
             for fut in as_completed(futs):
                 vid, res = futs[fut], fut.result()
                 reasons[res.reason] += 1
@@ -123,6 +124,8 @@ def main():
     ap.add_argument("--limit", type=int, default=0, help="只下前 N 个 (冒烟测试用)")
     ap.add_argument("--list-only", action="store_true", help="只抓清单不下载")
     ap.add_argument("--refresh", action="store_true", help="忽略清单缓存重新抓取")
+    ap.add_argument("--anon", action="store_true",
+                    help="匿名回退: 不用 cookie×代理粘性绑定, 走代理轮询 (账号会话被限流时用)")
     args = ap.parse_args()
 
     out_dir = config.DATA_DIR / "channels" / args.name
@@ -146,7 +149,7 @@ def main():
     if args.list_only:
         return
 
-    reasons = run(ids, out_dir, args.workers, args.batch)
+    reasons = run(ids, out_dir, args.workers, args.batch, use_cookies=not args.anon)
     have = len(list(out_dir.glob("*.mp4")))
     size = sum(p.stat().st_size for p in out_dir.glob("*.mp4")) / (1024 ** 3)
     print(f"\n完成! 目录内 {have} 个 mp4 / {size:.1f}GB | "

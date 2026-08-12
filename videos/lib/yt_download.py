@@ -154,8 +154,15 @@ def classify_failure(msg: str) -> str:
         return "deno_signature"
     if "requested format is not available" in msg:
         return "format_unavailable"
-    if "bot" in msg or "sign in" in msg or "403" in msg:
+    if "reload" in msg or "bot" in msg or "sign in" in msg or "403" in msg:
+        # "The page needs to be reloaded" (2026-08-11 实测 162 次): YouTube 服务端对
+        # 会话/IP 组合的限流信号, 原逻辑归 other -> 不触发冷却 -> 同一账号继续原速打
+        # 同一 IP 无限空转。与 bot 墙同语义: 会话被拒, 应冷却退避而非重试。
         return REASON_BLOCKED
+    if "members-only" in msg or "join this channel" in msg or "members on level" in msg:
+        # 频道会员专属 (2026-08-11 实测 17 条): 对当前凭据确定性不可达, 换 cookie/代理
+        # 都是同一句拒绝。归 invalid_video -> 调用方拉黑, 否则每次重跑都卡在这些 ID。
+        return REASON_GONE
     if any(k in msg for k in _GONE_MARKERS):
         # 基础设施故障的措辞优先: 「没拿到答案」不等于「拿到了否定答案」
         return "other" if any(t in msg for t in TRANSIENT_MARKERS) else REASON_GONE
@@ -164,19 +171,24 @@ def classify_failure(msg: str) -> str:
     return "other"
 
 
-def download_one(vid: str, out_dir: Path, *, fmt: str = FORMAT_480P) -> DLResult:
+def download_one(vid: str, out_dir: Path, *, fmt: str = FORMAT_480P,
+                 use_cookies: bool = True) -> DLResult:
     """下载单个视频到 out_dir。已存在则直接返回 ok(reason="exists")。
 
     cookie ↔ 代理按 video_id 稳定选取 (同一 id 每次都走同一账号/IP, 续跑不changing);
     无 cookie 时回退代理轮询。blocked_403 会冷却该代理 (代理池健康属引擎职责),
     其余处置 (拉黑/时长剔除/进度) 交调用方。
+
+    use_cookies=False 走匿名回退 (代理轮询 + 无 cookie): 用于存档任务在账号会话被
+    YouTube 限流时降级 (实测 2026-08-11: 强号 'The page needs to be reloaded' 全灭,
+    匿名访问仍可用)。阶段二 (2_1_download) 保持默认 True —— 登录态对拉长视频是刚需。
     """
     out_dir = Path(out_dir)
     if downloaded_file(out_dir, vid):
         return DLResult(True, "exists")
 
     t0 = time.time()
-    if COOKIE_ORIGINS:
+    if COOKIE_ORIGINS and use_cookies:
         idx = config.stable_mod(vid, len(COOKIE_ORIGINS))
         cookie_name = f"cookie{idx}"
         proxy = COOKIE_PROXY[idx]                    # 固定绑定, 不经 pick_proxy 轮询

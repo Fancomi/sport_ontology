@@ -58,6 +58,27 @@ def test_signature_and_format_have_own_reasons():
     assert dl.classify_failure("Requested format is not available") == "format_unavailable"
 
 
+def test_reload_is_blocked_and_never_gone():
+    """'The page needs to be reloaded' 是 YouTube 服务端对会话/IP 的限流信号 (实测 2026-08-11,
+    整频道下载一轮 162 次全中, 原逻辑归 other -> 不触发冷却 -> 同一账号继续原速打同一 IP)。
+    必须归 blocked_403: 触发代理冷却退避; 且绝不能当成视频失效拉黑。"""
+    for msg in ("The page needs to be reloaded",
+                "[youtube] XjkaXcrMDGU: The page needs to be reloaded."):
+        assert dl.classify_failure(msg) == dl.REASON_BLOCKED, msg
+
+
+def test_members_only_is_deterministic_gone():
+    """频道会员专属内容 (members-only) 对当前凭据是确定性不可达: 无论换哪个 cookie/代理
+    都是同一句 'Join this channel'。实测 2026-08-11: 网球 filtered 里 17 条全中, 强号/弱号
+    全部下不动。归 invalid_video -> 调用方拉黑永久排除, 否则每次重跑都卡在这些 ID 上。
+    (语义边界: 严格说有了会员 cookie 就能下; 但当前 cookie 无会员身份, 且为 0.075%
+    的样本保留无限重试代价不划算, 选择拉黑。)"""
+    for msg in ("Join this channel to get access to members-only content like this video, and other exclusive perks.",
+                "This video is available to this channel's members on level: Super Fan (or any higher level). "
+                "Join this channel to get access to members-only content and other exclusive perks."):
+        assert dl.classify_failure(msg) == dl.REASON_GONE, msg
+
+
 def test_classify_is_case_insensitive_and_pure():
     """大小写无关; 且分类不产生任何副作用 (不冷却代理、不写文件)。"""
     assert dl.classify_failure("VIDEO UNAVAILABLE") == dl.REASON_GONE
@@ -397,3 +418,30 @@ def test_cooling_is_transient_not_a_verdict(tmp_path, monkeypatch):
 def test_cooldown_remaining_reports_zero_when_not_cooling():
     from lib import config as cfg
     assert cfg.proxy_cooldown_remaining("http://never-cooled.example:1") == 0.0
+
+
+# ── 匿名回退 (2026-08-11: 强号会话被 YouTube 限流, 存档任务降级匿名) ──
+
+def test_anonymous_fallback_skips_cookie_binding(tmp_path, monkeypatch):
+    """use_cookies=False 时不得使用 cookie×代理粘性绑定, 走代理轮询 + 无 cookie。
+
+    实测: 强号 (Cocoonconcoction070) 会话被 YouTube 限流, 绑定 cmc 代理一路
+    'The page needs to be reloaded' 全灭 (356/358 剩余任务都绑定在它上)。
+    YouTube 对匿名访问退回可用 (无 cookie 实测 HTTP 200 / 标题可取),
+    故存档任务需要绕开绑定、以匿名身份重下, 而非等人工重新登录。
+    """
+    calls = {"pick_proxy": 0}
+
+    def fake_pick(vid=""):
+        calls["pick_proxy"] += 1
+        return "http://pick-me.example:1"
+
+    def boom(*a, **kw):
+        raise AssertionError("匿名回退不得触碰 cookie/粘性绑定")
+    monkeypatch.setattr(dl.config, "pick_proxy", fake_pick)
+    monkeypatch.setattr(dl.yt_dlp, "YoutubeDL", boom)
+    monkeypatch.setattr(dl, "_ephemeral_cookie", boom)
+    res = dl.download_one("anonvid", tmp_path, use_cookies=False)
+    assert calls["pick_proxy"] == 1, "应走 pick_proxy 轮询而非固定绑定"
+    assert res.proxy == "pick-me.example:1"
+    assert res.cookie == "none"
