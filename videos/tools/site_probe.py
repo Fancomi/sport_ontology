@@ -35,6 +35,7 @@ from lib import yt_download as dl          # noqa: E402  代理/失败分类复�
 # 默认代理 (与 channel_dump 同源)
 PROXY = os.environ.get("YT_PROXY", "http://agent.baidu.com:8188")
 TIMEOUT = 30          # 单站点 yt-dlp 探测超时 (秒)
+ARCHIVE_TIMEOUT = 60  # archive.org 元数据页慢 (实测 details 页 20s+), 单独放宽
 MAX_WORKERS = 6       # 并行探测数 (代理并发节制, 避免打爆单 IP)
 
 # ── 候选清单: (站点名, 种子 URL, extractor 名, 目标匹配度 0-5, 备注) ──
@@ -44,12 +45,15 @@ SITES = [
     ("volejtv", "https://volej.tv/match/270579", "volejtv:match", 4, "排球比赛, 与羽毛球同为小球场地运动"),
     ("sportbox", "https://www.sportbox.ru/video", "SportBox", 3, "俄体育台, 覆盖多种球类"),
     ("matchtv", "https://matchtv.ru/on-air/", "MatchTV", 3, "俄体育台, 覆盖多种球类"),
+    ("bilibili", "https://www.bilibili.com/video/BV1xx411c7Hd", "BiliBili", 4,
+     "B站: 海量羽毛球比赛/教学, 视频页 yt-dlp 可解析; 搜索 API 需 wbi 签名"),
     # 综合体育媒体
     ("eurosport", "https://www.eurosport.com/tennis/roland-garros/2022/highlights-rafael-nadal-brushes-aside-caper-ruud-to-win-record-extending-14th-french-open-title_vid1694147/video.shtml", "Eurosport", 3, "欧洲体育台, 集锦为主"),
     ("skysports", "http://www.skysports.com/watch/video/10328419/bale-its-our-time-to-shine", "sky:sports", 2, "天空体育, 需 Brightcove 播放器"),
     ("sport5", "http://vod.sport5.co.il/?Vc=147&Vi=176331&Page=1", "Sport5", 2, "以色列体育台"),
     ("sporteurope", "https://sporteurope.tv/rostock-griffins/gfl2-rostock-griffins-vs-elmshorn-fighting-pirates", "sporteurope", 2, "欧洲体育媒体"),
     ("onefootball", "https://onefootball.com/en/video/highlights-fc-zuerich-3-3-fc-basel-34012334", "OneFootball", 2, "足球聚合, 非完整比赛"),
+    ("dailymotion", "https://www.dailymotion.com/video/x7x4p0c", "dailymotion", 3, "欧洲老牌视频站, 有体育内容"),
     # 单项运动官方站
     ("tennistv", "https://www.tennistv.com/videos/indian-wells-2018-verdasco-fritz", "TennisTV", 3, "网球 TV, 需订阅"),
     ("wimbledon", "https://www.wimbledon.com/en_GB/video/media/6151584262001.html", "Wimbledon", 2, "温网官方, 媒体 ID 易过期"),
@@ -83,7 +87,8 @@ _EXTRACTOR_HEALTH = {
     "youtube": True, "volejtv:match": True, "SportBox": False, "MatchTV": True,
     "Eurosport": True, "sky:sports": True, "Sport5": True, "sporteurope": True,
     "OneFootball": True, "TennisTV": True, "Wimbledon": True, "Formula1": True,
-    "OlympicsReplay": True, "PremiershipRugby": True,
+    "OlympicsReplay": True, "PremiershipRugby": True, "BiliBili": True,
+    "dailymotion": True,
 }
 
 
@@ -132,13 +137,13 @@ def probe_formats(url: str, proxy: str = PROXY) -> dict:
         return {"formats": "", "no_formats": True}
 
 
-def probe_one(url: str, proxy: str = PROXY) -> dict:
+def probe_one(url: str, proxy: str = PROXY, timeout: int = TIMEOUT) -> dict:
     """对单个 URL 跑 yt-dlp --skip-download, 返回 {status, title, duration, extractor}。"""
     cmd = ["yt-dlp", "--proxy", proxy, "--skip-download", "--no-warnings",
            "--print", "%(title)s|%(duration)s|%(extractor)s", url]
     t0 = time.time()
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT,
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
                            env=os.environ.copy())
         out = r.stdout.strip()
         status = classify_dynamic(r.stderr, out)
@@ -147,7 +152,7 @@ def probe_one(url: str, proxy: str = PROXY) -> dict:
                 "extractor": extractor, "seconds": round(time.time() - t0, 1)}
     except subprocess.TimeoutExpired:
         return {"status": C_NETWORK, "title": "", "duration": "",
-                "extractor": "", "seconds": TIMEOUT, "timeout": True}
+                "extractor": "", "seconds": timeout, "timeout": True}
 
 
 def probe_site(site: dict, verify: bool = False) -> dict:
@@ -171,6 +176,69 @@ def probe_site(site: dict, verify: bool = False) -> dict:
     return {**site, **dyn, "static": stat, "score": score, "formats": formats}
 
 
+# ── 搜索模式: 回答「这个站点有没有我们要的内容」 ──
+
+def search_archive(query: str, rows: int = 30) -> list[tuple]:
+    """用 archive.org advancedsearch API 搜视频条目, 返回 [(identifier, title)]。"""
+    import urllib.parse
+    url = ("https://archive.org/advancedsearch.php"
+           f"?q={urllib.parse.quote(query)}&fl%5B%5D=identifier"
+           f"&fl%5B%5D=title&fl%5B%5D=downloads&rows={rows}"
+           "&sort%5B%5D=downloads+desc&output=json")
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode())
+        return [(d.get("identifier", ""), d.get("title", ""))
+                for d in data.get("response", {}).get("docs", []) if d.get("identifier")]
+    except Exception as exc:
+        print(f"  [archive 搜索失败] {str(exc)[:120]}", flush=True)
+        return []
+
+
+def search_site(site_name: str, query: str) -> None:
+    """对站点搜索关键词, 逐条探测可拉取性, 输出汇总。当前仅实现 archive.org。"""
+    print(f"═══ 搜索 {site_name}: {query} ═══", flush=True)
+    items = search_archive(query)
+    if not items:
+        print("  无结果", flush=True)
+        return
+    # 标题特征词: 只探测像比赛/录像的条目, 跳过明显无关 (books/news/home movie)
+    _MATCH_WORDS = ("match", "medal", "final", "olympic", "tournament", "championship",
+                    "world", "open", "bwf", "singles", "doubles", "比赛", "경기", "대회")
+    _SKIP_WORDS = ("book", "handbook", "library", "newspaper", "news", "home movie",
+                   "talk show", "compilation", "meme", "parade", "school", "radio",
+                   "podcast", "interview")
+    targets = [it for it in items
+               if any(w in it[1].lower() for w in _MATCH_WORDS)
+               and not any(w in it[1].lower() for w in _SKIP_WORDS)]
+    print(f"  发现 {len(items)} 个条目, 筛出疑似比赛 {len(targets)} 个, 逐条探测...", flush=True)
+    pulls, fails = [], []
+    for ident, title in targets:
+        r = probe_one(f"https://archive.org/details/{ident}", proxy=PROXY,
+                      timeout=ARCHIVE_TIMEOUT)
+        row = {"identifier": ident, "title": title, **r}
+        (pulls if r["status"] == C_OK else fails).append(row)
+        print(f"  {'✅' if r['status']==C_OK else '❌'} {ident[:40]:42s} "
+              f"{r['status']:<11} {title[:40]}", flush=True)
+    print(f"\n可拉取 {len(pulls)} / 失败 {len(fails)}", flush=True)
+    if pulls:
+        long = [p for p in pulls if _is_long(p.get("duration", ""))]
+        print(f"其中疑似完整比赛 (时长>30min): {len(long)} 条", flush=True)
+        for p in long[:10]:
+            print(f"  {p['identifier'][:48]:50s} {p.get('duration','')}s {p['title'][:40]}",
+                  flush=True)
+
+
+def _is_long(duration: str) -> bool:
+    """时长是否像完整比赛 (>30 分钟)。空/解析失败按 False。"""
+    try:
+        return float(duration) > 1800
+    except (ValueError, TypeError):
+        return False
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -178,7 +246,13 @@ def main():
     ap.add_argument("--json", default="", help="结果明细输出到 JSON 文件")
     ap.add_argument("--verify", action="store_true",
                     help="深度验证: 对可解析的站点再查 formats 是否真能下载")
+    ap.add_argument("--search", default="", metavar="QUERY",
+                    help="搜索模式: 对 archive.org 搜索关键词并逐条探测 (如 'badminton')")
     args = ap.parse_args()
+
+    if args.search:
+        search_site("archive.org", args.search)
+        return
 
     sites = [s for s in SITES if args.site.lower() in s[0].lower()]
     if not sites:

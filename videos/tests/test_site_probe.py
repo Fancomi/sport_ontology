@@ -70,6 +70,7 @@ def test_reload_unknown():
 
 def test_static_known_working():
     assert classify_static("youtube") == C_OK
+    assert classify_static("BiliBili") == C_OK
 
 
 def test_static_broken():
