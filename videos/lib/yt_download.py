@@ -22,9 +22,13 @@ from lib import config
 # 480p 上限 (与阶段二同一档, 换档会让新老数据分辨率不一致)
 FORMAT_480P = "bv*[height<=480]+ba/b[height<=480]/18/b"
 
-# cookie 源目录 (只读, 绝不被 yt-dlp 写)。人工重登后覆盖这里的文件即可。
+# cookie 源目录: origin/ 存**原件** (人工重登后覆盖这里, 只读不写), 引擎每次启动把原件
+# 拷一份到本目录作为**工作副本**再使用 —— yt-dlp 的 cookiefile 回写只能污染工作副本,
+# 原件永不被动 (实测事故 2026-08-12: 直接用源文件当 cookiefile, yt-dlp 回写把 LOGIN_INFO
+# 连同辅助 cookie 一起抹掉, 弱号从 70 行掉到 50 行)。
 COOKIE_DIR = Path(os.environ.get(
     "YT_COOKIE_DIR", "/root/paddlejob/workspace/env_run/penghaotian/datas/cookies"))
+COOKIE_ORIGIN_DIR = COOKIE_DIR / "origin"   # 原件 (只读)
 # 顺序即代理绑定顺序 (见 STICKY_PROXIES): 强号排前, 绑最挑剔的代理。
 # 实测账号×代理可用性矩阵 (2026-07-30):
 #   Cocoonconcoction070 (含 LOGIN_INFO): cmc / baidu8188 / baidu8891 全部 ok
@@ -35,6 +39,24 @@ COOKIE_NAMES = [
     "cookies_Cocoonconcoction070_origin.txt",
     "cookies_Resxuilpazcuoe_origin.txt",
 ]
+
+
+def _sync_cookie_workspace() -> None:
+    """每次启动: 从 origin/ 原件拷一份到工作区, 覆盖被 yt-dlp 回写污染的工作副本。
+
+    原件是人工重登后的权威版本; 工作副本是运行时实际给 yt-dlp 的 (经 _ephemeral_cookie
+    再拷成一次性 jar, 但那层防护只保护工作副本, 不保护原件)。本函数保证工作副本始终
+    从最新的原件重建, 不被上一次运行的残留污染。
+    """
+    COOKIE_DIR.mkdir(parents=True, exist_ok=True)
+    for name in COOKIE_NAMES:
+        src = COOKIE_ORIGIN_DIR / name
+        dst = COOKIE_DIR / name
+        if src.exists():
+            shutil.copy2(src, dst)
+
+
+_sync_cookie_workspace()          # 模块导入即执行: 引擎任何入口都会先重建工作副本
 COOKIE_ORIGINS = [COOKIE_DIR / n for n in COOKIE_NAMES if (COOKIE_DIR / n).exists()]
 
 # cookie ↔ 代理 粘性绑定 (sticky session): YouTube 关联「账号在哪个 IP 活动」, 同一
