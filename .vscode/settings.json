@@ -1,22 +1,36 @@
 {
-    "python.defaultInterpreterPath": "/home/baidu/envs/mineru/bin/python",
-    "terminal.integrated.env.linux": {
-        "VSCODE_VENV": "/home/baidu/envs/mineru",
-        "http_proxy": "http://127.0.0.1:7890",
-        "https_proxy": "http://127.0.0.1:7890",
-        "all_proxy": "",
-        "no_proxy": "localhost,127.0.0.1"
+    "//": "解释器: 本项目实际使用的 conda 环境 (原先指向已不存在的 /home/baidu/envs/mineru, 导致 Python 扩展反复探测失败)",
+    "python.defaultInterpreterPath": "/root/paddlejob/workspace/env_run/penghaotian/envs/dino/bin/python",
+
+    "//1": "终端不再注入 127.0.0.1:7890 代理 —— 该端口在本机无监听, 注入后终端里每个网络调用都要挂到超时才失败。需要代理时按需 export agent.baidu.com:8188",
+    "terminal.integrated.env.linux": {},
+
+    "//2": "文件监视器排除: videos/data 有 2.6GB / 1800+ 文件 (含 868MB 日志与多个百 MB jsonl), 监视它们会让远程 server 持续占用 inotify 与 CPU",
+    "files.watcherExclude": {
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/__pycache__/**": true,
+        "**/videos/data/**": true,
+        "**/datas/**": true,
+        "**/*.jsonl": true,
+        "**/*.log": true
     },
-    "terminal.integrated.profiles.osx": {
-        "zsh (proxy)": {
-            "path": "zsh",
-            "env": {
-                "http_proxy": "http://127.0.0.1:7890",
-                "https_proxy": "http://127.0.0.1:7890",
-                "all_proxy": "",
-                "no_proxy": "localhost,127.0.0.1"
-            }
-        }
+
+    "//3": "搜索排除: 同上, 避免全局搜索去读百 MB 级数据文件",
+    "search.exclude": {
+        "**/videos/data/**": true,
+        "**/datas/**": true,
+        "**/__pycache__/**": true,
+        "**/*.jsonl": true,
+        "**/*.log": true
     },
-    "terminal.integrated.defaultProfile.osx": "zsh (proxy)"
+
+    "//4": "大文件不做语言分析 (jsonl/log 交给外部工具看)",
+    "files.exclude": {
+        "**/__pycache__": true
+    },
+    "python.analysis.exclude": [
+        "**/videos/data/**",
+        "**/datas/**"
+    ]
 }
