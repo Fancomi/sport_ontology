@@ -53,11 +53,16 @@ class Judge:
     def _call(self, prompt: str, max_tokens: int = 1500) -> str:
         payload = {"model": self.model, "max_tokens": max_tokens,
                    "messages": [{"role": "user", "content": prompt}]}
+        # oneapi 归因头: 值必须是合法 JSON, source 完整=ducc
+        comate_header = json.dumps({"agentId": "ducc:user:penghaotian",
+                                    "username": "penghaotian", "repo": "",
+                                    "source": "ducc"}, ensure_ascii=False)
         req = urllib.request.Request(
             self.base.rstrip("/") + "/v1/messages",
             data=json.dumps(payload).encode(),
             headers={"content-type": "application/json", "x-api-key": self.token,
-                     "anthropic-version": "2023-06-01"})
+                     "anthropic-version": "2023-06-01",
+                     "comate_custom_header": comate_header})
         resp = json.loads(urllib.request.urlopen(req, timeout=300).read().decode())
         return "".join(b.get("text", "") for b in resp["content"])
 

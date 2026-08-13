@@ -219,10 +219,16 @@ def main():
                       api_base=f"http://127.0.0.1:{args.student_port}/v1", api_key="EMPTY",
                       temperature=0.0, max_tokens=1024,
                       extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+    # oneapi 归因头: 值必须是合法 JSON, source 完整=ducc (litellm 客户端不会自动注入
+    # ANTHROPIC_CUSTOM_HEADERS, 只有 proxy 服务端读它 -> 这里显式透传 extra_headers)
+    comate_header = json.dumps({"agentId": "ducc:user:penghaotian",
+                                "username": "penghaotian", "repo": "",
+                                "source": "ducc"}, ensure_ascii=False)
     teacher = dspy.LM("anthropic/Opus 4.8",
                       api_base="https://oneapi-comate.baidu-int.com",
                       api_key="nYIOXLo4Ut2y0DVF9f75Cb09F43a4bDa80F2F5B9Bb9d7d5f",
-                      temperature=1.0, max_tokens=8192)
+                      temperature=1.0, max_tokens=8192,
+                      extra_headers={"comate_custom_header": comate_header})
     dspy.configure(lm=student)
 
     exs = build_examples(args.limit)

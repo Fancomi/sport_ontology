@@ -239,6 +239,80 @@ def _is_long(duration: str) -> bool:
         return False
 
 
+# ── B站 (bilibili) 搜索量化: 回答「这个站有多少我们想要的」 ──
+# yt-dlp 的 bilisearch: 前缀被 412 反爬挡, 但直接调 API (wbi 路径不带签名) 可用,
+# 实测 2026-08-12: code:0 返回 20 条/页。搜索 API 偶发风控 (返回空 result),
+# 故带 UA+Referer 且逐关键词重试。
+
+BILI_API = "https://api.bilibili.com/x/web-interface/wbi/search/type"
+# 比赛导向关键词 (非教学) —— 覆盖世锦赛/公开赛/团体赛/奥运等
+BILI_MATCH_KWS = ["羽毛球 全场", "羽毛球 决赛", "世锦赛 决赛", "公开赛 决赛",
+                  "汤姆斯杯", "尤伯杯", "苏迪曼杯", "全英赛", "男单 决赛",
+                  "团体赛 决赛", "奥运会 决赛", "羽毛球 锦标赛"]
+# 排除教学/课程/集锦特征词
+BILI_SKIP = ["教学", "课程", "教程", "合集", "训练", "基础", "入门", "技巧",
+             "讲解", "分析", "高远球", "杀球", "步法", "网前", "反手", "勾手",
+             "闪动", "热身", "实录", "vlog", "预告", "集锦", "高光"]
+
+
+def bili_search(keyword: str, proxy: str = PROXY, page: int = 1) -> list[dict]:
+    """B站搜索 API, 返回 [{bvid, title, duration}]。失败返回 []。"""
+    import urllib.parse, urllib.request
+    url = f"{BILI_API}?search_type=video&keyword={urllib.parse.quote(keyword)}&page={page}"
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0", "Referer": "https://www.bilibili.com/"})
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+    try:
+        with opener.open(req, timeout=30) as resp:
+            res = json.loads(resp.read().decode()).get("data", {}).get("result", [])
+        return [{"bvid": r.get("bvid", ""),
+                 "title": re.sub("<[^>]+>", "", r.get("title", "")),
+                 "duration": _bili_dur(r.get("duration", 0))}
+                for r in res if r.get("bvid")]
+    except Exception:
+        return []
+
+
+def _bili_dur(dur) -> int:
+    """B站 duration 是 'MM:SS' 字符串或秒数, 统一转秒。"""
+    if isinstance(dur, str):
+        parts = dur.split(":")
+        if len(parts) == 2:
+            try:
+                return int(parts[0]) * 60 + int(parts[1])
+            except ValueError:
+                return 0
+    try:
+        return int(dur)
+    except (ValueError, TypeError):
+        return 0
+
+
+def bili_quantify(proxy: str = PROXY) -> None:
+    """多关键词搜索 B站羽毛球内容, 排除教学, 输出规模+时长分布+疑似完整比赛清单。"""
+    print(f"═══ B站羽毛球内容量化 (代理={proxy}) ═══", flush=True)
+    matches, seen = {}, set()
+    for kw in BILI_MATCH_KWS:
+        res = bili_search(kw, proxy)
+        time.sleep(0.4)  # 限速防风控
+        for r in res:
+            if r["bvid"] in seen:
+                continue
+            seen.add(r["bvid"])
+            if any(s in r["title"] for s in BILI_SKIP):
+                continue
+            if r["duration"] >= 900:   # ≥15min 像完整比赛
+                matches[r["bvid"]] = (r["duration"], r["title"])
+    print(f"去重 {len(seen)} 条, 排除教学后疑似比赛 (≥15min): {len(matches)} 条",
+          flush=True)
+    if not matches:
+        print("  (无结果: 可能被风控, 稍后重试)", flush=True)
+        return
+    for b, (d, t) in sorted(matches.items(), key=lambda x: -x[1][0]):
+        print(f"  {b:<15} {d//60:>4}min  {t[:50]}", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -248,7 +322,13 @@ def main():
                     help="深度验证: 对可解析的站点再查 formats 是否真能下载")
     ap.add_argument("--search", default="", metavar="QUERY",
                     help="搜索模式: 对 archive.org 搜索关键词并逐条探测 (如 'badminton')")
+    ap.add_argument("--bili", action="store_true",
+                    help="B站量化: 多关键词搜索羽毛球比赛, 输出规模+时长分布+清单")
     args = ap.parse_args()
+
+    if args.bili:
+        bili_quantify()
+        return
 
     if args.search:
         search_site("archive.org", args.search)

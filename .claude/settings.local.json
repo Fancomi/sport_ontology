@@ -3,9 +3,6 @@
     "allow": [
       "Read(**)",
       "Bash(*)",
-      "LS(**)",
-      "Grep(**)",
-      "Glob(**)",
       "WebFetch",
       "MCP",
       "WebSearch",
@@ -21,7 +18,8 @@
       "Bash(which node:*)",
       "Bash(cd:*)",
       "Bash(git:*)",
-      "Skill(keybindings-help)"
+      "Skill(keybindings-help)",
+      "Skill(update-config)"
     ]
   }
 }
