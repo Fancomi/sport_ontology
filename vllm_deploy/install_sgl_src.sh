@@ -51,6 +51,31 @@ use_pip_proxy() {
 use_github_proxy() {
     export https_proxy="${GITHUB_PROXY}"
     export http_proxy="${GITHUB_PROXY}"
+    git_proxy_env "${GITHUB_PROXY}"
+}
+
+# ------------------------------------------------------------
+# git over proxy 的健壮化设置
+#
+# sgl-kernel 的 CMake FetchContent 要拉 6 个大仓（cutlass 222M / triton 760M /
+# flashinfer 337M / mscclpp / fmt / sgl-attn），且 sgl-attn 自身还带 cutlass +
+# ROCm/composable_kernel 两个子模块。走代理时默认 HTTP/2 会报
+#   "Error in the HTTP2 framing layer" / "expected flush after ref listing"
+# 而中断，大仓几乎必失败。强制 HTTP/1.1 并放宽低速超时后可稳定拉取。
+#
+# 关键点：CMake 生成的 git 子进程只继承环境变量，读不到我们的 --config 参数，
+# 所以代理与 HTTP 版本必须经 GIT_CONFIG_COUNT/KEY/VALUE 注入，才能覆盖到
+# FetchContent 内层以及子模块递归 clone 的每一个 git 调用。
+# ------------------------------------------------------------
+git_proxy_env() {
+    local proxy="$1"
+    export GIT_CONFIG_COUNT=6
+    export GIT_CONFIG_KEY_0=http.proxy         GIT_CONFIG_VALUE_0="${proxy}"
+    export GIT_CONFIG_KEY_1=https.proxy        GIT_CONFIG_VALUE_1="${proxy}"
+    export GIT_CONFIG_KEY_2=http.version       GIT_CONFIG_VALUE_2=HTTP/1.1
+    export GIT_CONFIG_KEY_3=http.postBuffer    GIT_CONFIG_VALUE_3=1048576000
+    export GIT_CONFIG_KEY_4=http.lowSpeedLimit GIT_CONFIG_VALUE_4=1000
+    export GIT_CONFIG_KEY_5=http.lowSpeedTime  GIT_CONFIG_VALUE_5=600
 }
 
 pip_install() {
@@ -258,8 +283,59 @@ check_sgl_kernel_build() {
     latest_kernel_wheel >/dev/null
 }
 
+# sgl-kernel 的第三方依赖（CMake FetchContent 拉取）。
+# 名字与 CMakeLists.txt 里 FetchContent_Declare 的第一个参数一一对应。
+SGL_KERNEL_DEPS=(
+    "repo-cutlass|https://github.com/NVIDIA/cutlass|57e3cfb47a2d9e0d46eb6335c3dc411498efa198|0"
+    "repo-fmt|https://github.com/fmtlib/fmt|553ec11ec06fbe0beebfbb45f9dc3c9eabd83d28|0"
+    "repo-triton|https://github.com/triton-lang/triton|v3.6.0|0"
+    "repo-flashinfer|https://github.com/flashinfer-ai/flashinfer.git|bc29697ba20b7e6bdb728ded98f04788e16ee021|0"
+    "repo-flash-attention|https://github.com/sgl-project/sgl-attn|bcf72ccc6816b36a5fae2c5a3c027604629785e0|0"
+    "repo-mscclpp|https://github.com/microsoft/mscclpp.git|51eca89d20f0cfb3764ccd764338d7b22cd486a6|0"
+)
+
+# 预取依赖到 build/_deps/<name>-src，再用 FETCHCONTENT_SOURCE_DIR_<NAME> 指过去。
+#
+# 为什么不让 CMake 自己拉：FetchContent 内层的 git 无法重试，任一大仓中断整个
+# configure 就失败，而这几个仓合计 1.5G+，代理下单次成功率很低。这里逐个带重试
+# clone，失败可续跑（已存在且 HEAD 正确就跳过），把网络不稳的影响限制在本函数内。
+#
+# GIT_SUBMODULES 一律不递归：CMakeLists 只引用 sgl-attn 的 csrc/flash_attn 与
+# hopper/ 目录，它的两个子模块（NVIDIA/cutlass、ROCm/composable_kernel）从未被
+# 引用；composable_kernel 是 AMD 后端专用，在 NVIDIA 上纯属浪费且极易卡死。
+prefetch_sgl_kernel_deps() {
+    local deps_dir="${SRC_DIR}/sgl-kernel/build/_deps"
+    mkdir -p "${deps_dir}"
+    local entry name url ref src i
+    for entry in "${SGL_KERNEL_DEPS[@]}"; do
+        IFS='|' read -r name url ref _ <<< "${entry}"
+        src="${deps_dir}/${name}-src"
+        if [ -d "${src}/.git" ] && git -C "${src}" rev-parse --verify -q HEAD >/dev/null; then
+            echo "  [skip] ${name} 已就绪 ($(git -C "${src}" rev-parse --short HEAD))"
+            continue
+        fi
+        for i in 1 2 3 4 5; do
+            echo "  clone ${name} (第 ${i} 次)"
+            rm -rf "${src}"
+            if git clone --no-checkout "${url}" "${src}" 2>&1 | tail -2 \
+               && git -C "${src}" checkout -q "${ref}" 2>&1 | tail -1; then
+                echo "  [ok] ${name} -> $(git -C "${src}" rev-parse --short HEAD)"
+                break
+            fi
+            echo "  ${name} 失败，重试…"; sleep 8
+        done
+        if [ ! -d "${src}/.git" ]; then
+            echo "ERROR: 无法获取 ${name}（${url}）" >&2
+            return 1
+        fi
+    done
+}
+
 stage_sgl_kernel_build() {
     cd "${SRC_DIR}/sgl-kernel"
+
+    # 预取依赖要走网络（GitHub），且必须带上 git_proxy_env 的 HTTP/1.1 设置
+    use_github_proxy
 
     export CUDA_HOME="${CUDA_HOME_PATH}"
     export PATH="${CUDA_HOME}/bin:${HOME}/.cargo/bin:${VENV_PATH}/bin:${PATH}"
@@ -268,12 +344,27 @@ stage_sgl_kernel_build() {
 
     if ls dist/sglang_kernel-*.whl >/dev/null 2>&1; then
         echo "sglang-kernel wheel 已存在，跳过重编译"
-    else
-        uv build --wheel --no-build-isolation \
-            -C build-dir=build \
-            -C cmake.args="-DCMAKE_POLICY_VERSION_MINIMUM=3.5" \
-            -o dist/ . || true
+        latest_kernel_wheel >/dev/null
+        return 0
     fi
+
+    echo "==> 预取 sgl-kernel 第三方依赖"
+    prefetch_sgl_kernel_deps
+
+    # 把预取好的目录喂给 FetchContent。变量名规则：FETCHCONTENT_SOURCE_DIR_<大写名>，
+    # 名字里的横线保留（实测 CMake 3.31 认 FETCHCONTENT_SOURCE_DIR_REPO-CUTLASS）。
+    local cmake_args="-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+    local entry name upper
+    for entry in "${SGL_KERNEL_DEPS[@]}"; do
+        IFS='|' read -r name _ _ _ <<< "${entry}"
+        upper=$(echo "${name}" | tr '[:lower:]' '[:upper:]')
+        cmake_args+=";-DFETCHCONTENT_SOURCE_DIR_${upper}=${SRC_DIR}/sgl-kernel/build/_deps/${name}-src"
+    done
+
+    uv build --wheel --no-build-isolation \
+        -C build-dir=build \
+        -C cmake.args="${cmake_args}" \
+        -o dist/ . || true
 
     latest_kernel_wheel >/dev/null
 }
