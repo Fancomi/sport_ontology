@@ -229,6 +229,36 @@ def detect_segments(src: str, fps: float, duration: float):
     return plan
 
 
+def _probe_media(src: str) -> tuple[float, int]:
+    """读 (fps, 帧数): cv2 优先, PyAV 兜底。
+
+    实测 (2026-08-12): 53 个 AV1 原片 (libdav1d) cv2.VideoCapture 返回 fps=0/frames=0,
+    duration=0 -> _split_one 判 too_short, 永远切不出来。PyAV 对同一批文件能正常读出
+    (见 aspect_filter._frame_size_pyav 同源问题)。都失败返回 (0, 0) 由调用方判 too_short。
+    """
+    try:
+        import cv2
+        cap = cv2.VideoCapture(src)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        nf = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
+        if fps > 0 and nf > 0:
+            return fps, nf
+    except Exception:
+        pass
+    try:
+        import av
+        with av.open(src) as container:
+            if not container.streams.video:
+                return 0, 0
+            vs = container.streams.video[0]
+            fps = float(vs.average_rate) if vs.average_rate else 0.0
+            nf = int(vs.frames) if vs.frames else 0
+            return fps, nf
+    except Exception:
+        return 0, 0
+
+
 def _split_one(args: tuple[str, str, str]) -> tuple[str, int, str]:
     """对单个视频做场景检测+切割。"""
     video_name, shm_src, shm_out = args
@@ -236,12 +266,8 @@ def _split_one(args: tuple[str, str, str]) -> tuple[str, int, str]:
     stem = os.path.splitext(video_name)[0]
 
     try:
-        import cv2
-        cap = cv2.VideoCapture(src)
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        nf = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps, nf = _probe_media(src)
         duration = nf / fps if fps > 0 else 0
-        cap.release()
 
         if duration < 1.0:
             return (video_name, 0, "too_short")

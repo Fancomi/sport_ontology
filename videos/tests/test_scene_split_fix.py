@@ -418,3 +418,50 @@ if __name__ == "__main__":
             failed += 1; print(f"FAIL {fn.__name__}: {e}")
     print(f"--- {len(fns)-failed}/{len(fns)} passed ---")
     sys.exit(1 if failed else 0)
+
+
+def test_probe_media_pyav_fallback_when_cv2_fails(tmp_path, monkeypatch):
+    """cv2 读不出 (AV1 无软解) 时必须回退 PyAV 拿 fps/帧数。
+
+    实测 (2026-08-12): 53 个 AV1 原片 _split_one 里 cv2.VideoCapture 返回 fps=0/frames=0,
+    duration=0 -> too_short, 永远切不出来。PyAV 对同一批 20/20 成功 (见
+    aspect_filter._frame_size_pyav)。抽成 _probe_media: cv2 优先, PyAV 兜底。
+    """
+    import types
+    m = load_mod()
+
+    fake_cv2 = types.SimpleNamespace(
+        VideoCapture=lambda src: types.SimpleNamespace(
+            get=lambda prop: 0.0,  # fps=0 帧数=0 (AV1 症状)
+            release=lambda: None,
+        ))
+
+    class _FakeRate:
+        def __init__(self, num, den):
+            self.num, self.den = num, den
+
+        def __float__(self):
+            return self.num / self.den
+
+    class _FakeContainer:
+        # average_rate 必须可被 float() 转换 (真实 av 是 Fraction, 这里用带 num/den 的对象)
+        streams = types.SimpleNamespace(video=[types.SimpleNamespace(
+            average_rate=_FakeRate(30, 1),
+            frames=300,
+        )])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    fake_av = types.SimpleNamespace(open=lambda *a, **k: _FakeContainer())
+
+    monkeypatch.setitem(sys.modules, "cv2", fake_cv2)
+    monkeypatch.setitem(sys.modules, "av", fake_av)
+    # 重新加载模块让 import cv2 / import av 生效
+    m2 = load(MODULE_PATH, "scene_split_pyav")
+    fps, nf = m2._probe_media("/fake/av1.mp4")
+    assert fps == 30.0
+    assert nf == 300
