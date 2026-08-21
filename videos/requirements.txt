@@ -1,2 +1,2 @@
-yt-dlp>=2026.3
+yt-dlp>=2026.8.19   # 2026.8.19 修复 android_vr client 全 403 (2026-08-17 起被 YouTube 封, 见 yt-dlp#17456/#17461); 更旧版本会下载 403
 av>=14.0.0   # AV1 (libdav1d) 解码兜底: opencv-python 的 FFmpeg 构建缺 AV1 软解
