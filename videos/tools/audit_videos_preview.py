@@ -5,7 +5,7 @@
 (与 2_2 审核完全同一条抽帧+判定路径), 让人工核对"整段中值帧是否固定机位对打 + 判定是否合理"。
 
 用法:
-  SSHPASS='3dvision' DOMAIN=badminton python3 tools/audit_videos_preview.py --limit 100
+  DOMAIN=badminton python3 tools/audit_videos_preview.py --limit 100
 """
 import argparse, base64, html, json, os, sys, shutil
 from pathlib import Path

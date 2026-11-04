@@ -10,8 +10,8 @@
   - caption 派发走 raw httpx(预序列化绕过 OpenAI SDK 的 GIL 热点)
 
 用法:
-  SSHPASS='3dvision' nohup python3 4_caption.py > logs/caption.log 2>&1 &
-  SSHPASS='3dvision' python3 4_caption.py --limit 20   # 验证
+  nohup python3 4_caption.py > logs/caption.log 2>&1 &
+  python3 4_caption.py --limit 20   # 验证
 """
 import argparse
 import base64

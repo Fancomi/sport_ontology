@@ -3,7 +3,7 @@
 对远端 videos_split 切片做 caption，实测吞吐并外推到全量 280w。
 
 用法:
-  SSHPASS='3dvision' python3 caption_speedtest.py --sample 800 --per-port 48
+  python3 caption_speedtest.py --sample 800 --per-port 48
 """
 import argparse
 import base64

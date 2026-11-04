@@ -167,7 +167,7 @@ sport_ontology 对比学习训练的视频-文本数据。一套引擎多领域�
 
 目标：对每个切片按 3 秒窗口生成中文训练动作描述。
 
-入口 `SSHPASS='3dvision' nohup python3 4_caption.py > logs/caption.log 2>&1 &`
+入口 `nohup python3 4_caption.py > logs/caption.log 2>&1 &`
 （验证：`python3 4_caption.py --limit 20`）。
 
 - **`4_caption.py`** — 三级连续流水（producer-consumer），各级常驻解耦消除 GPU 空窗：

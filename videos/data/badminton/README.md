@@ -40,8 +40,8 @@
 ```bash
 DOMAIN=badminton bash 1_collect_filter.sh all          # 采集+缩略图+VLM筛选
 DOMAIN=badminton bash 2_download.sh                     # 单机下载 (多机: 2_download.sh N K)
-DOMAIN=badminton SSHPASS='3dvision' bash 2_3_sync_videos.sh   # 传远端
-DOMAIN=badminton SSHPASS='3dvision' bash 3_scene_split.sh     # 场景切割
-DOMAIN=badminton SSHPASS='3dvision' python3 3_2_audit_splits.py --finalize  # 切片审核+定稿
+DOMAIN=badminton bash 2_3_sync_videos.sh   # 传远端
+DOMAIN=badminton bash 3_scene_split.sh     # 场景切割
+DOMAIN=badminton python3 3_2_audit_splits.py --finalize  # 切片审核+定稿
 # stage4 caption 不在本次目标范围内
 ```

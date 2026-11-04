@@ -8,7 +8,7 @@ config.DOMAIN.audit_gate (已废弃字段, 网球域为 None -> 判定必然全 
 完全脱节。
 
 用法:
-  SSHPASS='3dvision' DOMAIN=tennis python3 tools/audit_splits_preview.py --n 150
+  DOMAIN=tennis python3 tools/audit_splits_preview.py --n 150
 """
 import argparse, base64, html, json, os, random, sys, shutil
 from pathlib import Path

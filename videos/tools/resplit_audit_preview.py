@@ -3,7 +3,7 @@
 -> index.html (可播放段视频 + KEEP/REJECT + 属性)。用于核对"被删的那批到底该不该删", 不碰远端。
 
 用法:
-  SSHPASS='3dvision' DOMAIN=badminton python3 tools/resplit_audit_preview.py \
+  DOMAIN=badminton python3 tools/resplit_audit_preview.py \
       --stems 0e5u0OHdS68 1635ZFQIDdg 0EfaPMU_yxI 0zBNBRVGFUw
 """
 import argparse, base64, html, os, re, subprocess, sys, shutil

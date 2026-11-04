@@ -11,7 +11,7 @@
 产出: 优化后的 prompt 文本 -> prompt_lab/out/gepa_audit_prompt.txt (人工审核后再决定是否采纳到 domains)。
 
 用法:
-  SSHPASS='3dvision' python demo_gepa_audit_vlm.py --max-calls 80 --cache-frames
+  python demo_gepa_audit_vlm.py --max-calls 80 --cache-frames
 """
 import os, sys, json, base64, subprocess, tempfile, argparse, io
 from pathlib import Path
@@ -190,7 +190,7 @@ def main():
                                 "source": "ducc"}, ensure_ascii=False)
     teacher = dspy.LM("anthropic/Opus 4.8",
                       api_base="https://oneapi-comate.baidu-int.com",
-                      api_key="nYIOXLo4Ut2y0DVF9f75Cb09F43a4bDa80F2F5B9Bb9d7d5f",
+                      api_key=os.environ["ONEAPI_API_KEY"],
                       temperature=1.0, max_tokens=8192,
                       extra_headers={"comate_custom_header": comate_header})
     dspy.configure(lm=student)

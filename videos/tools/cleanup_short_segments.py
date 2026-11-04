@@ -14,10 +14,10 @@
 
 用法:
   # VLM 审核 reject 全删 (七面同步)
-  SSHPASS=3dvision python3 tools/cleanup_short_segments.py --drop-list <reject.list> --dry-run
-  SSHPASS=3dvision python3 tools/cleanup_short_segments.py --drop-list <reject.list>
+  python3 tools/cleanup_short_segments.py --drop-list <reject.list> --dry-run
+  python3 tools/cleanup_short_segments.py --drop-list <reject.list>
   # 默认 <1s 清理
-  SSHPASS=3dvision python3 tools/cleanup_short_segments.py --dry-run
+  python3 tools/cleanup_short_segments.py --dry-run
 """
 import argparse
 import glob

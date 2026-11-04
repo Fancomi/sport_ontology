@@ -12,7 +12,8 @@ cd "$(dirname "$0")"
 source /root/paddlejob/workspace/env_run/penghaotian/envs/dino/bin/activate
 unset http_proxy https_proxy 2>/dev/null || true
 
-export SSHPASS="${SSHPASS:-3dvision}"
+: "${SSHPASS:?请先设置 SSHPASS（由 tools/install_all.sh 写入的 .secrets.env 提供）}"
+export SSHPASS
 export DOMAIN=${DOMAIN:-fitness}
 
 mkdir -p logs

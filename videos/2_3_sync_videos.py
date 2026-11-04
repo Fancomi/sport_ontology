@@ -8,8 +8,8 @@
   - 默认只发送已通过 audit 的视频，并在成功后删除本地文件释放空间。
 
 用法:
-  SSHPASS='3dvision' python3 2_3_sync_videos.py --loop --interval 300
-  SSHPASS='3dvision' python3 2_3_sync_videos.py --dry-run --max-files 20
+  python3 2_3_sync_videos.py --loop --interval 300
+  python3 2_3_sync_videos.py --dry-run --max-files 20
 """
 import argparse
 import os
@@ -340,7 +340,7 @@ def main():
     if args.password:
         env["SSHPASS"] = args.password
     if not env.get("SSHPASS"):
-        raise SystemExit("请设置 SSHPASS 环境变量，例如: SSHPASS='3dvision' python3 2_3_sync_videos.py")
+        raise SystemExit("请设置 SSHPASS 环境变量（由 tools/install_all.sh 写入的 .secrets.env 提供）")
 
     if not remote_prepare(args, env):
         raise SystemExit(1)

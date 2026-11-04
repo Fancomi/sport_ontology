@@ -17,8 +17,8 @@
 endpoint_error) 不删除远端文件, 只记录溯源, 留给下一轮重试。
 
 用法:
-  SSHPASS='3dvision' python3 2_2_audit_videos.py
-  SSHPASS='3dvision' nohup python3 2_2_audit_videos.py > data/badminton/logs/audit_videos.log 2>&1 &
+  python3 2_2_audit_videos.py
+  nohup python3 2_2_audit_videos.py > data/badminton/logs/audit_videos.log 2>&1 &
 """
 import argparse
 import json
@@ -74,7 +74,7 @@ def main():
         os.environ.pop(k, None)
     os.environ.setdefault("no_proxy", "127.0.0.1,localhost")
     if not os.environ.get("SSHPASS"):
-        sys.exit("请设置 SSHPASS: SSHPASS='3dvision' python3 2_2_audit_videos.py")
+        sys.exit("请设置 SSHPASS 环境变量（由 tools/install_all.sh 写入的 .secrets.env 提供）")
 
     eps = build_vlm_endpoints(args.host, parse_ports(args.port), max_conn=args.per_port + 16)
     if not eps:

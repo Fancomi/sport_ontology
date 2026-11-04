@@ -11,9 +11,9 @@
   - Pipeline 模式: 6.5 videos/s → 46.5万视频约 ~20h
 
 用法:
-  SSHPASS='3dvision' python3 3_1_scene_split.py
-  SSHPASS='3dvision' python3 3_1_scene_split.py --batch-size 300 --dry-run
-  SSHPASS='3dvision' nohup python3 3_1_scene_split.py > logs/scene_split.log 2>&1 &
+  python3 3_1_scene_split.py
+  python3 3_1_scene_split.py --batch-size 300 --dry-run
+  nohup python3 3_1_scene_split.py > logs/scene_split.log 2>&1 &
 """
 import argparse
 import os
@@ -818,7 +818,7 @@ def main():
     MIN_SEGMENT_SEC = args.min_seg
 
     if not os.environ.get("SSHPASS"):
-        print("请设置 SSHPASS: SSHPASS='3dvision' python3 3_1_scene_split.py")
+        print("请设置 SSHPASS 环境变量（由 tools/install_all.sh 写入的 .secrets.env 提供）")
         sys.exit(1)
 
     if args.replace:

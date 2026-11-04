@@ -1,6 +1,7 @@
 """统一 LLM 客户端：支持 poe / local 两种后端，提供流式调用 + 进度监控 + 批量并发"""
 
 import json
+import os
 import re
 import threading
 import time
@@ -214,7 +215,8 @@ def call_vlm_raw(ep: VLMEndpoint, img_bytes: bytes, prompt: str,
 
 
 # ── POE 默认配置 ──────────────────────────────────────────────────────────────
-POE_API_KEY  = "sNTL5h9vOWThftZdJHCho0gCGNpycuEcUMkSZkLxZzs"
+# 凭据不入仓：由环境变量提供（tools/install_all.sh 写入 .secrets.env，~/.bashrc 加载）
+POE_API_KEY  = os.environ.get("POE_API_KEY", "")
 POE_BASE_URL = "https://api.poe.com/v1"
 MODEL        = "gemini-3.1-pro"
 EXTRA_BODY   = {"web_search": True, "thinking_level": "high"}

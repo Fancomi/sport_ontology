@@ -4,9 +4,9 @@
 
 用法:
   # 普通: 从 offset 连续取 100 个 (不论判定) 并排展示
-  SSHPASS='3dvision' DOMAIN=badminton python3 tools/audit_2model_preview.py --limit 100 --offset 300
+  DOMAIN=badminton python3 tools/audit_2model_preview.py --limit 100 --offset 300
   # 只看通过: 持续扫描直到攒够 --limit 个"通过"的 (--pass-by 指定判定模型)
-  SSHPASS='3dvision' DOMAIN=badminton python3 tools/audit_2model_preview.py --pass-only --limit 100 --pass-by g
+  DOMAIN=badminton python3 tools/audit_2model_preview.py --pass-only --limit 100 --pass-by g
 """
 import argparse, base64, html, os, sys
 from pathlib import Path

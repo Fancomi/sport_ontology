@@ -11,8 +11,8 @@
 触发远端删除, transient (解析/抽帧/端点) 失败不删除, 不写入完成态, 留给下一轮重试。
 
 用法:
-  SSHPASS='3dvision' python3 3_2_audit_splits.py
-  SSHPASS='3dvision' nohup python3 3_2_audit_splits.py > logs/audit_splits.log 2>&1 &
+  python3 3_2_audit_splits.py
+  nohup python3 3_2_audit_splits.py > logs/audit_splits.log 2>&1 &
 """
 import argparse
 import os
@@ -353,7 +353,7 @@ def main():
         finalize()
         return
     if not os.environ.get("SSHPASS"):
-        sys.exit("请设置 SSHPASS: SSHPASS='3dvision' python3 3_2_audit_splits.py")
+        sys.exit("请设置 SSHPASS 环境变量（由 tools/install_all.sh 写入的 .secrets.env 提供）")
     if args.list:
         run_list(args)
     else:

@@ -4,7 +4,7 @@
 每档算切点+段数+每段代表帧, 产 index.html 供人工选阈值。仅实验, 不改远端/不入流水线。
 
 用法:
-  SSHPASS='3dvision' DOMAIN=badminton python3 tools/cut_threshold_lab.py \
+  DOMAIN=badminton python3 tools/cut_threshold_lab.py \
       --clips N2HN0Kv2en4_159 b9crYttEHCw_1 xVXIrkw9s8c_6 MPKAyztJIaI_310 Z4KZU5LyLGo_44 \
       --thresholds 0.15 0.2 0.3 0.4
 """

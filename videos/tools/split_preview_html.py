@@ -8,7 +8,7 @@
   index.html           视频+截图条 gallery (preload=none / loading=lazy 懒加载)
 
 用法:
-  SSHPASS='3dvision' DOMAIN=badminton python3 tools/split_preview_html.py --n 100
+  DOMAIN=badminton python3 tools/split_preview_html.py --n 100
 """
 import argparse, html, os, sys, random, shutil
 from pathlib import Path

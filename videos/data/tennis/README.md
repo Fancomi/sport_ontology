@@ -65,21 +65,21 @@ DOMAIN=tennis bash 1_collect_filter.sh all
 DOMAIN=tennis bash 2_download.sh
 
 # 终端/后台任务 C — 阶段二·同步：常驻循环 (--loop, 持续把本地已下载视频 rsync 到远端)
-DOMAIN=tennis SSHPASS='3dvision' bash 2_3_sync_videos.sh
+DOMAIN=tennis bash 2_3_sync_videos.sh
 
 # 终端/后台任务 D — 阶段二·审核：常驻循环 (--recheck 默认 600s, 持续吃 C 新同步上来的视频)
-DOMAIN=tennis SSHPASS='3dvision' python3 2_2_audit_videos.py
+DOMAIN=tennis python3 2_2_audit_videos.py
 
 # 等 D 至少跑完一轮 (日志出现 "[轮 1]" 且 已审 > 0) 后，再启动阶段三：
 # 终端/后台任务 E — 阶段三·切割：常驻循环 (拉远端已审视频切场景, 推切片回远端)
-DOMAIN=tennis SSHPASS='3dvision' bash 3_scene_split.sh
+DOMAIN=tennis bash 3_scene_split.sh
 
 # 终端/后台任务 F — 阶段三·正常审核 (常驻; 不加 --finalize, 真正跑 VLM 判定并落 3_audit_kept.txt)
-DOMAIN=tennis SSHPASS='3dvision' python3 3_2_audit_splits.py
+DOMAIN=tennis python3 3_2_audit_splits.py
 
 # 确认 F 已产出非空 data/tennis/deliverables/3_audit_kept.txt 后，
 # 单独执行一次性的 finalize (只做「远端∩kept」收敛，不审核，可随时安全重跑):
-DOMAIN=tennis SSHPASS='3dvision' python3 3_2_audit_splits.py --finalize
+DOMAIN=tennis python3 3_2_audit_splits.py --finalize
 # 验证: canonical_segments.list 非空、"漏网"计数应为 0 (非 0 说明 F 还没审完，需先补审再 finalize)
 wc -l data/tennis/deliverables/3_canonical_segments.list
 ```
@@ -104,10 +104,10 @@ wc -l data/tennis/deliverables/3_canonical_segments.list
 ```bash
 DOMAIN=tennis bash 1_collect_filter.sh all                     # 采集+缩略图+VLM筛选 (一次性)
 DOMAIN=tennis bash 2_download.sh                                # [常驻] 下载 (多机: 2_download.sh N K)
-DOMAIN=tennis SSHPASS='3dvision' bash 2_3_sync_videos.sh        # [常驻] 传远端
-DOMAIN=tennis SSHPASS='3dvision' python3 2_2_audit_videos.py    # [常驻] 整段视频审核 (与上两者并发)
-DOMAIN=tennis SSHPASS='3dvision' bash 3_scene_split.sh          # [常驻] 场景切割
-DOMAIN=tennis SSHPASS='3dvision' python3 3_2_audit_splits.py    # [常驻] 切片正常审核 (先于 finalize)
-DOMAIN=tennis SSHPASS='3dvision' python3 3_2_audit_splits.py --finalize  # [一次性] 收敛权威名单 (不审核)
+DOMAIN=tennis bash 2_3_sync_videos.sh        # [常驻] 传远端
+DOMAIN=tennis python3 2_2_audit_videos.py    # [常驻] 整段视频审核 (与上两者并发)
+DOMAIN=tennis bash 3_scene_split.sh          # [常驻] 场景切割
+DOMAIN=tennis python3 3_2_audit_splits.py    # [常驻] 切片正常审核 (先于 finalize)
+DOMAIN=tennis python3 3_2_audit_splits.py --finalize  # [一次性] 收敛权威名单 (不审核)
 # stage4 caption 不在本次目标范围内
 ```

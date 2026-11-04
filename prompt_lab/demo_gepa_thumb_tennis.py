@@ -226,7 +226,7 @@ def main():
                                 "source": "ducc"}, ensure_ascii=False)
     teacher = dspy.LM("anthropic/Opus 4.8",
                       api_base="https://oneapi-comate.baidu-int.com",
-                      api_key="nYIOXLo4Ut2y0DVF9f75Cb09F43a4bDa80F2F5B9Bb9d7d5f",
+                      api_key=os.environ["ONEAPI_API_KEY"],
                       temperature=1.0, max_tokens=8192,
                       extra_headers={"comate_custom_header": comate_header})
     dspy.configure(lm=student)
